@@ -83,7 +83,7 @@ exe = EXE(
 coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name='ADF')
 if sys.platform == 'darwin':
     app = BUNDLE(coll, name='ADF.app', icon=str(root / 'assets' / 'adf.icns'),
-                 bundle_identifier='local.adf.pdf',
+                 bundle_identifier='io.github.keilkim.adf',
                  info_plist={
                      'CFBundleName': 'ADF', 'CFBundleDisplayName': 'ADF',
                      'CFBundleShortVersionString': version(root), 'CFBundleVersion': version(root),
