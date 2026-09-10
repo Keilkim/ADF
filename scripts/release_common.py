@@ -18,6 +18,11 @@ def notice_dir(root):
     return root/'LICENSES' if sys.platform == 'win32' else root/'build/licenses'
 
 
+def platform_suffix():
+    """Release files of other platforms carry a suffix; their third-party sources differ."""
+    return {'win32': '', 'darwin': '-macOS'}.get(sys.platform, '-' + sys.platform)
+
+
 def version(root):
     return re.search(r"__version__ = '([^']+)'", (root/'adf/__init__.py').read_text(encoding='utf-8')).group(1)
 

@@ -15,7 +15,7 @@ import types
 import zipfile
 
 from PyInstaller.archive.readers import CArchiveReader
-from release_common import notice_dir, source_files
+from release_common import notice_dir, platform_suffix, source_files
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -61,8 +61,9 @@ def required_macos(app):
 def verify():
     version = re.search(r"__version__ = '([^']+)'", (ROOT/'adf/__init__.py').read_text(encoding='utf-8')).group(1)
     release = ROOT/'release'
+    suffix = platform_suffix()
     files = source_files(ROOT)
-    with zipfile.ZipFile(release/f'ADF-Source-{version}.zip') as archive:
+    with zipfile.ZipFile(release/f'ADF-Source-{version}{suffix}.zip') as archive:
         assert archive.testzip() is None, 'Source archive CRC failure'
         assert set(archive.namelist()) == {'ADF/'+name for name in files}, 'Source archive file list mismatch'
         for name, path in files.items():
@@ -70,7 +71,7 @@ def verify():
     bundle, internal, executable, installer = application(version)
     for prefix in ('ADF-Source', 'ADF-ThirdParty-Sources'):
         filename = f'{prefix}-{version}.zip'
-        assert digest(internal/'SOURCES'/filename) == digest(release/filename), f'Installed sources differ: {filename}'
+        assert digest(internal/'SOURCES'/filename) == digest(release/f'{prefix}-{version}{suffix}.zip'), f'Installed sources differ: {filename}'
     for line in (internal/'SOURCES/SHA256SUMS.txt').read_text(encoding='utf-8').splitlines():
         expected, name = line.split('  ', 1)
         assert digest(internal/'SOURCES'/name) == expected, f'Bundled source checksum mismatch: {name}'
@@ -110,14 +111,14 @@ def verify():
         assert required <= tuple(map(int, declared.split('.'))), \
             f'Bundled binaries need macOS {".".join(map(str, required))}; Info.plist declares {declared}'
         platform['minimum_macos'] = declared
-    with zipfile.ZipFile(release/f'ADF-ThirdParty-Sources-{version}.zip') as archive:
+    with zipfile.ZipFile(release/f'ADF-ThirdParty-Sources-{version}{suffix}.zip') as archive:
         assert archive.testzip() is None, 'Third-party archive CRC failure'
         assert archive.read('build-manifest.json') == (notices/'build-manifest.json').read_bytes()
         for source in manifest['source_archives']:
             with archive.open(source['filename']) as stream:
                 assert hashlib.file_digest(stream, 'sha256').hexdigest() == source['sha256'], source['filename']
     checksums = {}
-    for line in (release/f'SHA256SUMS-{version}.txt').read_text(encoding='utf-8').splitlines():
+    for line in (release/f'SHA256SUMS-{version}{suffix}.txt').read_text(encoding='utf-8').splitlines():
         expected, name = line.split('  ', 1)
         assert digest(release/name) == expected, f'Release checksum mismatch: {name}'
         checksums[name] = expected

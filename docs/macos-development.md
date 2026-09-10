@@ -52,7 +52,7 @@ Windows 전용 검사 3개는 건너뜁니다. 화면 조작은 일반 실행 �
 bash scripts/build-macos.sh
 ```
 
-의존성 설치, OpenCV 빌드, 아이콘·OCR 모델·고지·대응 소스 준비, PyInstaller 앱 번들, DMG, 해시와 패키지 정적 검사까지 실행해 `dist/ADF.app`과 `release/ADF-<버전>-macOS.dmg`를 만듭니다. `python3.12`가 없으면 `PYTHON=/경로/python3.12`로 가상 환경을 만들 Python을 지정합니다. 버전은 `adf/__init__.py`에서 읽습니다.
+의존성 설치, OpenCV 빌드, 아이콘·OCR 모델·고지·대응 소스 준비, PyInstaller 앱 번들, DMG, 해시와 패키지 정적 검사까지 실행해 `dist/ADF.app`과 `release/ADF-<버전>-macOS.dmg`를 만듭니다. 함께 배포할 대응 소스·외부 라이브러리 소스·해시는 `release/ADF-Source-<버전>-macOS.zip`처럼 `-macOS`가 붙은 이름으로 만들어 Windows 파일과 구분합니다. `python3.12`가 없으면 `PYTHON=/경로/python3.12`로 가상 환경을 만들 Python을 지정합니다. 버전은 `adf/__init__.py`에서 읽습니다.
 
 ### 서명과 공증
 
@@ -111,7 +111,7 @@ QT_QPA_PLATFORM=offscreen dist/ADF.app/Contents/MacOS/ADF \
 - 패키지 정적 검사(`verify-release.py`): 소스 571개와 앱의 코드 모듈 39개·자원 455개 일치, OCR 모델 5개, 외부 원본 소스 31개, 영상 코덱 없음, 끊어진 링크 없음, 실행 파일 최소 macOS 15.0.
 - `ADF.spec`이 제외한 Qt 프레임워크(QtQml·QtQuick·QtPdf·가상 키보드)를 가리키는 링크가 남아 서명 검증이 실패하던 문제는 링크 대상까지 걸러 해결했습니다. Windows 빌드에도 같은 필터가 적용되므로 다음 Windows 빌드에서 결과를 확인합니다.
 - 번들 식별자는 아직 `local.adf.pdf`입니다. 첫 공개 전에 정식 식별자를 정해야 합니다. 나중에 바꾸면 Finder 연결과 macOS 권한 설정이 새 앱으로 취급됩니다.
-- 새 배포는 새 버전으로 준비합니다. 기존 0.3.24 Windows 릴리즈 파일은 유지하고, Mac 배포 파일도 대응 소스·해시·검증 범위와 함께 제공합니다.
+- Mac 첫 배포는 0.3.25로 준비합니다. 기존 0.3.24 Windows 릴리즈 파일은 유지하고, Mac 배포 파일도 대응 소스·해시·검증 범위와 함께 제공합니다. 변경과 검증 범위는 [0.3.25 검증 기록](검증-0.3.25.md)에 있습니다.
 - 공식 사이트의 Mac 다운로드 버튼은 검증된 배포 파일이 게시되면 [site/README.md](../site/README.md)의 방법으로 연결합니다.
 - 확인하지 못한 항목: Finder 연결, 실제 화면 조작(Retina·트랙패드·한글 입력·인쇄), macOS 15 실기기 실행, 다른 Mac에서의 설치.
 
