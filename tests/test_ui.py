@@ -700,12 +700,29 @@ class DesktopWorkflowTests(unittest.TestCase):
         self.window.undo()
         self.assertEqual(self.window.document.page_count, 6)
 
+    def toolbar_rows(self):
+        rows = self.window.toolbar.rows
+        return [[row.itemAt(i).widget() for i in range(row.count()) if row.itemAt(i).widget()]
+                for row in (rows.itemAt(index).layout() for index in range(rows.count()))]
+
     def test_unified_toolbar_reflows_without_brand_label(self):
+        toolbar = self.window.toolbar
         self.window.resize(1020, 700)
         self.app.processEvents()
-        self.window.toolbar.reflow(1020)
-        self.assertTrue(self.window.toolbar._two_rows)
-        self.assertEqual(self.window.toolbar.height(), 84)
+        toolbar.reflow(1020)
+        self.assertTrue(toolbar._two_rows)
+        rows = self.toolbar_rows()
+        self.assertGreaterEqual(len(rows), 2)
+        self.assertEqual(toolbar.height(), 46+38*(len(rows)-1))
+        self.assertEqual(rows[0], toolbar.file_items)
+        # Rows wrap between tool groups; dividers only separate groups within a row.
+        for group in toolbar.edit_groups:
+            row = next(row for row in rows if group[0] in row)
+            start = row.index(group[0])
+            self.assertEqual(row[start:start+len(group)], group)
+        for row in rows[1:]:
+            self.assertNotIn(row[0], toolbar.dividers)
+            self.assertNotIn(row[-1], toolbar.dividers)
         # Leave room for wider offscreen/platform fallback fonts as well.
         self.window.resize(2200, 700)
         self.app.processEvents()
@@ -718,6 +735,47 @@ class DesktopWorkflowTests(unittest.TestCase):
             self.assertTrue(self.window.toolbar.rect().contains(button.geometry()))
         for first, second in zip(buttons, buttons[1:]):
             self.assertFalse(first.geometry().intersects(second.geometry()))
+
+    def test_toolbar_groups_tools_and_puts_low_size_save_beside_save_as(self):
+        toolbar = self.window.toolbar
+        names = {action: key for key, action in self.window.actions.items()}
+
+        def keys(widgets):
+            return [names[widget.defaultAction()] for widget in widgets]
+
+        file_keys = keys(toolbar.file_items)
+        self.assertEqual(file_keys[file_keys.index('save_as')+1], 'compress')
+        self.assertEqual(toolbar.file_items[file_keys.index('compress')].toolButtonStyle(),
+                         Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.assertEqual([keys(group) for group in toolbar.edit_groups], [
+            ['split', 'extract'], ['rotate', 'rotate_left'], ['number', 'number_remove'],
+            ['image', 'text', 'pen', 'eraser'], ['snap', 'region_tool', 'stamps']])
+        self.assertEqual(toolbar.tail_items, [])
+        self.assertNotIn('replace', file_keys + keys(toolbar.edit_items))
+
+    def test_pen_eraser_and_capture_turn_off_when_pressed_again(self):
+        for key in ('pen', 'eraser', 'region_tool'):
+            with self.subTest(tool=key):
+                self.window.actions[key].trigger()
+                self.assertEqual(self.window.pointer_mode, key)
+                self.window.actions[key].trigger()
+                self.assertEqual(self.window.pointer_mode, 'select_tool')
+                self.assertTrue(self.window.actions['select_tool'].isChecked())
+
+    def test_remove_numbers_only_removes_numbers_adf_added(self):
+        with patch('adf.app.QMessageBox.information') as information:
+            self.window.remove_numbers()
+        information.assert_called_once()
+        self.assertTrue(self.window.edit(lambda: self.window.document.number_pages(list(range(6)), prefix='p.')))
+        self.window.remove_numbers()
+        for index in range(6):
+            text = self.window.document.doc[index].get_text()
+            self.assertNotIn(f'p.{index + 1}', text.split())
+            self.assertIn(f'needle page {index + 1}', text)
+        self.assertIn('페이지 번호 6개를 지웠습니다', self.window.statusBar().currentMessage())
+        self.window.undo()
+        self.assertEqual(self.window.document.numbered_pages(), list(range(6)))
+        self.assert_source_unchanged()
 
     def test_empty_launch_and_close_have_no_document_content(self):
         fresh = MainWindow(smoke=True)
@@ -915,6 +973,7 @@ class DesktopWorkflowTests(unittest.TestCase):
     def test_inline_click_type_ime_font_and_final_save_on_lightweight_pdf(self):
         from adf.text_groups import text_group_at
         from PySide6.QtGui import QColor, QFont
+        korean_font = 'Malgun Gothic' if sys.platform == 'win32' else 'Apple SD Gothic Neo'
         self.window.set_view_mode('single')
         self.window.view.fit('page')
         self.window.actions['text'].trigger()
@@ -932,7 +991,7 @@ class DesktopWorkflowTests(unittest.TestCase):
             self.assertFalse(self.window.textbar.isHidden())
             self.assertIs(self.window.view.text_placement.proxy.widget(), self.window.text_value)
             self.assertEqual(self.window.textbar.layout().indexOf(self.window.text_value), -1)
-            self.window.text_font.setCurrentFont(QFont('Malgun Gothic'))
+            self.window.text_font.setCurrentFont(QFont(korean_font))
             self.window.text_size.setValue(16)
             self.window.text_color.color = QColor('#245ccc')
             self.window.text_color.changed.emit()
@@ -944,7 +1003,7 @@ class DesktopWorkflowTests(unittest.TestCase):
             QApplication.sendEvent(self.window.text_value, ime)
             self.assertEqual(self.window.text_value.toPlainText(), f'Edited {index+1}\n한글 수정')
             QTest.qWait(90)
-            self.assertEqual(self.window.edit_font.label, 'Malgun Gothic')
+            self.assertEqual(self.window.edit_font.label, korean_font)
             self.assertEqual(self.window.text_value.font().family(), self.window.edit_font_family)
             blank = self.window.view.mapFromScene(self.window.view.pages[index].mapToScene(QPointF(290, 400)))
             QTest.mouseClick(self.window.view.viewport(), Qt.MouseButton.LeftButton, pos=blank)

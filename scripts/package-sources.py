@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import zipfile
 
-from release_common import source_files, version
+from release_common import notice_dir, source_files, version
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = version(ROOT)
@@ -21,11 +21,12 @@ def main():
     with zipfile.ZipFile(source, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for name, path in source_files(ROOT).items():
             archive.write(path, 'ADF/'+name)
-    manifest = json.loads((ROOT/'LICENSES/build-manifest.json').read_text(encoding='utf-8'))
+    manifest_path = notice_dir(ROOT)/'build-manifest.json'
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
     if manifest['version'] != VERSION:
         raise RuntimeError('Collect matching licenses before packaging sources')
     with zipfile.ZipFile(third_party, 'w', compression=zipfile.ZIP_STORED) as archive:
-        archive.write(ROOT/'LICENSES/build-manifest.json', 'build-manifest.json')
+        archive.write(manifest_path, 'build-manifest.json')
         for entry in manifest['source_archives']:
             path = ROOT/'.tools/sources'/entry['filename']
             with path.open('rb') as stream:

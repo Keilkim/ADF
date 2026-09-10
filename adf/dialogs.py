@@ -1076,7 +1076,7 @@ class NumberingDialog(QDialog):
         }
 
     def _update_preview(self):
-        from .document import number_page
+        from .document import copy_page_number_record, number_page
         from .page_layout import numbering_label, numbering_position
 
         shown = self._shown_indices()
@@ -1087,6 +1087,8 @@ class NumberingDialog(QDialog):
         with fitz.open() as preview_doc:
             for index in shown:
                 preview_doc.insert_pdf(self.document.doc, from_page=index, to_page=index)
+                # The preview replaces an existing ADF number just as applying does.
+                copy_page_number_record(self.document.doc[index], preview_doc[-1])
             error = None
             try:
                 options = self._options()

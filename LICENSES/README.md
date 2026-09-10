@@ -34,6 +34,14 @@ OCR에는 **RapidOCR, RapidLayout, RapidTable**(Apache-2.0), **ONNX Runtime**(MI
 
 ADF 탐색기 확장은 LLVM-MinGW 20260826으로 빌드하며 C++ 런타임을 정적으로 연결합니다. LLVM의 Apache 2.0 및 LLVM 예외, MinGW-w64 런타임의 구성 요소별 고지는 `NativeShell` 폴더에 원문 그대로 제공합니다. 도구 모음과 정확한 LLVM/MinGW 소스 버전은 `build-manifest.json`의 `native_shell`에 기록합니다. `native-shell`의 ADF 자체 코드는 위의 AGPL 조건을 따릅니다.
 
+## macOS 앱
+
+macOS용 `ADF.app`은 Apple Silicon Mac의 macOS 15 이상용입니다. 저장소의 `LICENSES` 폴더에 있는 패키지별 고지와 `build-manifest.json`은 Windows용 wheel 기준입니다. Mac 빌드는 같은 버전의 macOS용 wheel에서 고지를 다시 모아 앱에 넣습니다. 앱 안의 위치는 `ADF.app/Contents/Resources/LICENSES`이며 대응 소스 ZIP은 `Contents/Resources/SOURCES`, OCR 모델은 `Contents/Resources/OCR_MODELS`에 있습니다. Windows 탐색기 확장(NativeShell)과 Inno Setup 고지는 macOS 앱에 해당하지 않아 포함하지 않습니다.
+
+PyPI의 macOS용 opencv-python wheel은 FFmpeg와 x264·x265 등 GPL 영상 코덱을 함께 담고 있습니다. ADF는 영상을 다루지 않으므로 Mac 빌드는 이 wheel 대신 **ADF-ThirdParty-Sources ZIP에 들어 있는 opencv-python 원본 소스를 수정 없이, 영상 입출력을 끄고 컴파일**해 사용합니다. 이미지 코덱은 OpenCV 소스에 포함된 것만 쓰며 빌드 중 외부 구성 요소를 내려받지 않습니다. 사용한 CMake 옵션과 결과물의 SHA-256은 앱의 `build-manifest.json` 중 `opencv_build`에 기록합니다.
+
+Qt / PySide와 GEOS 등의 라이브러리는 `ADF.app/Contents/Frameworks` 아래에 독립 파일로 있습니다. 서명된 앱도 라이브러리의 서명자가 같은지 강제하지 않으므로(`com.apple.security.cs.disable-library-validation`) 사용자가 빌드한 호환 라이브러리로 교체해 실행할 수 있습니다. 파일을 바꾼 앱은 Apple 공증 상태가 유지되지 않으므로 다른 Mac에 배포하려면 다시 서명해야 합니다.
+
 ## 참고 원문
 
 - [PyMuPDF 라이선스](https://pymupdf.readthedocs.io/en/latest/about.html)

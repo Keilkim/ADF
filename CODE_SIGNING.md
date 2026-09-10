@@ -47,6 +47,18 @@ GitHub Windows Server 실행기의 실제 탐색기 메뉴 조합 검사는 [초
 
 이 워크플로는 GitHub 릴리즈를 자동 게시하거나 서명을 요청하지 않습니다. 설치한 앱의 실행 검증도 별도로 필요합니다. 기존 0.3.24 릴리즈는 로컬에서 만든 미서명 파일이며, 이 워크플로의 새 검토용 빌드와 구분합니다. SignPath의 실제 연동은 지원 승인 후 설정합니다.
 
+## macOS 서명과 공증
+
+Mac용 앱과 DMG는 Apple Developer ID Application 인증서 **SEONGHUN KIM (팀 ID TZQ9JL6R7R)**으로 서명하고 Apple 공증을 받은 뒤 배포합니다. SignPath 지원을 신청한 Windows 서명과는 별개입니다.
+
+- [Mac 빌드 스크립트](scripts/build-macos.sh)는 PyInstaller로 앱의 모든 실행 파일·라이브러리를 hardened runtime과 보안 타임스탬프로 서명하고, DMG도 같은 인증서로 서명합니다.
+- [권한 파일](installer/adf.entitlements)은 LGPL 라이브러리를 사용자가 교체할 수 있도록 라이브러리 서명자 일치 검사만 끕니다.
+- 공증은 `xcrun notarytool`로 앱과 DMG를 각각 제출하고, 승인 결과를 붙여(staple) 인터넷 없이 처음 실행해도 Gatekeeper가 확인할 수 있게 합니다.
+- 인증서 개인 키와 공증용 앱 암호는 빌드하는 Mac의 키체인에만 두며 저장소에 넣지 않습니다.
+- 서명·공증한 파일도 유지관리자가 소스·빌드 결과와 검증 기록을 확인한 뒤 수동으로 게시합니다.
+
+2026-09-10 현재 0.3.24 기준 검증용 빌드를 Developer ID로 서명했고 `codesign --verify --deep --strict`를 통과했습니다. 공증은 아직 받지 않아 Gatekeeper가 `Unnotarized Developer ID`로 거부하며, Mac용 배포 파일은 게시하지 않았습니다.
+
 ## 서명 후 배포 확인
 
 서명된 앱·탐색기 확장·설치 파일을 확인하고, 새 설치 파일을 서명한 뒤 최종 SHA-256을 생성합니다. 보안 정책을 유지한 Windows에서 설치·실행·문서 저장·도장 보관·OCR 및 업데이트를 검증합니다. 검증되지 않은 항목은 릴리즈 노트에 남깁니다. 유효한 서명이 있어도 모든 SmartScreen 경고가 즉시 사라진다고 보장하지 않습니다.

@@ -59,7 +59,11 @@ def icon(name, color='#525b6a'):
         'number': [(9,3,7,21),(17,3,15,21),(4,9,21,9),(3,16,20,16)],
         'image': [(3,3,21,3),(21,3,21,21),(21,21,3,21),(3,21,3,3),(3,17,9,11),(9,11,14,16),(14,16,17,12),(17,12,21,16)],
         'text': [(4,4,20,4),(12,4,12,21),(8,21,16,21),(4,4,4,8),(20,4,20,8)],
-        'compress': [(4,4,10,10),(10,5,10,10),(5,10,10,10),(20,20,14,14),(14,19,14,14),(19,14,14,14)],
+        # A save disk with a downward arrow at its lower right: a smaller file.
+        'compress': [(4,2,13,2),(13,2,16,5),(16,5,16,17),(16,17,2,17),(2,17,2,2),(2,2,4,2),
+                     (5,2,5,7),(5,7,12,7),(12,7,12,2),(5,17,5,12),(5,12,13,12),(13,12,13,17),
+                     (20,12,20,22),(17,19,20,22),(20,22,23,19)],
+        'number_remove': [(8,2,6,15),(14,2,12,15),(3,6,17,6),(2,11,16,11),(16,16,22,22),(22,16,16,22)],
         'left': [(15,5,8,12),(8,12,15,19)],
         'right': [(9,5,16,12),(16,12,9,19)],
         'search': [(15,15,21,21)],
@@ -188,6 +192,7 @@ QFrame#unifiedToolbar { background: #f8f9fb; border: none; }
 QFrame#unifiedToolbar QToolButton { font-size: 9pt; padding: 6px 8px; }
 QFrame#unifiedToolbar QComboBox { font-size: 9pt; padding-top: 5px; padding-bottom: 5px; }
 QFrame#toolbarSeparator { color: #dfe3e9; max-width: 1px; margin: 6px; }
+QFrame#toolbarDivider { color: #e6e8ec; max-width: 1px; margin: 9px 4px; }
 QFrame#viewGroupSeparator { background: #dfe3e9; border: none; margin: 0; }
 QDialog#compressionDialog QSpinBox:disabled, QDialog#compressionDialog QDoubleSpinBox:disabled,
 QDialog#compressionDialog QLineEdit:disabled {

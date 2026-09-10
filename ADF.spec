@@ -1,10 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
+import os
 import sys
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, copy_metadata, collect_submodules
 
 root = Path(SPECPATH)
-datas = [(str(root / 'assets'), 'assets'), (str(root / 'docs'), 'docs'), (str(root / 'LICENSES'), 'LICENSES'), (str(root / 'README.md'), '.')]
+sys.path.insert(0, str(root / 'scripts'))
+from release_common import notice_dir, version
+notices = notice_dir(root)
+if not (notices / 'build-manifest.json').is_file():
+    raise RuntimeError('Run scripts/collect-licenses.py before building the application.')
+datas = [(str(root / 'assets'), 'assets'), (str(root / 'docs'), 'docs'), (str(notices), 'LICENSES'), (str(root / 'README.md'), '.')]
 source_bundle = root / 'build' / 'source-bundle'
 if not source_bundle.is_dir() or not (source_bundle / 'SHA256SUMS.txt').is_file():
     raise RuntimeError('Run scripts/package-sources.py before building the application.')
@@ -42,8 +48,8 @@ a = Analysis(
 # QtGui's generic hook collects every installed image/input plugin, including
 # QtPdf and Virtual Keyboard. ADF uses MuPDF and ordinary desktop input, so
 # exclude those unused plugins and their QML/Quick dependency tree. Keep SVG.
-def needed_qt_entry(entry):
-    path = entry[0].replace('\\', '/').lower()
+def needed_qt_path(path):
+    path = '/' + path.replace('\\', '/').lower()
     basename = path.rsplit('/', 1)[-1]
     # OCR only decodes still images; the optional video codec DLL is unused.
     if basename.startswith('opencv_videoio_ffmpeg'):
@@ -51,17 +57,26 @@ def needed_qt_entry(entry):
     if basename.startswith(('qt6pdf', 'qt6qml', 'qt6quick', 'qt6virtualkeyboard',
                             'qpdf.', 'libqpdf.', 'qtvirtualkeyboardplugin.', 'libqtvirtualkeyboardplugin.')):
         return False
-    if any('/' + name + '.framework/' in path for name in ('qtpdf', 'qtqml', 'qtqmlmeta', 'qtqmlmodels', 'qtqmlworkerscript', 'qtquick', 'qtvirtualkeyboard')):
+    if any('/' + name + '.framework/' in path for name in ('qtpdf', 'qtqml', 'qtqmlmeta', 'qtqmlmodels', 'qtqmlworkerscript',
+                                                            'qtquick', 'qtvirtualkeyboard', 'qtvirtualkeyboardqml')):
         return False
     return True
+def needed_qt_entry(entry):
+    dest, source, typecode = entry
+    # macOS also links top-level names such as QtQml to framework binaries.
+    # Judge those links by their target too, so none is left dangling.
+    return needed_qt_path(dest) and (typecode != 'SYMLINK' or needed_qt_path(source))
 a.binaries = [entry for entry in a.binaries if needed_qt_entry(entry)]
 a.datas = [entry for entry in a.datas if needed_qt_entry(entry)]
 pyz = PYZ(a.pure)
+# macOS signs every bundled binary with the hardened runtime when a Developer ID is given, ad hoc otherwise.
+codesign_identity = (os.environ.get('ADF_CODESIGN_IDENTITY') or None) if sys.platform == 'darwin' else None
 exe = EXE(
     pyz, a.scripts, [], exclude_binaries=True, name='ADF', debug=False,
     bootloader_ignore_signals=False, strip=False, upx=False,
     console=False, disable_windowed_traceback=False,
-    argv_emulation=False, target_arch=None, codesign_identity=None, entitlements_file=None,
+    argv_emulation=False, target_arch=None, codesign_identity=codesign_identity,
+    entitlements_file=str(root / 'installer' / 'adf.entitlements') if codesign_identity else None,
     icon=str(root / 'assets' / ('adf.icns' if sys.platform == 'darwin' else 'adf.ico')),
     version=str(root / 'installer' / 'version-info.txt') if sys.platform == 'win32' else None,
 )
@@ -71,7 +86,9 @@ if sys.platform == 'darwin':
                  bundle_identifier='local.adf.pdf',
                  info_plist={
                      'CFBundleName': 'ADF', 'CFBundleDisplayName': 'ADF',
-                     'CFBundleShortVersionString': '0.3.24',
+                     'CFBundleShortVersionString': version(root), 'CFBundleVersion': version(root),
+                     # PySide6 6.11.2's arm64 modules are built for macOS 15; verify-release.py checks every binary.
+                     'LSMinimumSystemVersion': '15.0',
                      'NSHighResolutionCapable': True,
                      'CFBundleDocumentTypes': [{
                          'CFBundleTypeName': 'PDF document', 'CFBundleTypeRole': 'Editor',

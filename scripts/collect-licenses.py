@@ -2,6 +2,8 @@
 
 Only this build helper accesses the network. Cached downloads are reused. The
 source packaging step includes matching archives in the application and release.
+LICENSES records the Windows wheels. Other platforms bundle different binaries,
+so their notices are generated from their own wheels in build/licenses.
 """
 from __future__ import annotations
 
@@ -17,12 +19,12 @@ import tarfile
 import urllib.request
 
 import pymupdf
-from release_common import ocr_packages
+from release_common import notice_dir, ocr_packages, version
 
 ROOT = Path(__file__).resolve().parents[1]
-DEST = ROOT / "LICENSES"
+DEST = notice_dir(ROOT)
 CACHE = ROOT / ".tools" / "sources"
-DEST.mkdir(exist_ok=True)
+VERSION = version(ROOT)
 CACHE.mkdir(parents=True, exist_ok=True)
 
 
@@ -38,7 +40,25 @@ def fetch(url: str, target: Path, sha256: str | None = None) -> Path:
     return target
 
 
+def prepare_destination() -> None:
+    committed = ROOT / "LICENSES"
+    if DEST == committed:
+        DEST.mkdir(exist_ok=True)
+        return
+    if DEST.is_symlink() or DEST.resolve() != ROOT.resolve() / "build" / "licenses":
+        raise RuntimeError("Generated notices must stay in build/licenses")
+    if DEST.exists():
+        shutil.rmtree(DEST)
+    DEST.mkdir(parents=True)
+    # Reuse the guides and shared licence texts. Package notices are collected from this
+    # platform's wheels below; the Windows Python and installer licences do not apply.
+    for source in committed.iterdir():
+        if source.is_file() and source.name not in ("build-manifest.json", "Python-LICENSE.txt", "Inno-Setup-LICENSE.txt"):
+            shutil.copyfile(source, DEST / source.name)
+
+
 def main() -> None:
+    prepare_destination()
     if sys.platform == "win32":
         native = DEST / "NativeShell"
         native.mkdir(exist_ok=True)
@@ -52,7 +72,12 @@ def main() -> None:
     packages += [name for name in ocr_packages(ROOT) if name.lower() not in {entry.lower() for entry in packages}]
     installed = {}
     for name in packages:
-        dist = importlib.metadata.distribution(name)
+        try:
+            dist = importlib.metadata.distribution(name)
+        except importlib.metadata.PackageNotFoundError:
+            # Platform-specific dependencies, such as colorama which only Windows installs, are not bundled.
+            print(f"Skipping {name}: not installed on this platform", flush=True)
+            continue
         installed[name] = dist.version
         target_dir = DEST / name
         target_dir.mkdir(exist_ok=True)
@@ -75,6 +100,8 @@ def main() -> None:
         "Inno-Setup-LICENSE.txt": f"{upstream}/jrsoftware/issrc/is-6_7_3/license.txt",
         "PaddleOCR-APACHE-2.0.txt": f"{upstream}/PaddlePaddle/PaddleOCR/v3.3.3/LICENSE",
     }
+    if sys.platform != "win32":
+        del texts["Inno-Setup-LICENSE.txt"]
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
         list(pool.map(lambda item: fetch(item[1], DEST / item[0]), texts.items()))
 
@@ -87,7 +114,10 @@ def main() -> None:
         'rapidocr': ('RapidAI/RapidOCR', '095232a4c94f7f0e6600ba5bba1177010ad696d4'),
     }
     for package in dict.fromkeys(['pymupdf', 'pillow', 'fonttools', *ocr_packages(ROOT)]):
-        version = importlib.metadata.version(package)
+        try:
+            version = importlib.metadata.version(package)
+        except importlib.metadata.PackageNotFoundError:
+            continue
         if package in git_sources:
             repo, commit = git_sources[package]
             sources.append(dict(name=package, version=version, commit=commit,
@@ -129,7 +159,7 @@ def main() -> None:
     upstream_output = DEST / "upstream"
     if upstream_output.exists():
         resolved = upstream_output.resolve()
-        if not resolved.is_relative_to(ROOT.resolve()) or resolved != (ROOT.resolve() / "LICENSES" / "upstream"):
+        if not resolved.is_relative_to(ROOT.resolve()) or resolved != (notice_dir(ROOT.resolve()) / "upstream"):
             raise RuntimeError("Generated notice cleanup escaped the project directory")
         for directory, folders, files in os.walk(upstream_output):
             for path in [Path(directory), *(Path(directory)/name for name in folders+files)]:
@@ -160,7 +190,7 @@ def main() -> None:
         print(f"Collecting notices from {source['name']}", flush=True)
         with tarfile.open(CACHE / source["filename"], "r:*") as archive:
             notices(archive, DEST / "upstream" / source["name"])
-    manifest = {"application": "ADF", "version": "0.3.24", "python": sys.version,
+    manifest = {"application": "ADF", "version": VERSION, "python": sys.version,
                 "packages": installed, "source_archives": sources,
                 "license_text_sources": texts, "library_modifications": "None; official upstream wheels are bundled."}
     sys.path.insert(0, str(ROOT))
@@ -173,7 +203,7 @@ def main() -> None:
                          'https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec'])
     if sys.platform == "win32":
         manifest["native_shell"] = {
-            "version": "0.3.24", "source": "native-shell/",
+            "version": VERSION, "source": "native-shell/",
             "toolchain": "LLVM-MinGW 20260826 (LLVM 23.1.0)",
             "toolchain_source": "https://github.com/mstorsjo/llvm-mingw/tree/20260826",
             "llvm_source": "https://github.com/llvm/llvm-project/tree/llvmorg-23.1.0",
@@ -181,6 +211,15 @@ def main() -> None:
             "linkage": "Static C++ runtime; Windows system DLLs only",
             "runtime_notices": "NativeShell/",
         }
+    if sys.platform == "darwin":
+        record = ROOT / ".tools" / "opencv-macos" / "build.json"
+        opencv = json.loads(record.read_text(encoding="utf-8")) if record.is_file() else {}
+        if opencv.get("version") != installed.get("opencv-python"):
+            raise RuntimeError("Run scripts/build-opencv-macos.py before collecting notices")
+        manifest["library_modifications"] = (
+            "None to library source code. OpenCV is compiled without video I/O from the unmodified opencv-python "
+            "source archive in source_archives (see opencv_build); the other libraries are official upstream wheels.")
+        manifest["opencv_build"] = opencv
     (DEST / "build-manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print("Licenses and matching source archives ready.", flush=True)
 
