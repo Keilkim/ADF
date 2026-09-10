@@ -52,21 +52,21 @@
           파일은 내 컴퓨터에 그대로.
         </p>
         <div class="hero-actions">
-          <a class="button primary" href="#download-windows"
+          <a class="button primary" href="#download-macos"
+            ><svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="5" y="4" width="14" height="12" rx="2" />
+              <path d="m5 16-3 4h20l-3-4M10 18h4" /></svg
+            >macOS용 다운로드</a
+          ><a class="button secondary" href="#download-windows"
             ><svg viewBox="0 0 24 24" aria-hidden="true">
               <path
                 d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"
               /></svg
-            >Windows용 다운로드</a
-          ><a class="button secondary" href="#download-macos"
-            ><svg viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="5" y="4" width="14" height="12" rx="2" />
-              <path d="m5 16-3 4h20l-3-4M10 18h4" /></svg
-            >macOS용 <span class="button-status">준비 중</span></a
+            >Windows용 <span class="button-status">서명 준비 중</span></a
           >
         </div>
         <p class="hero-meta">
-          Windows 0.3.24 사전 버전 <span>·</span> macOS 배포 준비 중
+          macOS 0.3.25 <span>·</span> Windows는 코드 서명 후 제공
         </p>
         <figure class="app-preview">
           <img
@@ -194,35 +194,35 @@
                 <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" />
               </svg>
               <h3 id="windows-title">Windows</h3>
-              <p class="platform-status">0.3.24 사전 버전</p>
-              <p class="platform-description">
-                Python, 라이브러리, OCR 모델까지<br />설치 파일 하나에 모두
-                담았습니다.
+              <p class="platform-status">코드 서명 준비 중</p>
+              <p class="platform-description" id="windows-release-status">
+                코드 서명을 받은 뒤<br />이곳에서 다시 내려받을 수 있습니다.
               </p>
-              <div class="release-note" id="windows-release-status">
-                <strong>코드 서명 준비 중</strong>
+              <div class="release-note">
+                <strong>다운로드 일시 중지</strong>
                 <p>
-                  현재 설치 파일은 서명되지 않았으며 스마트 앱 컨트롤에 의해
-                  차단될 수 있습니다. 소스 자동 검사는 통과했지만 최종 설치·실행
-                  검증은 완료되지 않았습니다.
+                  서명되지 않은 설치 파일은 스마트 앱 컨트롤에 의해 차단될 수
+                  있어 다운로드를 멈췄습니다. 오픈소스 코드 서명 지원을 신청해
+                  심사를 기다리고 있습니다.
                 </p>
-                <a href="https://github.com/Keilkim/ADF/releases/tag/v0.3.24"
-                  >검증 상태와 변경 내용 <span aria-hidden="true">↗</span></a
+                <a href="/code-signing"
+                  >코드 서명 현황 <span aria-hidden="true">↗</span></a
                 >
               </div>
               <div class="platform-action">
-                <a
-                  class="button primary download-file"
+                <button
+                  class="button secondary"
+                  type="button"
+                  disabled
                   aria-describedby="windows-release-status"
-                  href="https://github.com/Keilkim/ADF/releases/download/v0.3.24/ADF-Setup-0.3.24.exe"
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4" /></svg
                   >Windows용 다운로드
-                </a>
+                </button>
                 <p class="download-meta">
-                  Windows 10 1809 이상 · Windows 11<br />Intel/AMD x64 · 1.01 GB
-                  · EXE<br />2026.09.10
+                  Windows 10 1809 이상 · Windows 11<br />Intel/AMD x64<br />코드
+                  서명 후 제공
                 </p>
               </div>
             </article>
@@ -236,25 +236,33 @@
                 <path d="m5 16-3 4h20l-3-4M10 18h4" />
               </svg>
               <h3 id="macos-title">macOS</h3>
-              <p class="platform-status">배포 준비 중</p>
-              <p class="platform-description" id="macos-release-status">
-                macOS용 설치 파일은 아직 제공하지 않습니다.<br />준비되면
-                이곳에서 내려받을 수 있습니다.
+              <p class="platform-status">0.3.25</p>
+              <p class="platform-description">
+                Python, 라이브러리, OCR 모델까지<br />앱 하나에 모두
+                담았습니다.
               </p>
+              <div class="release-note" id="macos-release-status">
+                <strong>Apple 공증 완료</strong>
+                <p>
+                  Developer ID로 서명하고 Apple 공증을 받았습니다. DMG를 열고
+                  ADF를 응용 프로그램 폴더로 끌어 놓아 설치합니다.
+                </p>
+                <a href="https://github.com/Keilkim/ADF/releases/tag/v0.3.25"
+                  >검증 상태와 변경 내용 <span aria-hidden="true">↗</span></a
+                >
+              </div>
               <div class="platform-action">
-                <button
-                  class="button secondary"
-                  type="button"
-                  disabled
+                <a
+                  class="button primary download-file"
                   aria-describedby="macos-release-status"
+                  href="https://github.com/Keilkim/ADF/releases/download/v0.3.25/ADF-0.3.25-macOS.dmg"
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4" /></svg
                   >macOS용 다운로드
-                </button>
+                </a>
                 <p class="download-meta">
-                  현재 다운로드할 수 있는 파일이 없습니다.<br />지원 기종과
-                  시스템 요구사항은<br />배포 시 함께 안내합니다.
+                  macOS 15 이상<br />Apple Silicon(M1 이후) · 1.01 GB · DMG<br />2026.09.11
                 </p>
               </div>
             </article>
@@ -262,13 +270,13 @@
           <div class="release-links">
             <a href="/code-signing">Code signing policy</a>
             <a
-              href="https://github.com/Keilkim/ADF/releases/download/v0.3.24/ADF-Source-0.3.24.zip"
+              href="https://github.com/Keilkim/ADF/releases/download/v0.3.25/ADF-Source-0.3.25-macOS.zip"
               >대응 소스</a
             ><a
-              href="https://github.com/Keilkim/ADF/releases/download/v0.3.24/ADF-ThirdParty-Sources-0.3.24.zip"
+              href="https://github.com/Keilkim/ADF/releases/download/v0.3.25/ADF-ThirdParty-Sources-0.3.25-macOS.zip"
               >외부 라이브러리 소스</a
             ><a
-              href="https://github.com/Keilkim/ADF/releases/download/v0.3.24/SHA256SUMS-0.3.24.txt"
+              href="https://github.com/Keilkim/ADF/releases/download/v0.3.25/SHA256SUMS-0.3.25-macOS.txt"
               >SHA-256</a
             >
           </div>
@@ -288,9 +296,10 @@
           <details>
             <summary>macOS에서도 사용할 수 있나요?</summary>
             <p>
-              현재 다운로드할 수 있는 설치 파일은 Windows용입니다. macOS용은
-              아직 배포 파일과 동작 검증이 준비되지 않았습니다. 준비되면
-              <a href="#download-macos">macOS 다운로드</a>에서 안내합니다.
+              네. Apple Silicon Mac(M1 이후)의 macOS 15 이상에서 쓸 수
+              있습니다. Intel Mac은 OCR 구성 요소가 지원하지 않아 제공하지
+              않습니다. <a href="#download-macos">macOS 다운로드</a>에서
+              받으세요.
             </p>
           </details>
           <details>
@@ -304,9 +313,10 @@
           <details>
             <summary>설치 파일이 차단되면 어떻게 하나요?</summary>
             <p>
-              현재 사전 버전에는 코드 서명이 없습니다. Windows 보안 안내를
-              따르고, 서명과 설치 검증을 마친 배포본을 기다려 주세요. GitHub
-              릴리즈에 검증 진행 상태를 안내합니다.
+              macOS 앱은 Apple 공증을 받아 차단 없이 열립니다. Windows 설치
+              파일은 코드 서명을 받을 때까지 다운로드를 멈췄습니다. 진행 상황은
+              <a href="/code-signing">코드 서명 안내</a>와 GitHub 릴리즈에서
+              안내합니다.
             </p>
           </details>
           <details>
