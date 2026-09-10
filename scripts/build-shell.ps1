@@ -1,6 +1,7 @@
 param(
     [string]$Compiler = '',
-    [switch]$SkipTests
+    [switch]$SkipTests,
+    [switch]$ComponentTestsOnly
 )
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path -Parent $PSScriptRoot
@@ -45,6 +46,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Native shell harness compilation failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Native request fixture compilation failed.' }
 if (-not $SkipTests) {
     $harnessArgs = '"{0}" "{1}"' -f (Join-Path $output 'ADFShell.dll'), (Join-Path $output 'request-sink.exe')
+    if ($ComponentTestsOnly) { $harnessArgs += ' --component-only' }
     $harnessLog = Join-Path $output 'shell-tests.log'
     $harnessError = Join-Path $output 'shell-tests-error.log'
     $harness = Start-Process -FilePath (Join-Path $output 'shell-tests.exe') -ArgumentList $harnessArgs -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $harnessLog -RedirectStandardError $harnessError

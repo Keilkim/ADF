@@ -54,9 +54,26 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Source tests failed.' }
 
       - name: Build native extension, app and unsigned installer
-        run: ./scripts/build-windows.ps1 -SkipDependencies
+        run: ./scripts/build-windows.ps1 -SkipDependencies -NativeComponentTestsOnly
+
+      # This remains visible even if Windows Server cannot assemble the menu.
+      # A successful review build does not certify Windows 10/11 installation.
+      - name: Check Windows-assembled Explorer menus
+        id: explorer
+        continue-on-error: true
+        run: |
+          $native = Join-Path $env:GITHUB_WORKSPACE 'build/native-shell'
+          $arguments = '"{0}" "{1}"' -f (Join-Path $native 'ADFShell.dll'), (Join-Path $native 'request-sink.exe')
+          $process = Start-Process -FilePath (Join-Path $native 'shell-tests.exe') -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput .tools/ci/explorer-menu.log -RedirectStandardError .tools/ci/explorer-menu-error.log
+          Get-Content -LiteralPath .tools/ci/explorer-menu.log
+          if ($process.ExitCode -ne 0) {
+            Get-Content -LiteralPath .tools/ci/explorer-menu-error.log
+            throw 'Explorer menu validation failed; Windows 10/11 release validation remains required.'
+          }
 
       - name: Verify packaged source, resources and checksums
+        env:
+          EXPLORER_CHECK: ${{ steps.explorer.outcome }}
         run: |
           & .venv/Scripts/python.exe scripts/verify-release.py --report .tools/ci/release-verification.json
           if ($LASTEXITCODE -ne 0) { throw 'Release verification failed.' }
@@ -68,6 +85,8 @@ jobs:
             run_url = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
             run_attempt = $env:GITHUB_RUN_ATTEMPT
             signing_status = 'unsigned; Foundation approval and integration pending'
+            explorer_menu_check = $env:EXPLORER_CHECK
+            release_validation_complete = $false
             installed_app_verification = 'not performed by this workflow'
           } | ConvertTo-Json | Set-Content -LiteralPath .tools/ci/build-origin.json -Encoding utf8
 
@@ -94,6 +113,7 @@ jobs:
         env:
           ARTIFACT_URL: ${{ steps.unsigned.outputs.artifact-url }}
           ARTIFACT_ID: ${{ steps.unsigned.outputs.artifact-id }}
+          EXPLORER_CHECK: ${{ steps.explorer.outcome }}
         run: |
           @(
             'Unsigned Windows build for review. No release has been published.',
@@ -102,10 +122,11 @@ jobs:
             "Artifact ID: $env:ARTIFACT_ID",
             "Artifact: $env:ARTIFACT_URL",
             '',
-            'Source/OCR tests, native integration tests and static package verification passed.',
+            'Source/OCR tests, native component tests and static package verification passed.',
+            "Windows-assembled Explorer menu check: $env:EXPLORER_CHECK",
             'Artifact contains ADF-owned signing inputs, corresponding source and verification records.',
             'The full installer was verified but is not retained in this review artifact.',
-            'The installed/frozen application has not been exercised by this workflow.',
+            'RELEASE VALIDATION INCOMPLETE: Windows 10/11 Explorer and installed/frozen app validation are still required.',
             'Code signing requires Foundation approval, integration and manual release approval.'
           ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
 

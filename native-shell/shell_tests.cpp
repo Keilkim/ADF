@@ -322,7 +322,8 @@ int wmain(int argc, wchar_t** argv) {
             std::printf("PASS actual app handoff (%zu PDFs)\n", paths.size());
             return 0;
         }
-        Check(argc == 3, "Usage: shell-tests.exe <ADFShell.dll> <request-sink.exe>");
+        const bool componentOnly = argc == 4 && wcscmp(argv[3], L"--component-only") == 0;
+        Check(argc == 3 || componentOnly, "Usage: shell-tests.exe <ADFShell.dll> <request-sink.exe> [--component-only]");
         std::wstring dll = argv[1];
         const auto parent = dll.substr(0, dll.find_last_of(L"\\/"));
         const std::wstring fixture = parent + L"\\fixture 한글 ' & (메뉴) " + std::to_wstring(GetCurrentProcessId());
@@ -337,9 +338,13 @@ int wmain(int argc, wchar_t** argv) {
         const std::wstring folder = fixture + L"\\폴더.pdf";
         MakeFile(one); MakeFile(two); MakeFile(text);
         Check(CreateDirectoryW(folder.c_str(), nullptr) != FALSE, "Create directory named .pdf");
-        ShellAssembledMenu(testDll, fixture, {one.substr(fixture.size() + 1)}, L"ADF로 PDF 분할…");
-        ShellAssembledMenu(testDll, fixture, {two.substr(fixture.size() + 1), one.substr(fixture.size() + 1)}, L"ADF로 PDF 병합…");
-        ShellAssembledMenu(testDll, fixture, {one.substr(fixture.size() + 1), text.substr(fixture.size() + 1)}, nullptr);
+        if (componentOnly) {
+            std::printf("SCOPE: component tests only; Windows-assembled Explorer menus are not checked in this invocation.\n");
+        } else {
+            ShellAssembledMenu(testDll, fixture, {one.substr(fixture.size() + 1)}, L"ADF로 PDF 분할…");
+            ShellAssembledMenu(testDll, fixture, {two.substr(fixture.size() + 1), one.substr(fixture.size() + 1)}, L"ADF로 PDF 병합…");
+            ShellAssembledMenu(testDll, fixture, {one.substr(fixture.size() + 1), text.substr(fixture.size() + 1)}, nullptr);
+        }
         {
             Library library(testDll);
             {
@@ -414,7 +419,7 @@ int wmain(int argc, wchar_t** argv) {
         Check(RemoveDirectoryW(folder.c_str()) != FALSE, "Remove empty PDF-named folder");
         Check(RemoveDirectoryW(fixture.c_str()) != FALSE, "Remove empty unique test fixture");
         CoUninitialize();
-        std::printf("PASS native Explorer integration: %d assertions; real COM selection matrix, owner-only request ACL, Unicode handoff, 512-file single-process invoke.\n", checks);
+        std::printf("PASS native %s: %d assertions; real COM selection matrix, owner-only request ACL, Unicode handoff, 512-file single-process invoke.\n", componentOnly ? "component tests (Explorer menu assembly excluded)" : "Explorer integration", checks);
         return 0;
     } catch (const std::exception& error) { std::fprintf(stderr, "FAIL: %s (after %d assertions)\n", error.what(), checks); return 1; }
 }

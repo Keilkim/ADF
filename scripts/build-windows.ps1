@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$SkipDependencies, [switch]$SkipInstaller)
+param([switch]$SkipDependencies, [switch]$SkipInstaller, [switch]$NativeComponentTestsOnly)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $repoRoot
@@ -14,7 +14,7 @@ if (-not $SkipDependencies) {
 }
 & $pythonPath scripts/make-icon.py
 if ($LASTEXITCODE -ne 0) { throw 'Icon generation failed.' }
-& "$PSScriptRoot\build-shell.ps1"
+& "$PSScriptRoot\build-shell.ps1" -ComponentTestsOnly:$NativeComponentTestsOnly
 if ($LASTEXITCODE -ne 0) { throw 'Native Explorer extension build failed.' }
 & $pythonPath scripts/prepare-ocr.py
 if ($LASTEXITCODE -ne 0) { throw 'OCR model preparation failed.' }

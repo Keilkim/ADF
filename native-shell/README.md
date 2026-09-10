@@ -85,6 +85,19 @@ the temporary key are removed afterward. These checks do not alter the user's
 actual file associations or register the DLL with Explorer. Explorer is never
 restarted.
 
+The optional `--component-only` harness argument runs the direct COM, menu
+bitmap, selection, parser and request-handoff checks without the separate
+Windows-assembled menu checks. `build-shell.ps1 -ComponentTestsOnly` and
+`build-windows.ps1 -NativeComponentTestsOnly` select that scope explicitly;
+the default remains the complete suite.
+
+The GitHub Windows Server review workflow uses component checks as a build
+gate and still runs the complete harness in a separate, non-blocking step.
+Its Explorer menu assembly check failed on the initial hosted run. The
+outcome is recorded in the job summary and build-origin JSON, including
+failures. A successful review build does not establish correct Explorer
+integration or installation on supported Windows 10/11 clients.
+
 For a controlled real-application handoff check:
 
 ```powershell
