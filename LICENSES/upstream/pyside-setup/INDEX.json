@@ -1,0 +1,23 @@
+{
+  "da54f155d246-LicenseRef-Qt-Commercial.txt.txt": "pyside-setup-everywhere-src-6.11.2/LICENSES/LicenseRef-Qt-Commercial.txt",
+  "c19b8b368854-license.txt.txt": "pyside-setup-everywhere-src-6.11.2/examples/datavisualization/graphgallery/data/license.txt",
+  "2ca33d3c67a4-qt_attribution.json.txt": "pyside-setup-everywhere-src-6.11.2/examples/demos/colorpaletteclient/icons/qt_attribution.json",
+  "edf9fa6df438-license.txt.txt": "pyside-setup-everywhere-src-6.11.2/examples/graphs/3d/widgetgraphgallery/data/license.txt",
+  "ac73aa873e0e-COPYING.txt": "pyside-setup-everywhere-src-6.11.2/examples/webenginequick/nanobrowser/icons/3rdparty/COPYING",
+  "2467072105cf-qt_attribution.json.txt": "pyside-setup-everywhere-src-6.11.2/examples/webenginewidgets/markdowneditor/resources/3rdparty/qt_attribution.json",
+  "8ddd451c4c11-COPYING.txt": "pyside-setup-everywhere-src-6.11.2/examples/webenginewidgets/simplebrowser/data/3rdparty/COPYING",
+  "19ed94fa124e-qt_attribution.json.txt": "pyside-setup-everywhere-src-6.11.2/examples/webenginewidgets/simplebrowser/data/3rdparty/qt_attribution.json",
+  "ab35a0a1b418-licensewizard.png.txt": "pyside-setup-everywhere-src-6.11.2/examples/widgets/dialogs/licensewizard/doc/licensewizard.png",
+  "8390fd3b69e1-licensewizard.rst.txt": "pyside-setup-everywhere-src-6.11.2/examples/widgets/dialogs/licensewizard/doc/licensewizard.rst",
+  "867ced23ebc1-licensewizard.py.txt": "pyside-setup-everywhere-src-6.11.2/examples/widgets/dialogs/licensewizard/licensewizard.py",
+  "70a9f8f15062-licensewizard.pyproject.txt": "pyside-setup-everywhere-src-6.11.2/examples/widgets/dialogs/licensewizard/licensewizard.pyproject",
+  "09fe2beab030-COPYING.txt": "pyside-setup-everywhere-src-6.11.2/sources/pyside6/COPYING",
+  "c5f0ae62e7b0-licensecomment.txt.txt": "pyside-setup-everywhere-src-6.11.2/sources/pyside6/PySide6/licensecomment.txt",
+  "039dbb903aa3-COPYING.txt": "pyside-setup-everywhere-src-6.11.2/sources/shiboken6/COPYING",
+  "a7c686684455-COPYING.libsample.txt": "pyside-setup-everywhere-src-6.11.2/sources/shiboken6/COPYING.libsample",
+  "0fbfe83c5f91-COPYING.libshiboken.txt": "pyside-setup-everywhere-src-6.11.2/sources/shiboken6/COPYING.libshiboken",
+  "a54f5dae7c06-qt_attribution.json.txt": "pyside-setup-everywhere-src-6.11.2/sources/shiboken6/libshiboken/qt_attribution.json",
+  "0784bfe95a0c-qt_attribution.json.txt": "pyside-setup-everywhere-src-6.11.2/sources/shiboken6/shibokenmodule/files.dir/shibokensupport/signature/qt_attribution.json",
+  "9809a60bbd0e-COPYING.txt": "pyside-setup-everywhere-src-6.11.2/sources/shiboken6_generator/ApiExtractor/COPYING",
+  "c27011a76523-license_check.py.txt": "pyside-setup-everywhere-src-6.11.2/tools/license_check.py"
+}

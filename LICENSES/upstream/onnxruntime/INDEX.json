@@ -1,0 +1,9 @@
+{
+  "28b279843d46-LICENSE.txt": "onnxruntime-2e2543fbe9fae542f921d47a72d21d5a4ef0b710/LICENSE",
+  "ae25d3fe4d4b-LICENSE-IMAGE.txt.txt": "onnxruntime-2e2543fbe9fae542f921d47a72d21d5a4ef0b710/dockerfiles/LICENSE-IMAGE.txt",
+  "a6ae45d794d5-LICENSE-APACHE.txt": "onnxruntime-2e2543fbe9fae542f921d47a72d21d5a4ef0b710/rust/LICENSE-APACHE",
+  "eaf62e0e7574-LICENSE-MIT.txt": "onnxruntime-2e2543fbe9fae542f921d47a72d21d5a4ef0b710/rust/LICENSE-MIT",
+  "f35ba256c0f8-LICENSE.md.txt": "onnxruntime-2e2543fbe9fae542f921d47a72d21d5a4ef0b710/winml/test/collateral/images/LICENSE.md",
+  "52ce3c9075d0-LICENSE.md.txt": "onnxruntime-2e2543fbe9fae542f921d47a72d21d5a4ef0b710/winml/test/collateral/models/LICENSE.md",
+  "36a28608757d-LICENSE.md.txt": "onnxruntime-2e2543fbe9fae542f921d47a72d21d5a4ef0b710/winml/test/scenario/models/LICENSE.md"
+}

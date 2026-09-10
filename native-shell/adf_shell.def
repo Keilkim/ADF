@@ -1,0 +1,4 @@
+LIBRARY ADFShell
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE

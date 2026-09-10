@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADF 오픈소스 라이선스</title>
+<style>body{max-width:800px;margin:48px auto;padding:0 24px 48px;font:16px/1.8 "Segoe UI","Malgun Gothic",sans-serif;color:#28313e;background:#f6f7f9}section{background:#fff;padding:22px 28px;margin:18px 0;border:1px solid #e0e4eb;border-radius:12px}h1{font-size:30px}h2{font-size:21px;margin:0 0 12px}a{color:#2463e8}td,th{text-align:left;vertical-align:top;padding:8px 14px 8px 0}small{color:#667180}</style>
+<h1>ADF 오픈소스 라이선스</h1>
+<p>ADF는 오픈소스 구성 요소를 사용합니다. 아래 원문과 소스 파일은 프로그램과 함께 설치되며 인터넷 없이 확인할 수 있습니다. 앱의 <strong>도움말 → 오픈소스 라이선스</strong>에서는 모든 구성 요소의 원문을 검색해서 읽을 수 있습니다.</p>
+<section><h2>프로그램의 라이선스</h2><p>새로 작성한 ADF 코드와 탐색기 확장 코드는 <strong>GNU AGPL v3 이상</strong>으로 제공합니다. 해당 조건에 따라 사용·수정·재배포할 수 있으며 보증 없이 제공됩니다. 사용자가 제공한 명세와 외부 구성 요소에는 각 권리자의 조건이 적용됩니다.</p><p><a href="AGPL-3.0.txt">AGPL 전문</a> · <a href="../SOURCES/">설치된 버전의 소스 ZIP</a> · <a href="../docs/사용안내.html">사용안내</a></p></section>
+<section><h2>주요 구성 요소와 원문</h2><table><tr><th>구성 요소</th><th>적용 조건 / 원문</th></tr>
+<tr><td>PyMuPDF / MuPDF</td><td>Artifex 및 기여자 · 이 빌드는 <a href="AGPL-3.0.txt">AGPL</a> 배포판을 사용합니다.</td></tr>
+<tr><td>Qt / PySide6 / Shiboken6</td><td>The Qt Company 및 기여자 · <a href="LGPL-3.0.txt">LGPL v3</a>, <a href="GPL-3.0.txt">참조되는 GPL v3</a> 및 구성 요소별 조건. 동적 라이브러리의 수정·교체와 그 디버깅을 위한 역공학을 허용합니다.</td></tr>
+<tr><td>RapidOCR / RapidLayout / RapidTable · PaddleOCR 모델</td><td>Apache-2.0 · <a href="PaddleOCR-APACHE-2.0.txt">모델 원문</a>. PaddlePaddle 및 RapidAI의 모델을 설치 파일에 포함합니다.</td></tr>
+<tr><td>ONNX Runtime</td><td><a href="onnxruntime/onnxruntime/LICENSE">MIT</a> · <a href="onnxruntime/onnxruntime/ThirdPartyNotices.txt">외부 구성 요소 고지</a></td></tr>
+<tr><td>OpenCV / NumPy / Shapely / GEOS</td><td>패키지별 원문 및 대응 소스 동봉. GEOS는 <a href="shapely/licenses/LICENSE_GEOS">LGPL-2.1</a>이며 라이브러리 수정·교체와 그 디버깅을 위한 역공학을 허용합니다.</td></tr>
+<tr><td>Python</td><td><a href="Python-LICENSE.txt">Python 라이선스와 저작권 고지</a></td></tr>
+<tr><td>Pillow</td><td><a href="Pillow/licenses/LICENSE">MIT-CMU 및 포함 구성 요소 고지</a></td></tr>
+<tr><td>fontTools</td><td><a href="fonttools/licenses/LICENSE">MIT</a> · <a href="fonttools/licenses/LICENSE.external">외부 구성 요소</a></td></tr>
+<tr><td>PyInstaller</td><td><a href="PyInstaller/licenses/COPYING.txt">GPL 및 생성 앱에 관한 부트로더 예외</a></td></tr>
+<tr><td>Inno Setup</td><td><a href="Inno-Setup-LICENSE.txt">설치 프로그램 고지</a></td></tr>
+<tr><td>탐색기 확장 런타임</td><td><a href="NativeShell/">LLVM / MinGW 구성 요소별 원문</a></td></tr></table>
+<p>추가 원문은 앱의 라이선스 목차에서 확인하세요. 정확한 버전과 원본 출처는 <a href="build-manifest.json">빌드 기록</a>에 있습니다.</p></section>
+<section><h2>소스코드와 다시 빌드하기</h2><p>직원에게는 정식 설치 EXE 하나만 전달하세요. 소스 묶음도 안에 포함되어 함께 설치됩니다. 앱의 도움말 → 소스코드에서 압축 프로그램 없이 읽고 원본을 저장할 수 있습니다.</p><p><a href="../SOURCES/">SOURCES 폴더</a>에는 현재 버전의 ADF-Source ZIP, ADF-ThirdParty-Sources ZIP과 SHA256SUMS.txt가 들어 있습니다. ADF 소스 ZIP의 README에 빌드 방법이 있으며 외부 소스에는 해당 프로젝트의 빌드 문서가 들어 있습니다.</p><p>배포할 때는 안내·고지·소스가 포함된 정식 설치 파일을 전달하세요. 설치된 ADF.exe 하나만 따로 복사하면 실행에 필요한 파일이 빠집니다. 이 안내가 모든 배포 형태에 대한 법률 검토를 대신하지는 않습니다.</p></section>
+<small>외부 참고: <a href="https://pymupdf.readthedocs.io/en/latest/about.html#license-and-copyright">PyMuPDF 라이선스</a> · <a href="https://www.qt.io/development/open-source-lgpl-obligations">Qt 안내</a> · <a href="https://www.gnu.org/licenses/gpl-faq.html#InternalDistribution">GNU 조직 내부 사용 FAQ</a></small></html>

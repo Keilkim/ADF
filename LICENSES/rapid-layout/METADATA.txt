@@ -1,0 +1,30 @@
+Metadata-Version: 2.1
+Name: rapid-layout
+Version: 1.2.1
+Summary: Tools for document layout analysis based ONNXRuntime.
+Home-page: https://github.com/RapidAI/RapidLayout
+Author: SWHL
+Author-email: liekkaskono@163.com
+License: Apache-2.0
+Keywords: ppstructure,layout,rapidocr,rapid_layout
+Platform: Any
+Classifier: Programming Language :: Python :: 3.6
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Requires-Python: >=3.6
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: Pillow
+Requires-Dist: colorlog
+Requires-Dist: numpy >=2.0.0
+Requires-Dist: omegaconf
+Requires-Dist: opencv-python >=4.5.1.48
+Requires-Dist: requests
+Requires-Dist: tqdm
+
+See [link](https://github.com/RapidAI/RapidLayout) for details.

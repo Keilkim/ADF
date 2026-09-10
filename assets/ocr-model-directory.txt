@@ -1,0 +1,1 @@
+Model weights are installed once, in OCR_MODELS. This folder needs no downloads.

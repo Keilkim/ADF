@@ -1,0 +1,10 @@
+# Python 3.12, tested Windows x64. Build-time download only; installed app is offline.
+-c requirements-ocr-lock.txt
+PySide6==6.11.2
+PyMuPDF==1.28.2
+Pillow==12.3.0
+fonttools==4.64.0
+rapidocr==3.9.2
+rapid-layout==1.2.1
+rapid-table==3.0.2
+onnxruntime==1.29.0
