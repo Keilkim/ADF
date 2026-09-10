@@ -1,6 +1,6 @@
 # ADF
 
-[소스코드](https://github.com/Keilkim/ADF) · [Windows 사전 릴리즈](https://github.com/Keilkim/ADF/releases/tag/v0.3.24) · [기여 안내](CONTRIBUTING.md) · [코드 서명 현황](CODE_SIGNING.md)
+[공식 사이트·다운로드](https://adf-desktop.vercel.app) · [소스코드](https://github.com/Keilkim/ADF) · [Windows 사전 릴리즈](https://github.com/Keilkim/ADF/releases/tag/v0.3.24) · [기여 안내](CONTRIBUTING.md) · [코드 서명 현황](CODE_SIGNING.md)
 
 **현재 배포 상태:** 0.3.24는 서명되지 않은 사전 버전입니다. 소스 자동 검사는 통과했지만 Windows Application Control이 최종 설치 파일과 앱 EXE를 차단하여 설치·실행 검증은 완료되지 않았습니다. 자세한 상태와 대응 소스는 해당 릴리즈에서 제공합니다.
 

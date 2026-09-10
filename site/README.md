@@ -2,6 +2,8 @@
 
 데스크톱 앱 소개·다운로드·사용안내용 정적 사이트입니다. PDF 편집이나 도장 업로드 기능은 없습니다. 외부 폰트, 분석 SDK, 프레임워크 의존성이 없습니다.
 
+- 공개 사이트: https://adf-desktop.vercel.app
+- Vercel 프로젝트: `adf-desktop`. 현재 CLI로 게시하며 GitHub 커밋만으로 자동 재배포되지는 않습니다.
 - 소스: https://github.com/Keilkim/ADF
 - 설치 파일: GitHub Releases의 버전별 자산으로 제공
 - 호스팅: Vercel, 프로젝트 루트 `site`, Framework Preset `Other`, 빌드·설치 명령 없음
