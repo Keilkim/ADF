@@ -105,7 +105,7 @@ QT_QPA_PLATFORM=offscreen dist/ADF.app/Contents/MacOS/ADF \
 2026-09-10, macOS 26.3.1 Apple Silicon Mac, Python 3.12.14 기준입니다.
 
 - 소스 검사: 260개 통과, 3개 건너뜀(Windows 전용), 세부 검사 112개 통과. Windows 글꼴을 전제로 멈추거나 실패하던 검사 2개(`test_inline_click_type_ime_font_and_final_save_on_lightweight_pdf`, `test_real_offline_korean_scan_layout_table_and_images`)는 각 운영체제의 한글 시스템 글꼴을 쓰도록 고쳤습니다.
-- 서명: 검증용 빌드를 `Developer ID Application: SEONGHUN KIM (TZQ9JL6R7R)`으로 hardened runtime과 보안 타임스탬프를 적용해 서명했고 `codesign --verify --deep --strict`를 통과했습니다. **공증은 아직 받지 않아** Gatekeeper가 `Unnotarized Developer ID`로 거부합니다. 공증용 자격 증명을 등록한 뒤 `ADF_NOTARY_PROFILE`을 지정해 다시 빌드해야 배포할 수 있습니다.
+- 서명·공증: `Developer ID Application: SEONGHUN KIM (TZQ9JL6R7R)`으로 hardened runtime과 보안 타임스탬프를 적용해 서명하고 `codesign --verify --deep --strict`를 통과했습니다. 빌드한 Mac의 키체인에 공증 프로필 `ADF-notary`를 등록했습니다. 버전별 공증 결과와 Gatekeeper 판정은 `release/배포상태-<버전>-macOS.md`에 기록합니다.
 - 스모크 검사: 서명한 설치 앱(hardened runtime)에서 87개 항목 모두 통과했습니다. 앱 안의 소스 열람과 설치된 소스 확인, OCR(표 1개·그림 2개 인식), 페이지 번호 삭제를 포함합니다.
 - 설치 앱 작업 검사(`test-frozen-worker.py`): 서명한 앱에서 병합·분할·추출·압축, 덮어쓰기 거부, 원본 보존 통과.
 - 패키지 정적 검사(`verify-release.py`): 소스 571개와 앱의 코드 모듈 39개·자원 455개 일치, OCR 모델 5개, 외부 원본 소스 31개, 영상 코덱 없음, 끊어진 링크 없음, 실행 파일 최소 macOS 15.0.

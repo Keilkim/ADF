@@ -57,7 +57,7 @@ Mac용 앱과 DMG는 Apple Developer ID Application 인증서 **SEONGHUN KIM (�
 - 인증서 개인 키와 공증용 앱 암호는 빌드하는 Mac의 키체인에만 두며 저장소에 넣지 않습니다.
 - 서명·공증한 파일도 유지관리자가 소스·빌드 결과와 검증 기록을 확인한 뒤 수동으로 게시합니다.
 
-2026-09-10 현재 Mac 검증용 빌드를 Developer ID로 서명했고 `codesign --verify --deep --strict`를 통과했습니다. 공증은 아직 받지 않아 Gatekeeper가 `Unnotarized Developer ID`로 거부하며, Mac용 배포 파일은 게시하지 않았습니다.
+Mac 배포 파일마다 서명·공증 결과와 Gatekeeper 판정을 해당 릴리즈의 배포 상태 기록(`release/배포상태-<버전>-macOS.md`)과 GitHub 릴리즈에 남기며, 공증을 받지 못한 파일은 배포하지 않습니다.
 
 ## 서명 후 배포 확인
 
