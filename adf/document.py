@@ -11,6 +11,7 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 import hashlib
 import io
+import json
 import math
 import os
 from pathlib import Path
@@ -599,6 +600,26 @@ class PdfDocument:
                 number_page(doc[index], text, position=actual_position, margin_x=margin_x, margin_y=margin_y,
                             font_size=font_size, color=color, fontfile=fontfile)
 
+    def numbered_pages(self) -> list[int]:
+        """Pages that still carry a number recorded by number_page."""
+        doc = self._require_doc()
+        return [index for index in range(doc.page_count)
+                if doc.xref_get_key(doc.page_xref(index), NUMBER_RECORD)[0] == "string"]
+
+    def remove_page_numbers(self, indices: Iterable[int]) -> tuple[list[int], list[int]]:
+        """Remove recorded numbers as one undoable edit; returns removed and kept pages."""
+        selected = _indices(indices, self.page_count)
+        removed, kept = [], []
+        with self._edit() as doc:
+            for index in selected:
+                try:
+                    (removed if remove_page_number(doc[index]) else kept).append(index)
+                except ValueError:
+                    kept.append(index)
+            if not removed:
+                raise ValueError("지울 수 있는 페이지 번호를 찾지 못했습니다. 번호를 직접 고쳤거나 주변 글자가 바뀌었을 수 있습니다.")
+        return removed, kept
+
     def add_image(self, page_index: int, rect, data: bytes, rotate: int = 0) -> int:
         _indices([page_index], self.page_count)
         target = _valid_rect(rect)
@@ -815,6 +836,63 @@ def _font(text: str, fontfile: str | None = None, fontbuffer: bytes | None = Non
     return font, name, file
 
 
+NUMBER_RECORD = "ADFPageNumber"
+
+
+def _same_rect(first, second) -> bool:
+    return all(abs(a - b) < .5 for a, b in zip(first, second))
+
+
+def page_number_record(page: pymupdf.Page):
+    """The label and position that number_page last recorded on this page, if any."""
+    kind, value = page.parent.xref_get_key(page.xref, NUMBER_RECORD)
+    if kind != "string":
+        return None
+    try:
+        record = json.loads(value)
+        return str(record["text"]), pymupdf.Rect(record["rect"])
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def _record_page_number(page: pymupdf.Page, text: str, rect) -> None:
+    record = json.dumps({"text": text, "rect": list(rect)})
+    page.parent.xref_set_key(page.xref, NUMBER_RECORD, "<" + record.encode("ascii").hex() + ">")
+
+
+def copy_page_number_record(source: pymupdf.Page, target: pymupdf.Page) -> None:
+    """insert_pdf leaves the record out; keep it with a copied page."""
+    record = page_number_record(source)
+    if record:
+        _record_page_number(target, *record)
+
+
+def remove_page_number(page: pymupdf.Page) -> bool:
+    """Remove the label number_page recorded, only while it is still intact.
+
+    Page numbers are ordinary page text. The recorded text must still be the
+    only text at the recorded position. Numbers added by other programs or by
+    earlier ADF versions carry no record and are never touched.
+    """
+    record = page_number_record(page)
+    if record is None:
+        return False
+    text, rect = record
+    hits = [hit for hit in page.search_for(text) if _same_rect(hit, rect)]
+    if not hits:
+        # The label was edited or flattened; nothing of it remains to remove.
+        page.parent.xref_set_key(page.xref, NUMBER_RECORD, "null")
+        return False
+    if len(hits) != 1 or page.get_text("text", clip=hits[0]).split() != text.split():
+        raise ValueError(f"{page.number + 1}쪽의 기존 페이지 번호 주변 글자가 바뀌어 안전하게 고치지 못했습니다.")
+    if any(annot.type[0] == pymupdf.PDF_ANNOT_REDACT for annot in page.annots() or ()):
+        raise ValueError("이 페이지에 기존 교정 표시가 있습니다. 다른 PDF 편집기에서 먼저 처리해 주세요.")
+    page.add_redact_annot(hits[0], fill=False, cross_out=False)
+    page.apply_redactions(images=0, graphics=0, text=0)
+    page.parent.xref_set_key(page.xref, NUMBER_RECORD, "null")
+    return True
+
+
 def number_page(page: pymupdf.Page, text: str, *, position: str = "bottom-center", margin_x: float = 12,
                 margin_y: float = 12, font_size: float = 11, color=(0, 0, 0), fontfile: str | None = None) -> None:
     """Draw one label; shared by the live preview and final document editing."""
@@ -835,8 +913,15 @@ def number_page(page: pymupdf.Page, text: str, *, position: str = "bottom-center
     x = {"left": mx, "center": (width - text_width) / 2, "right": width - mx - text_width}[horizontal]
     y = my + font.ascender * font_size if top == "top" else height - my + font.descender * font_size
     point = pymupdf.Point(x, y) * page.derotation_matrix
+    # Adding a number again edits it: the label recorded here earlier is replaced.
+    remove_page_number(page)
+    before = page.search_for(text)
     page.insert_text(point, text, fontsize=font_size, fontname=name, fontfile=file,
                      color=color, rotate=page.rotation, overlay=True)
+    # Record the new label so that it can later be edited or removed on its own.
+    added = [hit for hit in page.search_for(text) if not any(_same_rect(hit, old) for old in before)]
+    if len(added) == 1:
+        _record_page_number(page, text, added[0])
 
 
 def parse_ranges(text: str, page_count: int) -> list[list[int]]:

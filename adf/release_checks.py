@@ -742,8 +742,10 @@ def make_layout_fixture(folder):
     native, scanned = folder/'layout.pdf', folder/'scan.pdf'
     with pymupdf.open() as doc:
         page = doc.new_page(width=595, height=842)
-        font = Path('C:/Windows/Fonts/malgun.ttf')
-        if font.exists():
+        # OCR expectations assume an installed Korean system font, not MuPDF's fallback.
+        font = next((path for path in (Path('C:/Windows/Fonts/malgun.ttf'), Path('/System/Library/Fonts/AppleSDGothicNeo.ttc'))
+                     if path.exists()), None)
+        if font:
             page.insert_font(fontname='kr', fontfile=str(font))
             korean = 'kr'
         else:

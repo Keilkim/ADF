@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication, QDialogButtonBox
 
 from adf.app import MainWindow
 from adf.dialogs import NumberingDialog, pdf_pixmap
-from adf.document import PdfDocument, MM_TO_PT
+from adf.document import PdfDocument, MM_TO_PT, page_number_record
 
 
 class NumberingTests(unittest.TestCase):
@@ -103,6 +103,84 @@ class NumberingTests(unittest.TestCase):
             page = self.model.doc[index]
             rect = page.search_for(f'p.{number}')[0] * page.rotation_matrix
             self.assertAlmostEqual(rect.x0 if side == 'left' else page.rect.width - rect.x1, 10 * MM_TO_PT, delta=.1)
+
+    def test_recorded_numbers_are_removed_on_rotated_pages(self):
+        self.model.number_pages(list(range(6)), prefix='p.', position='bottom-right')
+        self.assertEqual(self.model.numbered_pages(), list(range(6)))
+        self.assertEqual(self.model.remove_page_numbers(range(6)), (list(range(6)), []))
+        for index, page in enumerate(self.model.doc):
+            text = page.get_text()
+            self.assertNotIn(f'p.{index + 1}', text.split())
+            self.assertIn(f'Original page {index + 1}', text)
+        self.assertEqual(self.model.numbered_pages(), [])
+        self.model.undo()
+        self.assertEqual(self.model.numbered_pages(), list(range(6)))
+        self.assertIn('p.3', self.model.doc[2].get_text().split())
+
+    def test_numbering_again_edits_only_numbers_that_adf_recorded(self):
+        path = self.root / 'foreign.pdf'
+        with pymupdf.open() as doc:
+            for _ in range(2):
+                page = doc.new_page(width=400, height=600)
+                page.insert_text((40, 90), 'See p.1 and p.2 in the body')
+                page.insert_text((40, 580), 'p.7')
+            doc.save(path)
+        model = PdfDocument()
+        model.open(path)
+        try:
+            # Numbers from other programs have no record and are never removed.
+            with self.assertRaises(ValueError):
+                model.remove_page_numbers([0, 1])
+            model.number_pages([0, 1], prefix='p.', position='bottom-right')
+            model.number_pages([0, 1], start=10, prefix='p.', position='top-left')
+            for index, page in enumerate(model.doc):
+                words = page.get_text().split()
+                self.assertIn(f'p.{index + 10}', words)
+                self.assertEqual(words.count(f'p.{index + 1}'), 1)
+                self.assertIn('p.7', words)
+            self.assertEqual(model.remove_page_numbers(model.numbered_pages()), ([0, 1], []))
+            for page in model.doc:
+                self.assertEqual(' '.join(page.get_text().split()), 'See p.1 and p.2 in the body p.7')
+        finally:
+            model.close()
+
+    def test_changed_numbers_are_left_alone(self):
+        self.model.number_pages([0, 1, 2], prefix='p.', position='bottom-center')
+        # Another label now overlaps page 1's number, and page 2's number was edited.
+        _, rect = page_number_record(self.model.doc[0])
+        self.model.doc[0].insert_text((rect.x0, rect.y1 - 3), 'X', fontsize=11)
+        _, rect = page_number_record(self.model.doc[1])
+        self.model.replace_text(1, rect, 'two', fit=True)
+        self.assertEqual(self.model.remove_page_numbers([0, 1, 2]), ([2], [0, 1]))
+        self.assertIn('p.1', self.model.doc[0].get_text().split())
+        self.assertNotIn('p.3', self.model.doc[2].get_text().split())
+        self.assertEqual(self.model.numbered_pages(), [0])
+
+    def test_recorded_numbers_survive_saving(self):
+        self.model.number_pages([0, 1, 2], prefix='p.')
+        saved = self.root / 'numbered.pdf'
+        self.model.save(saved)
+        reopened = PdfDocument()
+        reopened.open(saved)
+        try:
+            self.assertEqual(reopened.numbered_pages(), [0, 1, 2])
+            self.assertEqual(reopened.remove_page_numbers([0, 1, 2]), ([0, 1, 2], []))
+        finally:
+            reopened.close()
+
+    def test_preview_matches_replaced_numbers(self):
+        self.model.number_pages(list(range(6)), prefix='p.', position='bottom-center')
+        dialog = self.dialog(current_page=1, start_right=True)
+        dialog.show()
+        self.app.processEvents()
+        dialog.start.setValue(40)
+        dialog._update_preview()
+        expected = {page['index']: page['image'].toImage() for page in dialog.preview.pages}
+        self.model.number_pages(**dialog._options())
+        for index, image in expected.items():
+            self.assertEqual(image, pdf_pixmap(self.model.doc[index], 950, 1200).toImage())
+        for page in self.model.doc:
+            self.assertFalse(any(word.startswith('p.') for word in page.get_text().split()))
 
     def test_preview_is_same_as_saved_pdf_and_position_icons_mirror(self):
         dialog = self.dialog(current_page=1, start_right=True)

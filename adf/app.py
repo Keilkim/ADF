@@ -33,7 +33,9 @@ def sample_pdf(path):
     doc = pymupdf.open()
     blue = (0.14, 0.36, 0.79)
     from .dialogs import resolve_font_file
-    fontfile = resolve_font_file('Malgun Gothic' if sys.platform=='win32' else 'Apple SD Gothic Neo')
+    # Embed TrueType Korean fonts so the sample stays editable with its own font.
+    # Apple SD Gothic Neo is CID-keyed CFF, which fonts.py does not reuse.
+    fontfile = resolve_font_file('Malgun Gothic' if sys.platform=='win32' else 'AppleGothic')
     fontname = 'adfkorean' if fontfile else 'korea'
     content = [
         ('문서 작업, 가볍게.', 'ADF 시작 안내', [
@@ -145,6 +147,8 @@ class AdaptiveToolbar(QFrame):
         self.file_items = []
         self.edit_items = []
         self.tail_items = []
+        self.edit_groups = [[]]
+        self.dividers = []
         self.separator = QFrame()
         self.separator.setObjectName('toolbarSeparator')
         self.separator.setFrameShape(QFrame.Shape.VLine)
@@ -167,36 +171,57 @@ class AdaptiveToolbar(QFrame):
         action.changed.connect(lambda: button.setText(label))
         button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly if icon_only else Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         button.setAutoRaise(True)
-        getattr(self, group + '_items').append(button)
+        self._add(button, group)
         return button
 
     def widget(self, widget, group='tail'):
-        getattr(self, group + '_items').append(widget)
+        self._add(widget, group)
         return widget
 
+    def _add(self, widget, group):
+        getattr(self, group + '_items').append(widget)
+        if group == 'edit':
+            self.edit_groups[-1].append(widget)
+
+    def section(self):
+        """Start the next group of editing tools, set apart by a faint divider."""
+        if self.edit_groups[-1]:
+            self.edit_groups.append([])
+
     def reflow(self, width):
+        tool_groups = [group for group in self.edit_groups if group]
+        while len(self.dividers) < len(tool_groups):
+            divider = QFrame(self)
+            divider.setObjectName('toolbarDivider')
+            divider.setFrameShape(QFrame.Shape.VLine)
+            divider.hide()
+            self.dividers.append(divider)
+        dividers = iter(self.dividers)
+
+        def joined(row):
+            widgets = []
+            for group in row:
+                widgets += ([next(dividers)] if widgets else []) + group
+            return widgets
+
+        gap = 12  # a divider with its margins
         items = self.file_items + self.edit_items + self.tail_items
-        required = sum(widget.sizeHint().width() for widget in items) + len(items)*3 + 50
+        required = sum(widget.sizeHint().width() for widget in items) + len(items)*3 + len(tool_groups)*gap + 50
         two_rows = width < max(1180, required)
         if two_rows:
             groups = [self.file_items + [None] + self.tail_items]
             row, used = [], 0
-            units = []
-            for widget in self.edit_items:
-                if units and units[-1][-1].property('keepWithNext'):
-                    units[-1].append(widget)
-                else:
-                    units.append([widget])
-            for unit in units:
-                size = sum(widget.sizeHint().width()+3 for widget in unit)
-                if row and used+size > width-24:
-                    groups.append(row+[None])
+            # Wrap only between groups so that related tools stay together.
+            for group in tool_groups:
+                size = sum(widget.sizeHint().width()+3 for widget in group)
+                if row and used+gap+size > width-24:
+                    groups.append(joined(row)+[None])
                     row, used = [], 0
-                row.extend(unit)
-                used += size
-            groups.append(row+[None])
+                used += size + (gap if row else 0)
+                row.append(group)
+            groups.append(joined(row)+[None])
         else:
-            groups = [self.file_items + [self.separator] + self.edit_items + [None] + self.tail_items]
+            groups = [self.file_items + [self.separator] + joined(tool_groups) + [None] + self.tail_items]
         arrangement = tuple(tuple(id(w) if w else 0 for w in row) for row in groups)
         if arrangement == self._arrangement:
             return
@@ -315,6 +340,7 @@ class MainWindow(QMainWindow):
         a('extract', '선택 페이지 추출…', self.extract_pages, None, 'split')
         a('markdown', 'OCR · Markdown 내보내기…', self.export_markdown, None, 'ocr')
         a('number', '페이지 번호', self.number, None, 'number')
+        a('number_remove', '번호 삭제', self.remove_numbers, None, 'number_remove')
         a('compress', '저용량 저장', self.compress, None, 'compress')
         a('image', '이미지 삽입', self.insert_image, None, 'image')
         a('stamps', '도장 보관함', self.show_stamps, None, 'stamp')
@@ -360,14 +386,14 @@ class MainWindow(QMainWindow):
         self.pointer_actions.addAction(a('eraser', '지우개', lambda: self.toggle_drawing_tool('eraser'),
                                         None, 'eraser', checkable=True))
         self.actions['eraser'].setToolTip('지우개 켜기 / 끄기 · 작은 화살표로 크기 설정')
-        self.pointer_actions.addAction(a('region_tool', '영역 복사', lambda: self.change_pointer('region_tool'),
+        self.pointer_actions.addAction(a('region_tool', '영역 복사', lambda: self.toggle_drawing_tool('region_tool'),
                                         None, 'capture', checkable=True))
         self.actions['region_tool'].setToolTip('드래그한 영역을 그림으로 복사합니다 · 표·그래프·글 포함')
 
     def create_menus(self):
         groups = [('파일', ['open','save','save_as','close',None,'compare','merge','combine','split','extract','compress','markdown',None,'print','default']),
                   ('편집',['undo','redo',None,'copy','copy_region','region_tool','paste','image','stamps','text','select_image']),
-                  ('페이지',['rotate','rotate_left','blank','replace','delete',None,'up','down','number']),
+                  ('페이지',['rotate','rotate_left','blank','replace','delete',None,'up','down','number','number_remove']),
                   ('보기',['find','fullscreen',None,'select_tool','hand_tool','pen','eraser',None,'snap','settings']),
                   ('도움말',['help','licenses','sources',None,'intro','about'])]
         for title, keys in groups:
@@ -378,23 +404,25 @@ class MainWindow(QMainWindow):
     def create_toolbar(self):
         self.toolbar = AdaptiveToolbar(self)
         for key, label, icon_only in [
-            ('open','열기',True), ('save','저장',True), ('save_as','다른 이름 저장',True), ('print','인쇄',True),
-            ('undo','실행 취소',True), ('redo','다시 실행',True), ('find','찾기',True),
+            ('open','열기',True), ('save','저장',True), ('save_as','다른 이름 저장',True), ('compress','저용량 저장',True),
+            ('print','인쇄',True), ('undo','실행 취소',True), ('redo','다시 실행',True), ('find','찾기',True),
             ('compare','비교',True), ('markdown','OCR · MD',True),
         ]:
             self.toolbar.button(self.actions[key], label, 'file', icon_only)
-        for key, label in [
-            ('split','분할'), ('extract','페이지 추출'), ('rotate','회전'), ('replace','교체'),
-            ('number','페이지 번호'), ('image','이미지'), ('text','텍스트 수정'),
-            ('compress','저용량 저장'), ('stamps','도장 보관함'),
+        # Related tools stay together; faint dividers separate the groups.
+        for group in [
+            [('split','분할'), ('extract','페이지 추출')],
+            [('rotate','오른쪽 회전'), ('rotate_left','왼쪽 회전')],
+            [('number','페이지 번호'), ('number_remove','번호 삭제')],
+            [('image','이미지'), ('text','텍스트 수정'), ('pen','펜'), ('eraser','지우개')],
+            [('snap','스냅'), ('region_tool','캡처'), ('stamps','도장 보관함')],
         ]:
-            button = self.toolbar.button(self.actions[key], label)
-            if key == 'compress':
-                button.setProperty('keepWithNext', True)
-        self.toolbar.button(self.actions['snap'], '스냅', group='tail')
-        self.pen_button = self.toolbar.button(self.actions['pen'], '펜', group='tail', options=lambda: self.show_pen_options('pen'))
-        self.eraser_button = self.toolbar.button(self.actions['eraser'], '지우개', group='tail', options=lambda: self.show_pen_options('eraser'))
-        self.toolbar.button(self.actions['region_tool'], '캡처', group='tail')
+            self.toolbar.section()
+            for key, label in group:
+                options = (lambda tool=key: self.show_pen_options(tool)) if key in ('pen', 'eraser') else None
+                button = self.toolbar.button(self.actions[key], label, options=options)
+                if options:
+                    setattr(self, key+'_button', button)
         self.toolbar.reflow(self.width())
 
     def build_home(self):
@@ -706,7 +734,7 @@ class MainWindow(QMainWindow):
             self.stamp_dock.set_editable(editable)
         for key in ['save','save_as','close','split','extract','compress','markdown','find','print','copy','next','previous','settings','fullscreen']:
             self.actions[key].setEnabled(loaded)
-        for key in ['merge','number','image','paste','text','select_image','rotate','rotate_left','delete','blank','replace','up','down']:
+        for key in ['merge','number','number_remove','image','paste','text','select_image','rotate','rotate_left','delete','blank','replace','up','down']:
             self.actions[key].setEnabled(editable)
         self.actions['undo'].setEnabled(loaded and self.document.can_undo)
         self.actions['redo'].setEnabled(loaded and self.document.can_redo)
@@ -1138,6 +1166,22 @@ class MainWindow(QMainWindow):
                                  start_right=self.view.start_right, spread=self.view.is_spread)
         if dialog.exec():
             self.edit(lambda: self.document.number_pages(**dialog.options))
+
+    def remove_numbers(self):
+        if not self.resolve_placement():
+            return
+        pages = self.document.numbered_pages()
+        if not pages:
+            QMessageBox.information(self, '번호 삭제', 'ADF로 넣은 페이지 번호가 없습니다.\n'
+                                    '이전 버전이나 다른 프로그램에서 넣은 번호는 지울 수 없습니다.')
+            return
+        outcome = []
+        if self.edit(lambda: outcome.extend(self.document.remove_page_numbers(pages))):
+            removed, kept = outcome
+            message = f'페이지 번호 {len(removed):,}개를 지웠습니다 · Ctrl+Z로 되돌릴 수 있습니다'
+            if kept:
+                message += f' · 번호 주변이 바뀐 {len(kept):,}쪽은 그대로 두었습니다'
+            self.statusBar().showMessage(message, 8000)
 
     def compress(self):
         from .dialogs import CompressionDialog
@@ -2466,10 +2510,15 @@ def main():
                     assert 'p.101' in window.document.doc[2].get_text()
                     left = window.document.doc[1].search_for('p.100')[0]
                     assert abs(left.x0 - 12 * 72 / 25.4) < .1
+                    assert window.document.numbered_pages() == [0, 1, 2]
+                    assert window.edit(lambda: window.document.remove_page_numbers([0, 1, 2]))
+                    assert not window.document.numbered_pages() and 'p.099' not in window.document.doc[0].get_text()
+                    assert '가볍게' in window.document.doc[0].get_text()
+                    window.undo()
                     window.undo()
                     numbering.reject()
                     numbering.deleteLater()
-                    result.update(numbering_preview=True, mirrored_numbering=True, automatic_padding=True)
+                    result.update(numbering_preview=True, mirrored_numbering=True, automatic_padding=True, number_removal=True)
                     # Exercise paragraph editing in the installed binary too.
                     from .text_groups import text_group_at
                     paragraph_path = Path(folder) / 'paragraph.pdf'

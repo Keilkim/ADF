@@ -1,5 +1,6 @@
 """The source inputs shared by bundling and release verification."""
 import re
+import sys
 
 SOURCE_ITEMS = ['main.py', 'adf', 'assets', 'docs', 'tests', 'scripts', 'installer',
                 'native-shell', 'ADF.spec', 'README.md', 'LICENSE', 'LICENSES', 'spec.md',
@@ -10,6 +11,16 @@ SOURCE_ITEMS = ['main.py', 'adf', 'assets', 'docs', 'tests', 'scripts', 'install
 def ocr_packages(root):
     return [line.split('==')[0] for line in (root/'requirements-ocr-lock.txt').read_text(encoding='utf-8').splitlines()
             if line and not line.startswith('#')]
+
+
+def notice_dir(root):
+    """LICENSES records the Windows wheels. Other platforms bundle notices for their own binaries."""
+    return root/'LICENSES' if sys.platform == 'win32' else root/'build/licenses'
+
+
+def platform_suffix():
+    """Release files of other platforms carry a suffix; their third-party sources differ."""
+    return {'win32': '', 'darwin': '-macOS'}.get(sys.platform, '-' + sys.platform)
 
 
 def version(root):
