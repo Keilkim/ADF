@@ -675,7 +675,7 @@ class DesktopWorkflowTests(unittest.TestCase):
             self.wait_until(lambda: self.window.worker is None)
         self.assertEqual(self.window.document.page_count, 7)
         self.assertIn("Second file first", self.window.document.doc[0].get_text())
-        self.assertEqual(Path(self.window.document.path), output)
+        self.assertEqual(Path(self.window.document.path), output.resolve())
         self.assert_source_unchanged()
 
     def test_pdf_add_inserts_into_open_document_and_waits_for_final_save(self):
@@ -908,7 +908,7 @@ class DesktopWorkflowTests(unittest.TestCase):
         self.assertIn("9페이지", dialog.summary.text())
         dialog.file_list.move_rows([0], 2)
         self.assertEqual(dialog.selected_ranges, [None, [1, 3, 4]])
-        self.assertEqual(dialog.paths, [str(self.source), str(self.source)])
+        self.assertEqual(dialog.paths, [str(self.source.resolve()), str(self.source.resolve())])
         dialog.reject()
         self.assert_source_unchanged()
 
@@ -1114,7 +1114,7 @@ class DesktopWorkflowTests(unittest.TestCase):
             self.assertTrue(dialog.allow_images)
             self.assertEqual(dialog.insert_index, 2)
             dialog.file_list.move_rows([2], 0)
-            self.assertEqual(dialog.paths, [str(self.source), str(png), str(jpg)])
+            self.assertEqual(dialog.paths, [str(path.resolve()) for path in (self.source, png, jpg)])
             dialog.accept()
             return QDialog.DialogCode.Accepted
         with patch.object(MergeDialog, 'exec', order):
