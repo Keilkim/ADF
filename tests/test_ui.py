@@ -1229,7 +1229,7 @@ class DesktopWorkflowTests(unittest.TestCase):
 
         def select_pages(dialog):
             self.assertEqual(dialog.insert_index, 3)
-            self.assertEqual(dialog.paths, [str(added), str(png)])
+            self.assertEqual(dialog.paths, [str(added.resolve()), str(png.resolve())])
             dialog.file_list.item(0).setData(0, Qt.ItemDataRole.UserRole + 3, [1])
             dialog.accept()
             return QDialog.DialogCode.Accepted

@@ -127,7 +127,7 @@ class ShellToolTests(unittest.TestCase):
         with patch.object(QFileDialog, 'getSaveFileName', return_value=('', '')):
             controller.dialog.accept()
         self.assertTrue(controller.dialog.isVisible())
-        self.assertEqual(controller.dialog.paths, [str(self.second), str(self.first)])
+        self.assertEqual(controller.dialog.paths, [str(self.second.resolve()), str(self.first.resolve())])
         self.assertIsNone(controller.worker)
 
     def test_merge_selected_pages_and_duplicate_files_preserve_order_via_worker(self):

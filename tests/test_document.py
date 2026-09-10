@@ -208,7 +208,7 @@ class DocumentTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             self.model.open(self.root / "missing.pdf")
         self.assertEqual(self.model.page_count, 3)
-        self.assertEqual(self.model.path, str(self.source))
+        self.assertEqual(self.model.path, str(self.source.resolve()))
 
     def test_korean_numbering_round_trips_in_standard_pdf(self):
         self.model.rotate([1], 90)
