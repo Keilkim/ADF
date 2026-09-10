@@ -293,6 +293,23 @@ void CheckCaptured(const std::wstring& directory, const std::vector<std::wstring
     // A second process launch would create a second pid-specific output.
     Sleep(100);
     captures = Captures(directory);
+    if (captures.size() != 1) {
+        WIN32_FIND_DATAW data{};
+        HANDLE search = FindFirstFileW((directory + L"\\sink-error-*.txt").c_str(), &data);
+        if (search != INVALID_HANDLE_VALUE) {
+            do {
+                const auto path = directory + L"\\" + data.cFileName;
+                HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+                if (file != INVALID_HANDLE_VALUE) {
+                    char message[512]{};
+                    DWORD read = 0;
+                    if (ReadFile(file, message, sizeof(message) - 1, &read, nullptr)) std::printf("Fixture diagnostic: %s", message);
+                    CloseHandle(file);
+                }
+            } while (FindNextFileW(search, &data));
+            FindClose(search);
+        }
+    }
     Check(captures.size() == 1, "Invoke launches exactly one process; private user-only ACL and argv validated by sink");
     HANDLE file = CreateFileW(captures[0].c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
     Check(file != INVALID_HANDLE_VALUE, "Open captured UTF-8 JSON");

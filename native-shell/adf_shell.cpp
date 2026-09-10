@@ -148,11 +148,14 @@ HRESULT CreatePrivateRequest(const std::vector<std::wstring>& files, std::wstrin
     if (!tokenSize) return LastErrorResult();
     std::vector<BYTE> tokenData(tokenSize);
     if (!GetTokenInformation(token.value, TokenUser, tokenData.data(), tokenSize, &tokenSize)) return LastErrorResult();
+    PSID userSid = reinterpret_cast<TOKEN_USER*>(tokenData.data())->User.Sid;
     LPWSTR sidText = nullptr;
-    if (!ConvertSidToStringSidW(reinterpret_cast<TOKEN_USER*>(tokenData.data())->User.Sid, &sidText)) return LastErrorResult();
+    if (!ConvertSidToStringSidW(userSid, &sidText)) return LastErrorResult();
     LocalMemory sidMemory;
     sidMemory.value = sidText;
-    const std::wstring sddl = L"D:P(A;;FA;;;" + std::wstring(sidText) + L")";
+    // An elevated token may default ownership to Administrators. Requests
+    // must explicitly belong to the same user who receives the private DACL.
+    const std::wstring sddl = L"O:" + std::wstring(sidText) + L"D:P(A;;FA;;;" + std::wstring(sidText) + L")";
     PSECURITY_DESCRIPTOR descriptor = nullptr;
     if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.c_str(), SDDL_REVISION_1, &descriptor, nullptr)) return LastErrorResult();
     LocalMemory descriptorMemory;
@@ -176,7 +179,7 @@ HRESULT CreatePrivateRequest(const std::vector<std::wstring>& files, std::wstrin
     BOOL present = FALSE, defaulted = FALSE;
     if (!GetSecurityDescriptorDacl(descriptor, &present, &dacl, &defaulted) || !present || !dacl) return E_ACCESSDENIED;
     const DWORD aclResult = SetNamedSecurityInfoW(const_cast<LPWSTR>(requestFolder.c_str()), SE_FILE_OBJECT,
-        DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, nullptr, nullptr, dacl, nullptr);
+        OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, userSid, nullptr, dacl, nullptr);
     if (aclResult != ERROR_SUCCESS) return HRESULT_FROM_WIN32(aclResult);
 
     GUID id{};
