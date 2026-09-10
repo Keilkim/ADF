@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f7f7f5" />
+    <meta
+      name="description"
+      content="ADF는 내 PC에서 문서를 편집하고 도장을 보관하는 오픈소스 Windows PDF 편집기입니다. 필기, 병합, 비교, 오프라인 OCR까지 한곳에서."
+    />
+    <meta property="og:title" content="ADF — 문서 작업, 내 PC에서 가볍게." />
+    <meta
+      property="og:description"
+      content="PDF 편집부터 도장 보관, OCR까지. 계정 없이, 인터넷 없이 쓰는 오픈소스 데스크톱 앱."
+    />
+    <meta property="og:type" content="website" />
+    <title>ADF — 문서 작업, 내 PC에서 가볍게.</title>
+    <link rel="icon" href="/assets/adf-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">본문으로 건너뛰기</a>
+    <header class="site-header">
+      <nav class="nav wrap" aria-label="주 메뉴">
+        <a class="brand" href="/" aria-label="ADF 홈"
+          ><img src="/assets/adf-mark.svg" width="34" height="34" alt="" /><span
+            >ADF</span
+          ></a
+        >
+        <div class="nav-links">
+          <a href="#features">기능</a><a href="/guide">사용안내</a
+          ><a href="https://github.com/Keilkim/ADF" class="github-link"
+            >GitHub <span aria-hidden="true">↗</span></a
+          ><a class="nav-download" href="#download"
+            >다운로드 <span aria-hidden="true">↓</span></a
+          >
+        </div>
+      </nav>
+    </header>
+    <main id="main">
+      <section class="hero wrap" aria-labelledby="hero-title">
+        <p class="eyebrow">
+          <span class="status-dot" aria-hidden="true"></span> 내 컴퓨터에서 쓰는
+          오픈소스 PDF 편집기
+        </p>
+        <h1 id="hero-title">문서 작업,<br /><span>내 PC에서 가볍게.</span></h1>
+        <p class="hero-description">
+          읽고, 쓰고, 도장을 찍고.<br />문서를 마무리하는 일에만 집중하세요.<br
+            class="mobile-break"
+          />
+          파일은 내 컴퓨터에 그대로.
+        </p>
+        <div class="hero-actions">
+          <a class="button primary" href="#download"
+            ><svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4" /></svg
+            >Windows용 다운로드</a
+          ><a class="text-link" href="https://github.com/Keilkim/ADF"
+            >소스코드 살펴보기 <span aria-hidden="true">↗</span></a
+          >
+        </div>
+        <p class="hero-meta">
+          Windows 10·11 / x64 <span>·</span> 0.3.24 사전 버전
+        </p>
+        <figure class="app-preview">
+          <img
+            src="/assets/workspace.png"
+            width="1440"
+            height="920"
+            alt="ADF에서 예시 PDF와 페이지 미리보기, 로컬 도장 보관함을 함께 연 실제 앱 화면"
+            fetchpriority="high"
+          />
+          <figcaption>예시 문서로 촬영한 ADF 데스크톱 앱</figcaption>
+        </figure>
+      </section>
+      <section
+        class="local-section wrap"
+        id="local"
+        aria-labelledby="local-title"
+      >
+        <div class="local-copy">
+          <p class="eyebrow">문서도, 도장도, 내 컴퓨터에</p>
+          <h2 id="local-title">자주 쓰는 도장.<br />나만의 보관함에.</h2>
+          <p>
+            한 번 등록하고, 필요할 때 꺼내 쓰세요. 도장 이미지와 이름, 크기는 이
+            PC의 보관함에 저장됩니다. 원본 이미지를 옮겨도 등록한 도장은 그대로
+            남습니다.
+          </p>
+          <a class="text-link" href="/privacy"
+            >데이터 보관 방식 알아보기 <span aria-hidden="true">↗</span></a
+          >
+        </div>
+        <div class="local-visual" aria-label="도장 보관함 기능 요약">
+          <svg class="library-icon" viewBox="0 0 96 96" aria-hidden="true">
+            <rect x="15" y="21" width="66" height="59" rx="15" />
+            <path
+              d="M28 21v-5a7 7 0 0 1 7-7h26a7 7 0 0 1 7 7v5M15 42h66M38 58h20"
+            />
+          </svg>
+          <p>내 PC의 도장 보관함</p>
+          <span>이미지 · 이름 · 크기</span>
+          <div class="local-tags">
+            <span>계정 없이</span><span>업로드 없이</span
+            ><span>오프라인으로</span>
+          </div>
+        </div>
+      </section>
+      <section
+        class="features-section wrap"
+        id="features"
+        aria-labelledby="features-title"
+      >
+        <div class="section-heading">
+          <p class="eyebrow">하나의 편안한 작업 공간</p>
+          <h2 id="features-title">PDF를 끝내는 데<br />필요한 도구들.</h2>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card">
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path d="m7 22-1 5 5-1L27 10l-4-4L7 22Zm12-12 4 4M6 30h21" />
+            </svg>
+            <h3>생각을 바로, 필기</h3>
+            <p>
+              펜과 마커, 브러시로 자연스럽게 쓰세요. 굵기를 미리 보고, 지우개로
+              다듬고, 잠시 멈추면 직선으로 정리됩니다.
+            </p>
+          </article>
+          <article class="feature-card">
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <rect x="5" y="9" width="16" height="20" rx="3" />
+              <path d="M12 9V4h15v20h-6M10 16h6m-6 5h6" />
+            </svg>
+            <h3>순서대로, 페이지 정리</h3>
+            <p>
+              문서를 합치고, 필요한 페이지만 나누세요. 회전과 순서 변경, 페이지
+              번호까지 한곳에서 마무리합니다.
+            </p>
+          </article>
+          <article class="feature-card">
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path
+                d="M3 5h11v22H3zM19 5h10v22H19zM7 11h3m-3 5h3m13-5h2m-2 10h2"
+              />
+            </svg>
+            <h3>나란히, 두 버전 비교</h3>
+            <p>
+              이전 문서와 수정 문서를 함께 보세요. 변경 위치를 따라가며 글과
+              이미지의 차이를 확인할 수 있습니다.
+            </p>
+          </article>
+          <article class="feature-card">
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path
+                d="M9 3H3v6m20-6h6v6M3 23v6h6m20-6v6h-6M9 12l7-5 7 5-7 5-7-5Zm0 8 7 5 7-5"
+              />
+            </svg>
+            <h3>글과 그림을 함께, OCR</h3>
+            <p>
+              한국어와 영어를 읽어 Markdown으로 내보내세요. 표와 그림도 함께
+              담고, OCR 모델은 PC에서 실행됩니다.
+            </p>
+          </article>
+        </div>
+        <p class="feature-footnote">
+          선택한 글은 텍스트로, 그림·표·그래프가 있는 영역은 이미지로 복사할 수
+          있습니다.
+        </p>
+      </section>
+      <section
+        class="download-section wrap"
+        id="download"
+        aria-labelledby="download-title"
+      >
+        <div class="download-card">
+          <div class="download-intro">
+            <img src="/assets/adf-mark.svg" width="60" height="60" alt="" />
+            <p class="eyebrow">ADF FOR WINDOWS</p>
+            <h2 id="download-title">내 PC에서 시작하세요.</h2>
+            <p>
+              Python, 라이브러리, OCR 모델을 설치 파일 하나에.<br />추가 구성
+              요소를 따로 설치할 필요가 없습니다.
+            </p>
+          </div>
+          <div class="release-note">
+            <strong>0.3.24 사전 버전 · 코드 서명 준비 중</strong>
+            <p>
+              현재 설치 파일은 서명되지 않았으며, Windows 스마트 앱 컨트롤에
+              의해 차단될 수 있습니다. 소스 자동 검사는 통과했지만 최종 설치
+              파일의 설치·실행 검증은 완료되지 않았습니다.
+            </p>
+            <a href="https://github.com/Keilkim/ADF/releases/tag/v0.3.24"
+              >검증 상태와 변경 내용 보기 <span aria-hidden="true">↗</span></a
+            >
+          </div>
+          <a
+            class="button primary download-file"
+            href="https://github.com/Keilkim/ADF/releases/download/v0.3.24/ADF-Setup-0.3.24.exe"
+            ><svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4" /></svg
+            >사전 버전 다운로드</a
+          >
+          <p class="download-meta">
+            Windows 10 1809 이상 · Windows 11 · Intel/AMD x64<br />1.01 GB · EXE
+            설치 파일 · 2026.09.10
+          </p>
+          <div class="release-links">
+            <a
+              href="https://github.com/Keilkim/ADF/releases/download/v0.3.24/ADF-Source-0.3.24.zip"
+              >대응 소스</a
+            ><a
+              href="https://github.com/Keilkim/ADF/releases/download/v0.3.24/ADF-ThirdParty-Sources-0.3.24.zip"
+              >외부 라이브러리 소스</a
+            ><a
+              href="https://github.com/Keilkim/ADF/releases/download/v0.3.24/SHA256SUMS-0.3.24.txt"
+              >SHA-256</a
+            >
+          </div>
+        </div>
+      </section>
+      <section class="faq-section wrap" aria-labelledby="faq-title">
+        <h2 id="faq-title">궁금한 점.</h2>
+        <div class="faq-list">
+          <details>
+            <summary>PDF나 도장이 서버에 올라가나요?</summary>
+            <p>
+              ADF 앱은 문서와 도장을 서버로 전송하지 않습니다. PDF 편집, 도장
+              보관, 비교, OCR 모두 사용자 PC에서 처리합니다. 이 사이트는 소개와
+              다운로드 안내용이며 문서 업로드 기능이 없습니다.
+            </p>
+          </details>
+          <details>
+            <summary>인터넷 없이도 사용할 수 있나요?</summary>
+            <p>
+              설치 파일을 내려받은 뒤에는 인터넷 없이 설치하고 문서 작업을 할 수
+              있습니다. Python과 OCR 모델을 포함한 실행 구성 요소가 설치 파일
+              안에 들어 있습니다.
+            </p>
+          </details>
+          <details>
+            <summary>설치 파일이 차단되면 어떻게 하나요?</summary>
+            <p>
+              현재 사전 버전에는 코드 서명이 없습니다. Windows 보안 안내를
+              따르고, 서명과 설치 검증을 마친 배포본을 기다려 주세요. GitHub
+              릴리즈에 검증 진행 상태를 안내합니다.
+            </p>
+          </details>
+          <details>
+            <summary>무료로 사용하고 수정할 수 있나요?</summary>
+            <p>
+              ADF 자체 코드는 AGPL-3.0-or-later로 공개합니다. 사용·수정·재배포할
+              수 있으며, 배포 시 해당 라이선스 조건을 따라야 합니다. 외부
+              라이브러리에는 각 라이선스가 적용됩니다.
+              <a
+                href="https://github.com/Keilkim/ADF/blob/main/LICENSES/README.md"
+                >라이선스 안내</a
+              >에서 원문과 소스 제공 정보를 확인하세요.
+            </p>
+          </details>
+          <details>
+            <summary>사용법을 다시 보고 싶어요.</summary>
+            <p>
+              앱의 도움말 → 기능 둘러보기에서 처음 안내를 다시 볼 수 있습니다.
+              F1 또는 도움말 → 사용안내로 자세한 설명을 열 수 있고,
+              <a href="/guide">사이트 사용안내</a>도 이용할 수 있습니다.
+            </p>
+          </details>
+        </div>
+      </section>
+      <section class="open-section wrap">
+        <p class="eyebrow">함께 만드는 ADF</p>
+        <h2>열린 코드.<br />계속 다듬어갈 도구.</h2>
+        <p>
+          작은 불편, 새로운 아이디어, 코드 한 줄까지.<br />GitHub에서 다음 ADF를
+          함께 만들어 주세요.
+        </p>
+        <a class="button secondary" href="https://github.com/Keilkim/ADF"
+          >GitHub에서 참여하기 <span aria-hidden="true">↗</span></a
+        >
+      </section>
+    </main>
+    <footer class="footer wrap">
+      <a class="brand" href="/"
+        ><img src="/assets/adf-mark.svg" width="27" height="27" alt="" /><span
+          >ADF</span
+        ></a
+      >
+      <p>문서는 내 PC에. 코드는 모두에게.</p>
+      <div>
+        <a href="/privacy">데이터 보관 안내</a
+        ><a href="https://github.com/Keilkim/ADF/blob/main/LICENSE">AGPL-3.0</a
+        ><a href="https://github.com/Keilkim/ADF/issues">문제 제보</a>
+      </div>
+    </footer>
+    <p
+      class="toast"
+      id="download-notice"
+      role="status"
+      aria-live="polite"
+      hidden
+    >
+      GitHub에 설치 파일 다운로드를 요청했습니다.
+    </p>
+  </body>
+</html>

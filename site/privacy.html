@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="ADF의 PDF와 도장 데이터 저장 위치, 오프라인 처리와 웹사이트 데이터 안내."
+    />
+    <title>데이터 보관 안내 — ADF</title>
+    <link rel="icon" href="/assets/adf-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">본문으로 건너뛰기</a>
+    <header class="site-header">
+      <nav class="nav wrap" aria-label="주 메뉴">
+        <a class="brand" href="/"
+          ><img src="/assets/adf-mark.svg" width="34" height="34" alt="" /><span
+            >ADF</span
+          ></a
+        >
+        <div class="nav-links">
+          <a href="/guide">사용안내</a
+          ><a class="nav-download" href="/#download">다운로드 ↓</a>
+        </div>
+      </nav>
+    </header>
+    <main id="main" class="document wrap">
+      <p class="eyebrow">데이터 보관 안내 · 2026.09.10</p>
+      <h1>문서는 내 PC에.</h1>
+      <p class="lead">
+        ADF는 PDF 편집과 도장 보관, 문서 비교, OCR을 사용자 PC에서 처리하는
+        데스크톱 앱입니다.
+      </p>
+      <h2>PDF와 도장</h2>
+      <p>
+        문서는 사용자가 지정한 위치에서 읽고 저장합니다. 등록한 도장의
+        이미지·이름·너비는 Qt의 사용자별 로컬 앱 데이터 폴더 아래
+        <code>stamps.sqlite3</code>에 저장됩니다. 원본 도장 이미지의 경로는
+        보관하지 않습니다. 앱은 문서와 도장을 서버로 업로드하지 않습니다.
+      </p>
+      <p>
+        도장 보관함은 암호화된 금고 기능을 제공하지 않습니다. 같은 Windows
+        계정으로 이 파일에 접근할 수 있는 프로그램은 데이터를 읽을 수 있습니다.
+        PC의 계정 접근 권한을 관리해 주세요.
+      </p>
+      <h2>백업과 다른 PC로 옮기기</h2>
+      <p>
+        ADF를 완전히 종료한 뒤 로컬 앱 데이터 폴더의
+        <code>stamps.sqlite3</code>를 별도로 복사해 보관할 수 있습니다. 다른
+        PC로 옮기거나 기존 파일을 교체하기 전에는 그 PC의 보관함도 먼저
+        백업하세요. ADF 자체의 자동 클라우드 동기화 기능은 없습니다.
+      </p>
+      <p>
+        사용자가 PDF를 OneDrive 같은 동기화 폴더에 저장하거나 별도의 백업
+        프로그램을 사용하면 해당 서비스의 설정에 따라 파일이 동기화될 수
+        있습니다.
+      </p>
+      <h2>OCR과 앱 설정</h2>
+      <p>
+        OCR 모델은 설치 파일에 포함되며 문서 인식은 PC에서 실행됩니다. 창 배치와
+        기능 투어 확인 상태 등은 로컬 앱 설정에 저장합니다. 오류가 발생하면 로컬
+        앱 데이터 폴더에 오류 로그가 남을 수 있습니다. 자동 전송이나 원격 분석
+        기능은 추가하지 않았습니다.
+      </p>
+      <h2>이 웹사이트와 다운로드</h2>
+      <p>
+        이 사이트는 소개·사용안내·다운로드 링크를 제공합니다. 파일 업로드,
+        회원가입, 도장 보관 기능이 없고 별도의 분석 스크립트나 광고를 넣지
+        않았습니다. 사이트는 Vercel에서, 소스와 설치 파일은 GitHub에서
+        제공합니다. 접속·다운로드 과정에서 각 호스팅 서비스가 IP 주소 등 운영
+        로그를 처리할 수 있습니다.
+      </p>
+      <p>
+        <a href="https://vercel.com/legal/privacy-policy"
+          >Vercel 개인정보 처리방침</a
+        >
+        ·
+        <a
+          href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement"
+          >GitHub 개인정보 처리방침</a
+        >
+      </p>
+      <h2>문제 제보</h2>
+      <p>
+        <a href="https://github.com/Keilkim/ADF/issues">GitHub 이슈</a>는
+        공개됩니다. 실제 도장, 업무 문서, 개인 경로가 들어간 로그를 올리기 전에
+        내용을 확인하고 가상의 예시로 바꿔 주세요. 보안 취약점은 저장소의
+        <a href="https://github.com/Keilkim/ADF/blob/main/SECURITY.md"
+          >보안 제보 안내</a
+        >를 참고하세요.
+      </p>
+      <a class="button secondary" href="/"
+        >ADF 소개로 돌아가기 <span aria-hidden="true">↗</span></a
+      >
+    </main>
+  </body>
+</html>
