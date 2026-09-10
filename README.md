@@ -172,6 +172,8 @@ CLI: `ADF.exe "문서.pdf"`는 전체 편집기, `ADF.exe --split "문서.pdf"`�
 
 ## macOS
 
+Mac에서 이어 개발하는 방법과 남은 확인 항목은 [Mac 개발 인수인계](docs/macos-development.md)에 정리했습니다.
+
 소스는 PySide6 기반이며 Mac용 `.app` / `.dmg` 빌드 스크립트를 포함합니다. **현재 제공하는 배포 파일은 Windows용이며 macOS 빌드와 동작 검증은 수행하지 않았습니다.** Mac에 Python 3.12를 준비한 뒤 `bash scripts/build-macos.sh`를 실행하면 해당 Mac 아키텍처로 빌드합니다. Windows에서 Mac 실행 파일을 크로스 컴파일하지 않습니다. 직원 배포 전 실제 Mac에서 PDF 열기·편집·저장·Finder 연결을 검증하고 Apple Developer 서명 및 공증을 적용해야 합니다.
 
 ## 명세 및 구현 범위
