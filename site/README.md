@@ -19,4 +19,4 @@ Vercel CLI가 연결된 계정에서 `vercel --cwd site --prod`로 배포합니�
 
 새 릴리즈를 게시할 때 `index.html`의 버전·파일 크기·배포일·다운로드 URL·검증 상태와 `guide.html`의 상태 안내를 함께 갱신합니다. 실제 공개 릴리즈의 자산과 SHA-256을 확인한 뒤 사이트를 배포합니다. 서명되지 않은 파일을 서명 완료 또는 정식 검증 완료로 표시하지 않습니다.
 
-`assets/workspace.png`는 가상의 예시 문서와 가상의 도장을 실제 ADF 소스 실행 화면에 표시해 촬영한 이미지입니다. 개인 문서·도장 보관함은 사용하지 않았습니다. 생성 스크립트는 `scripts/capture-site-preview.py`입니다.
+`assets/workspace.png`는 가상의 예시 문서와 가상의 도장을 실제 ADF 소스 실행 화면에 표시해 촬영한 이미지입니다. 개인 문서·도장 보관함은 사용하지 않았습니다. 생성 스크립트는 `scripts/capture-site-preview.py`입니다. 0.3.25 화면은 macOS에서 도장 보관함을 연 채 도구 줄이 두 줄로 보이는 1640×1048 창으로 촬영했습니다. 크기를 바꾸면 `index.html`의 이미지 `width`·`height`도 함께 맞춥니다.

@@ -15,13 +15,19 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 from adf.app import MainWindow
 from adf.stamps import StampLibrary
+from adf.system_fonts import resolve_font_file
 from adf.theme import apply_theme
 
 
 def capture():
     app = QApplication([])
-    for filename in ('segoeui.ttf', 'malgun.ttf'):
-        QFontDatabase.addApplicationFont(str(Path('C:/Windows/Fonts') / filename))
+    if sys.platform == 'win32':
+        for filename in ('segoeui.ttf', 'malgun.ttf'):
+            QFontDatabase.addApplicationFont(str(Path('C:/Windows/Fonts') / filename))
+    # The example document uses the same Korean system font as the interface.
+    korean = resolve_font_file('Malgun Gothic' if sys.platform == 'win32' else 'Apple SD Gothic Neo')
+    if not korean:
+        raise RuntimeError('No Korean system font was found for the example document')
     apply_theme(app)
     with tempfile.TemporaryDirectory(prefix='adf-site-preview-') as temp:
         folder = Path(temp)
@@ -29,7 +35,7 @@ def capture():
         with pymupdf.open() as doc:
             for index in range(3):
                 page = doc.new_page(width=595, height=842)
-                page.insert_font(fontname='ko', fontfile='C:/Windows/Fonts/malgun.ttf')
+                page.insert_font(fontname='ko', fontfile=korean)
                 def label(x, y, value, size=11, color=(.2, .22, .23)):
                     page.insert_text((x, y), value, fontname='ko', fontsize=size, color=color)
                 label(50, 58, 'ADF  /  WORKSPACE', 9, (.5, .51, .48))
@@ -54,7 +60,7 @@ def capture():
             doc.save(path)
         with pymupdf.open() as seal:
             page = seal.new_page(width=120, height=120)
-            page.insert_font(fontname='ko', fontfile='C:/Windows/Fonts/malgun.ttf')
+            page.insert_font(fontname='ko', fontfile=korean)
             page.draw_circle((60, 60), 46, color=(.65, .22, .20), width=2)
             page.draw_circle((60, 60), 41, color=(.65, .22, .20), width=.6)
             page.insert_text((35, 58), '예 시', fontname='ko', fontsize=17, color=(.65, .22, .20))
@@ -64,7 +70,8 @@ def capture():
         window.settings = QSettings(str(folder / 'settings.ini'), QSettings.Format.IniFormat)
         window.stamp_library = StampLibrary(folder / 'stamps.sqlite3')
         window.stamp_library.add('검토 확인 · 예시', stamp_image, 20)
-        window.resize(1440, 920)
+        # Wide enough for the toolbar to keep two rows beside the stamp library.
+        window.resize(1640, 1048)
         window.show()
         window.open_path(path)
         window.set_view_mode('single')
