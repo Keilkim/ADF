@@ -2170,13 +2170,8 @@ def _kill_worker_process_tree(process_id):
     if not isinstance(process_id,int) or process_id <= 0:
         raise ValueError('중단할 작업 프로세스를 확인할 수 없습니다.')
     if os.name=='nt':
-        import subprocess
-        command = Path(os.environ.get('SystemRoot',r'C:\Windows'))/'System32'/'taskkill.exe'
-        # The Windows virtualenv launcher may spawn a second Python process.
-        # Terminate that exact task tree so it cannot hold the job folder open.
-        subprocess.run([str(command),'/PID',str(process_id),'/T','/F'],
-            stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10,
-            creationflags=subprocess.CREATE_NO_WINDOW,check=False)
+        from .windows_process import terminate_worker_tree
+        terminate_worker_tree(process_id)
     else:
         import signal
         try:
