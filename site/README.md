@@ -9,6 +9,8 @@
 - 호스팅: Vercel, 프로젝트 루트 `site`, Framework Preset `Other`, 빌드·설치 명령 없음
 - 도장 보관: 데스크톱 앱의 로컬 SQLite에만 저장
 
+Windows와 macOS의 다운로드 버튼을 각각 표시합니다. Windows는 현재 사전 릴리즈의 EXE에 연결하고, macOS는 실제 배포 파일이 준비될 때까지 비활성 버튼과 준비 중 안내를 표시합니다. macOS용 버튼에 Windows 파일 또는 소스 ZIP을 연결하지 않습니다.
+
 저장소 최상위에서 `python -m http.server 4173 --directory site --bind 127.0.0.1`로 확인할 수 있습니다. 이 기본 서버에서는 `/guide.html`, `/privacy.html`로 안내를 엽니다. Vercel에서는 `cleanUrls`로 확장자 없이 열립니다.
 
 Vercel CLI가 연결된 계정에서 `vercel --cwd site --prod`로 배포합니다. 저장소 전체나 `release/`를 Vercel에 업로드하지 않습니다. `site/.vercel`과 인증 파일은 Git에 포함하지 않습니다.
