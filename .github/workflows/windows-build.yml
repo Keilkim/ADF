@@ -1,0 +1,114 @@
+name: Windows build
+
+# Maintainer-triggered builds prepare verifiable artifacts for signing review.
+# SignPath integration will be added after Foundation approval.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      QT_QPA_PLATFORM: offscreen
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+
+      - name: Install build and test dependencies
+        run: |
+          python -m venv .venv
+          if ($LASTEXITCODE -ne 0) { throw 'Virtual environment creation failed.' }
+          & .venv/Scripts/python.exe -m pip install -r requirements-dev.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
+
+      - name: Prepare pinned OCR models
+        run: |
+          & .venv/Scripts/python.exe scripts/prepare-ocr.py
+          if ($LASTEXITCODE -ne 0) { throw 'OCR model preparation failed.' }
+
+      - name: Test source and OCR
+        run: |
+          New-Item -ItemType Directory -Path .tools/ci -Force | Out-Null
+          & .venv/Scripts/python.exe -m pytest -q --junitxml=.tools/ci/tests.xml
+          if ($LASTEXITCODE -ne 0) { throw 'Source tests failed.' }
+
+      - name: Build native extension, app and unsigned installer
+        run: ./scripts/build-windows.ps1 -SkipDependencies
+
+      - name: Verify packaged source, resources and checksums
+        run: |
+          & .venv/Scripts/python.exe scripts/verify-release.py --report .tools/ci/release-verification.json
+          if ($LASTEXITCODE -ne 0) { throw 'Release verification failed.' }
+          [ordered]@{
+            repository = $env:GITHUB_REPOSITORY
+            commit = $env:GITHUB_SHA
+            ref = $env:GITHUB_REF
+            workflow = $env:GITHUB_WORKFLOW_REF
+            run_url = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            run_attempt = $env:GITHUB_RUN_ATTEMPT
+            signing_status = 'unsigned; Foundation approval and integration pending'
+            installed_app_verification = 'not performed by this workflow'
+          } | ConvertTo-Json | Set-Content -LiteralPath .tools/ci/build-origin.json -Encoding utf8
+
+      - name: Upload unsigned review artifacts
+        id: unsigned
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ADF-Windows-unsigned-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            release/
+            .tools/ci/
+          include-hidden-files: true
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: Summarize review build
+        env:
+          ARTIFACT_URL: ${{ steps.unsigned.outputs.artifact-url }}
+          ARTIFACT_ID: ${{ steps.unsigned.outputs.artifact-id }}
+        run: |
+          @(
+            'Unsigned Windows build for review. No release has been published.',
+            '',
+            "Source commit: $env:GITHUB_SHA",
+            "Artifact ID: $env:ARTIFACT_ID",
+            "Artifact: $env:ARTIFACT_URL",
+            '',
+            'Source/OCR tests, native integration tests and static package verification passed.',
+            'The installed/frozen application has not been exercised by this workflow.',
+            'Code signing requires Foundation approval, integration and manual release approval.'
+          ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+
+      - name: Upload available verification logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ADF-Windows-checks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .tools/ci/
+            build/native-shell/*.log
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7

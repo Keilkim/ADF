@@ -84,9 +84,12 @@
             Each signing request requires manual approval.
           </li>
           <li>
-            Current build system: local Windows builds using public PowerShell
-            and Python scripts. GitHub Actions builds and SignPath integration
-            are not yet configured.
+            Build system: a manually triggered
+            <a href="https://github.com/Keilkim/ADF/actions/workflows/windows-build.yml"
+              >GitHub Actions Windows workflow</a
+            > builds public source on GitHub-hosted runners and retains unsigned
+            review artifacts. The existing release was built locally. SignPath
+            integration is pending; workflow results are available at the link.
           </li>
           <li>
             The application does not upload user documents or stamp data.

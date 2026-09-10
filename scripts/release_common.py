@@ -2,7 +2,8 @@
 import re
 
 SOURCE_ITEMS = ['main.py', 'adf', 'assets', 'docs', 'tests', 'scripts', 'installer',
-                'native-shell', 'ADF.spec', 'README.md', 'LICENSES', 'spec.md',
+                'native-shell', 'ADF.spec', 'README.md', 'LICENSE', 'LICENSES', 'spec.md',
+                '.github', '.gitattributes', 'CODE_SIGNING.md', 'CONTRIBUTING.md', 'SECURITY.md',
                 'requirements.txt', 'requirements-ocr-lock.txt', 'requirements-build.txt', 'requirements-dev.txt', '.gitignore']
 
 
