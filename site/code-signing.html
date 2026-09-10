@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="ADF의 코드 서명 현황, 무료 오픈소스 지원 신청 준비와 릴리즈 승인 정책."
+    />
+    <title>Code signing policy — ADF</title>
+    <link rel="icon" href="/assets/adf-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">본문으로 건너뛰기</a>
+    <header class="site-header">
+      <nav class="nav wrap" aria-label="주 메뉴">
+        <a class="brand" href="/"
+          ><img src="/assets/adf-mark.svg" width="34" height="34" alt="" /><span
+            >ADF</span
+          ></a
+        >
+        <div class="nav-links">
+          <a href="/guide">사용안내</a
+          ><a class="nav-download" href="/#download">다운로드 ↓</a>
+        </div>
+      </nav>
+    </header>
+    <main id="main" class="document wrap">
+      <p class="eyebrow">CODE SIGNING POLICY</p>
+      <h1>코드 서명과 배포.</h1>
+      <p class="lead">
+        현재 ADF 0.3.24는 서명되지 않은 Windows 사전 버전입니다.
+      </p>
+      <p class="notice">
+        SignPath Foundation의 무료 오픈소스 서명 지원 신청을 준비하고 있습니다.
+        아직 신청서 제출·지원 승인·서명은 완료되지 않았습니다. 현재 설치 파일은
+        Windows 스마트 앱 컨트롤에 의해 차단될 수 있습니다.
+      </p>
+      <h2>서명과 검증 현황</h2>
+      <p>
+        소스 자동 검사는 통과했지만 최종 설치 파일과 앱 EXE는 빌드 PC의 Windows
+        Application Control에 의해 차단되어 설치·실행 검증을 완료하지
+        못했습니다.
+        <a href="https://github.com/Keilkim/ADF/releases/tag/v0.3.24"
+          >릴리즈 안내</a
+        >에서 검증 범위와 파일 해시를 확인할 수 있습니다.
+      </p>
+      <h2>릴리즈 승인 담당자</h2>
+      <p>
+        현재 코드 작성·검토와 서명 승인 담당자는 저장소 유지관리자
+        <a href="https://github.com/Keilkim">Keilkim</a>입니다. 서명 서비스를
+        연동한 뒤에도 각 릴리즈의 소스와 빌드 결과를 확인하고 유지관리자가
+        수동으로 서명을 승인합니다.
+      </p>
+      <h2>공개 소스와 배포 파일</h2>
+      <p>
+        ADF 자체 코드는 AGPL-3.0-or-later로 공개하며 외부 구성 요소에는 각
+        라이선스가 적용됩니다. 설치 파일과 대응 소스, 외부 라이브러리 소스 및
+        해시를 같은 릴리즈에서 제공합니다. 새 서명 또는 재빌드는 새로운 릴리즈로
+        게시합니다.
+      </p>
+      <h2>문서와 도장 보관</h2>
+      <p>
+        PDF 편집, 도장 보관, 비교와 OCR은 사용자 PC에서 처리합니다. 앱은 문서와
+        도장을 서버로 전송하지 않습니다. 자세한 내용은
+        <a href="/privacy">데이터 보관 안내</a>를 참고하세요.
+      </p>
+      <h2 lang="en">For reviewers</h2>
+      <div lang="en">
+        <p>
+          ADF is preparing an application for the SignPath Foundation
+          open-source program. The application has not been submitted or
+          approved. No release is currently signed by SignPath or the SignPath
+          Foundation.
+        </p>
+        <ul>
+          <li>
+            Committers and reviewers:
+            <a href="https://github.com/Keilkim">Keilkim</a>.
+          </li>
+          <li>
+            Signing approver: <a href="https://github.com/Keilkim">Keilkim</a>.
+            Each signing request requires manual approval.
+          </li>
+          <li>
+            Current build system: local Windows builds using public PowerShell
+            and Python scripts. GitHub Actions builds and SignPath integration
+            are not yet configured.
+          </li>
+          <li>
+            The application does not upload user documents or stamp data.
+            Website and download hosting are described in the
+            <a href="/privacy">privacy notice</a>.
+          </li>
+        </ul>
+      </div>
+      <p>
+        <a href="https://github.com/Keilkim/ADF/blob/main/CODE_SIGNING.md"
+          >코드 서명 정책 소스 보기</a
+        >
+      </p>
+      <a class="button secondary" href="/#download">다운로드 안내로 돌아가기</a>
+    </main>
+  </body>
+</html>
