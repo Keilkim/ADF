@@ -30,15 +30,23 @@
       <p class="eyebrow">CODE SIGNING POLICY</p>
       <h1>코드 서명과 배포.</h1>
       <p class="lead">
-        현재 ADF 0.3.24는 서명되지 않은 Windows 사전 버전입니다.
+        macOS용 ADF 0.3.25는 Developer ID로 서명하고 Apple 공증을 받았습니다.
+        Windows용은 코드 서명을 받을 때까지 다운로드를 멈췄습니다.
       </p>
       <p class="notice">
         2026년 9월 10일 SignPath Foundation의 무료 오픈소스 서명 지원 신청을
         접수하고 심사를 기다리고 있습니다. 지원 승인과 서명은 아직 완료되지
-        않았습니다. 현재 설치 파일은
-        Windows 스마트 앱 컨트롤에 의해 차단될 수 있습니다.
+        않았습니다. 서명되지 않은 0.3.24 설치 파일은 Windows 스마트 앱 컨트롤에
+        의해 차단될 수 있어 사이트에서 제공하지 않습니다.
       </p>
       <h2>서명과 검증 현황</h2>
+      <p>
+        macOS용 앱과 DMG는 Apple Developer ID Application 인증서(SEONGHUN KIM,
+        팀 ID TZQ9JL6R7R)로 서명하고 Apple 공증을 받았습니다.
+        <a href="https://github.com/Keilkim/ADF/releases/tag/v0.3.25"
+          >0.3.25 릴리즈 안내</a
+        >에서 파일 해시와 공증 결과를 확인할 수 있습니다.
+      </p>
       <p>
         소스 자동 검사는 통과했지만 최종 설치 파일과 앱 EXE는 빌드 PC의 Windows
         Application Control에 의해 차단되어 설치·실행 검증을 완료하지
