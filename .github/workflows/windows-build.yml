@@ -76,8 +76,14 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ADF-Windows-unsigned-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          # Retain our own signing inputs, matching source and checks. The full
+          # installer is built and verified but is not stored before approval.
           path: |
-            release/
+            dist/ADF/ADF.exe
+            dist/ADF/ADFShell-*.dll
+            release/ADF-Source-*.zip
+            release/SHA256SUMS-*.txt
+            LICENSES/build-manifest.json
             .tools/ci/
           include-hidden-files: true
           if-no-files-found: error
@@ -97,6 +103,8 @@ jobs:
             "Artifact: $env:ARTIFACT_URL",
             '',
             'Source/OCR tests, native integration tests and static package verification passed.',
+            'Artifact contains ADF-owned signing inputs, corresponding source and verification records.',
+            'The full installer was verified but is not retained in this review artifact.',
             'The installed/frozen application has not been exercised by this workflow.',
             'Code signing requires Foundation approval, integration and manual release approval.'
           ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
