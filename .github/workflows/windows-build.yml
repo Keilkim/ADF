@@ -9,6 +9,14 @@ on:
         description: Retain the unsigned installer for installation testing (7 days)
         type: boolean
         default: false
+      release_run_id:
+        description: Export a successful existing build to a draft release (optional run ID)
+        type: string
+        default: ''
+      release_tag:
+        description: Existing draft release tag for the exported build
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -19,6 +27,7 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ inputs.release_run_id == '' }}
     runs-on: windows-2022
     timeout-minutes: 90
     defaults:
@@ -173,3 +182,22 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
+
+  release-assets:
+    if: ${{ inputs.release_run_id != '' }}
+    runs-on: windows-2022
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Export verified installer and bundled sources to draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN: ${{ inputs.release_run_id }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: ./scripts/prepare-windows-release.ps1 -RunId $env:BUILD_RUN -Tag $env:RELEASE_TAG
