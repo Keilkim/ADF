@@ -74,16 +74,22 @@ try {
         '오픈소스 라이선스' = '_internal\LICENSES\index.html'
         '소스코드' = '_internal\SOURCES'
     }
-    $shortcutShell = New-Object -ComObject WScript.Shell
+    # WScript.Shell returns empty targets for Korean shortcut names on CI.
+    # Read the installed links through the same Unicode shell API as Explorer.
+    $shortcutShell = New-Object -ComObject Shell.Application
+    $shortcutFolder = $shortcutShell.NameSpace($shortcutDirectory)
+    if ($null -eq $shortcutFolder) { throw 'Cannot read installed shortcut folder.' }
     $helpSections = @{ '사용 안내' = 'guide'; '오픈소스 라이선스' = 'licenses'; '소스코드' = 'sources' }
     foreach ($label in $helpTargets.Keys) {
         $target = Join-Path $installRoot $helpTargets[$label]
         $shortcut = Join-Path $shortcutDirectory "$label.lnk"
         if (-not (Test-Path -LiteralPath $target) -or -not (Test-Path -LiteralPath $shortcut)) { throw "Installed help or shortcut missing: $label" }
-        $link = $shortcutShell.CreateShortcut($shortcut)
+        $item = $shortcutFolder.ParseName((Split-Path -Leaf $shortcut))
+        if ($null -eq $item) { throw "Cannot read installed shortcut: $label" }
+        $link = $item.GetLink
         # Windows shortcuts can return an 8.3 path even when Inno was given a long path.
         # Compare the file identity so an alias is accepted, but another EXE is not.
-        $actualTarget = $link.TargetPath
+        $actualTarget = $link.Path
         $actualArguments = $link.Arguments
         $expectedArguments = '--help-section ' + $helpSections[$label]
         if (-not $report.Contains('help_shortcut_targets')) { $report.help_shortcut_targets = @() }
