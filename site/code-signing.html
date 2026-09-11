@@ -30,28 +30,30 @@
       <p class="eyebrow">CODE SIGNING POLICY</p>
       <h1>코드 서명과 배포.</h1>
       <p class="lead">
-        macOS용 ADF 0.3.25는 Developer ID로 서명하고 Apple 공증을 받았습니다.
-        Windows용은 코드 서명을 받을 때까지 다운로드를 멈췄습니다.
+        macOS용 ADF 0.3.26은 Developer ID로 서명하고 Apple 공증을 받았습니다.
+        Windows용 0.3.26은 현재 미서명 상태로 제공합니다.
       </p>
       <p class="notice">
         2026년 9월 10일 SignPath Foundation의 무료 오픈소스 서명 지원 신청을
         접수하고 심사를 기다리고 있습니다. 지원 승인과 서명은 아직 완료되지
-        않았습니다. 서명되지 않은 0.3.24 설치 파일은 Windows 스마트 앱 컨트롤에
-        의해 차단될 수 있어 사이트에서 제공하지 않습니다.
+        않았습니다. Windows 설치 파일은 스마트 앱 컨트롤이나 SmartScreen에 의해
+        실행이 차단되거나 경고가 표시될 수 있습니다. 서명본이 준비되면 새 버전으로
+        게시하고 홈페이지 다운로드를 갱신합니다.
       </p>
       <h2>서명과 검증 현황</h2>
       <p>
         macOS용 앱과 DMG는 Apple Developer ID Application 인증서(SEONGHUN KIM,
         팀 ID TZQ9JL6R7R)로 서명하고 Apple 공증을 받았습니다.
-        <a href="https://github.com/Keilkim/ADF/releases/tag/v0.3.25"
-          >0.3.25 릴리즈 안내</a
+        <a href="https://github.com/Keilkim/ADF/releases/tag/v0.3.26"
+          >0.3.26 릴리즈 안내</a
         >에서 파일 해시와 공증 결과를 확인할 수 있습니다.
       </p>
       <p>
-        소스 자동 검사는 통과했지만 최종 설치 파일과 앱 EXE는 빌드 PC의 Windows
-        Application Control에 의해 차단되어 설치·실행 검증을 완료하지
-        못했습니다.
-        <a href="https://github.com/Keilkim/ADF/releases/tag/v0.3.24"
+        Windows용은 소스 검사 298개와 세부 검사 122개를 통과했습니다. Windows
+        Server 2022에서 설치·설치된 파일 대조·앱 실행·문서 처리·제거도 확인했습니다.
+        해당 서버의 탐색기 메뉴 조합 검사는 실패했으며, Windows 10/11의 실제
+        탐색기 통합과 입력 장치는 추가 확인이 필요합니다.
+        <a href="https://github.com/Keilkim/ADF/releases/tag/v0.3.26"
           >릴리즈 안내</a
         >에서 검증 범위와 파일 해시를 확인할 수 있습니다.
       </p>
@@ -97,14 +99,16 @@
             <a href="https://github.com/Keilkim/ADF/actions/workflows/windows-build.yml"
               >GitHub Actions Windows workflow</a
             > builds public source on GitHub-hosted runners and retains unsigned
-            review artifacts. The existing release was built locally. SignPath
-            integration is pending; workflow results are available at the link.
+            review artifacts. Windows 0.3.26 comes from that workflow and is
+            published unsigned. SignPath integration is pending; workflow
+            results are available at the link.
           </li>
           <li>
-            Review builds do not establish successful installation or Explorer
-            integration on Windows 10/11. The hosted Windows Server Explorer
-            menu check failed on the initial run; its result remains visible
-            separately in each build's summary and verification records.
+            Installation, packaged app execution, document processing and
+            uninstall passed on Windows Server 2022. This does not establish
+            interactive Windows 10/11 compatibility. The hosted Windows Server
+            Explorer menu check failed; its result remains visible separately
+            in the build's summary and verification records.
           </li>
           <li>
             The application does not upload user documents or stamp data.

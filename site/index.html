@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#f7f7f5" />
     <meta
       name="description"
-      content="ADF는 내 PC에서 문서를 편집하고 도장을 보관하는 오픈소스 Windows PDF 편집기입니다. 필기, 병합, 비교, 오프라인 OCR까지 한곳에서."
+      content="ADF는 내 PC에서 문서를 편집하고 도장을 보관하는 오픈소스 Windows·macOS PDF 편집기입니다. 필기, 병합, 비교, 오프라인 OCR까지 한곳에서."
     />
     <meta property="og:title" content="ADF — 문서 작업, 내 PC에서 가볍게." />
     <meta
@@ -62,11 +62,11 @@
               <path
                 d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"
               /></svg
-            >Windows용 <span class="button-status">서명 준비 중</span></a
+            >Windows용 다운로드</a
           >
         </div>
         <p class="hero-meta">
-          macOS 0.3.25 <span>·</span> Windows는 코드 서명 후 제공
+          Windows · macOS 0.3.26 <span>·</span> Windows는 미서명 버전
         </p>
         <figure class="app-preview">
           <img
@@ -194,35 +194,34 @@
                 <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" />
               </svg>
               <h3 id="windows-title">Windows</h3>
-              <p class="platform-status">코드 서명 준비 중</p>
-              <p class="platform-description" id="windows-release-status">
-                코드 서명을 받은 뒤<br />이곳에서 다시 내려받을 수 있습니다.
+              <p class="platform-status">0.3.26</p>
+              <p class="platform-description">
+                Python, 라이브러리, OCR 모델까지<br />설치 파일 하나에 모두
+                담았습니다.
               </p>
-              <div class="release-note">
-                <strong>다운로드 일시 중지</strong>
+              <div class="release-note" id="windows-release-status">
+                <strong>Windows 미서명 버전</strong>
                 <p>
-                  서명되지 않은 설치 파일은 스마트 앱 컨트롤에 의해 차단될 수
-                  있어 다운로드를 멈췄습니다. 오픈소스 코드 서명 지원을 신청해
-                  심사를 기다리고 있습니다.
+                  스마트 앱 컨트롤이나 SmartScreen이 실행을 차단하거나 경고할 수
+                  있습니다. 코드 서명 지원은 심사 중이며, 서명본은 준비되는 대로
+                  제공합니다.
                 </p>
                 <a href="/code-signing"
                   >코드 서명 현황 <span aria-hidden="true">↗</span></a
                 >
               </div>
               <div class="platform-action">
-                <button
-                  class="button secondary"
-                  type="button"
-                  disabled
+                <a
+                  class="button primary download-file"
+                  href="https://github.com/Keilkim/ADF/releases/download/v0.3.26/ADF-Setup-0.3.26.exe"
                   aria-describedby="windows-release-status"
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4" /></svg
                   >Windows용 다운로드
-                </button>
+                </a>
                 <p class="download-meta">
-                  Windows 10 1809 이상 · Windows 11<br />Intel/AMD x64<br />코드
-                  서명 후 제공
+                  Windows 10 1809 이상 · Windows 11<br />Intel/AMD x64 · 1.01 GB · EXE<br />2026.09.12
                 </p>
               </div>
             </article>
@@ -236,7 +235,7 @@
                 <path d="m5 16-3 4h20l-3-4M10 18h4" />
               </svg>
               <h3 id="macos-title">macOS</h3>
-              <p class="platform-status">0.3.25</p>
+              <p class="platform-status">0.3.26</p>
               <p class="platform-description">
                 Python, 라이브러리, OCR 모델까지<br />앱 하나에 모두
                 담았습니다.
@@ -247,7 +246,7 @@
                   Developer ID로 서명하고 Apple 공증을 받았습니다. DMG를 열고
                   ADF를 응용 프로그램 폴더로 끌어 놓아 설치합니다.
                 </p>
-                <a href="https://github.com/Keilkim/ADF/releases/tag/v0.3.25"
+                <a href="https://github.com/Keilkim/ADF/releases/tag/v0.3.26"
                   >검증 상태와 변경 내용 <span aria-hidden="true">↗</span></a
                 >
               </div>
@@ -255,14 +254,14 @@
                 <a
                   class="button primary download-file"
                   aria-describedby="macos-release-status"
-                  href="https://github.com/Keilkim/ADF/releases/download/v0.3.25/ADF-0.3.25-macOS.dmg"
+                  href="https://github.com/Keilkim/ADF/releases/download/v0.3.26/ADF-0.3.26-macOS.dmg"
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4" /></svg
                   >macOS용 다운로드
                 </a>
                 <p class="download-meta">
-                  macOS 15 이상<br />Apple Silicon(M1 이후) · 1.01 GB · DMG<br />2026.09.11
+                  macOS 15 이상<br />Apple Silicon(M1 이후) · 1.01 GB · DMG<br />2026.09.12
                 </p>
               </div>
             </article>
@@ -270,14 +269,14 @@
           <div class="release-links">
             <a href="/code-signing">Code signing policy</a>
             <a
-              href="https://github.com/Keilkim/ADF/releases/download/v0.3.25/ADF-Source-0.3.25-macOS.zip"
-              >대응 소스</a
+              href="https://github.com/Keilkim/ADF/releases/download/v0.3.26/ADF-Source-0.3.26-macOS.zip"
+              >macOS 대응 소스</a
             ><a
-              href="https://github.com/Keilkim/ADF/releases/download/v0.3.25/ADF-ThirdParty-Sources-0.3.25-macOS.zip"
-              >외부 라이브러리 소스</a
+              href="https://github.com/Keilkim/ADF/releases/download/v0.3.26/ADF-Source-0.3.26.zip"
+              >Windows 대응 소스</a
             ><a
-              href="https://github.com/Keilkim/ADF/releases/download/v0.3.25/SHA256SUMS-0.3.25-macOS.txt"
-              >SHA-256</a
+              href="https://github.com/Keilkim/ADF/releases/tag/v0.3.26"
+              >외부 소스 · SHA-256 · 검증 기록</a
             >
           </div>
         </div>
@@ -313,8 +312,9 @@
           <details>
             <summary>설치 파일이 차단되면 어떻게 하나요?</summary>
             <p>
-              macOS 앱은 Apple 공증을 받아 차단 없이 열립니다. Windows 설치
-              파일은 코드 서명을 받을 때까지 다운로드를 멈췄습니다. 진행 상황은
+              macOS 앱은 Apple 공증을 받았습니다. Windows용은 아직 미서명이며,
+              스마트 앱 컨트롤이나 SmartScreen이 실행을 차단하거나 경고할 수
+              있습니다. 서명본은 준비되는 대로 새 버전으로 제공합니다. 진행 상황은
               <a href="/code-signing">코드 서명 안내</a>와 GitHub 릴리즈에서
               안내합니다.
             </p>

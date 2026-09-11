@@ -1035,6 +1035,58 @@ class DesktopWorkflowTests(unittest.TestCase):
         self.assertEqual(editor.toPlainText(), 'Typing')
         self.window.finish_text_selection()
 
+    def test_reader_focus_is_visually_distinct_from_checked_mode(self):
+        self.window.activateWindow()
+        self.app.processEvents()
+        self.assertEqual(self.window.view.mode, 'continuous')
+        self.assertTrue(self.window.view.hasFocus())
+        self.assertEqual([mode for mode, button in self.window.view_buttons.items() if button.isChecked()],
+                         ['continuous'])
+        single = self.window.view_buttons['single']
+        continuous = self.window.view_buttons['continuous']
+        QTest.mouseMove(self.window.view.viewport(), QPoint(100, 100))
+        single.setFocus(Qt.FocusReason.TabFocusReason)
+        self.app.processEvents()
+        self.assertTrue(single.hasFocus())
+        self.assertFalse(single.isChecked())
+        focused = single.grab().toImage()
+        geometry = single.geometry()
+        self.window.view.setFocus(Qt.FocusReason.TabFocusReason)
+        self.app.processEvents()
+        self.assertNotEqual(focused, single.grab().toImage(), 'Keyboard focus must remain visible')
+        self.assertEqual(single.geometry(), geometry)
+        single.setFocus(Qt.FocusReason.TabFocusReason)
+        self.app.processEvents()
+        def background(button):
+            image = button.grab().toImage()
+            return image.pixelColor(image.width() // 2, round(5 * image.devicePixelRatio()))
+        self.assertNotEqual(background(single), background(continuous))
+        QTest.keyClick(single, Qt.Key.Key_Space)
+        self.assertEqual(self.window.view.mode, 'single')
+        self.assertEqual([mode for mode, button in self.window.view_buttons.items() if button.isChecked()], ['single'])
+        with patch.object(self.window, 'resolve_placement', return_value=False):
+            QTest.mouseClick(continuous, Qt.MouseButton.LeftButton)
+        self.assertEqual(self.window.view.mode, 'single')
+        self.assertEqual([mode for mode, button in self.window.view_buttons.items() if button.isChecked()], ['single'])
+
+    def test_tool_button_focus_does_not_look_like_an_active_tool(self):
+        self.window.activateWindow()
+        QTest.mouseMove(self.window.view.viewport(), QPoint(100, 100))
+        self.window.actions['eraser'].trigger()
+        inactive = self.window.pen_button
+        active = self.window.eraser_button
+        inactive.setFocus(Qt.FocusReason.TabFocusReason)
+        self.app.processEvents()
+        self.assertTrue(inactive.hasFocus())
+        self.assertFalse(inactive.isChecked())
+        self.assertTrue(active.isChecked())
+        first, second = inactive.grab().toImage(), active.grab().toImage()
+        self.assertNotEqual(first.pixelColor(first.width() // 2, round(5 * first.devicePixelRatio())),
+                            second.pixelColor(second.width() // 2, round(5 * second.devicePixelRatio())))
+        QTest.keyClick(inactive, Qt.Key.Key_Space)
+        self.assertEqual(self.window.pointer_mode, 'pen')
+        self.assertFalse(active.isChecked())
+
     def test_view_icons_direction_footer_and_single_page_wheel(self):
         for mode in ('single', 'continuous', 'grid'):
             self.window.set_view_mode(mode)

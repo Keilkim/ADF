@@ -1,8 +1,8 @@
 // The site does not read local files, store user data, or call application APIs.
-const downloadLink = document.querySelector(".download-file");
+const downloadLinks = document.querySelectorAll(".download-file");
 const notice = document.querySelector("#download-notice");
 let noticeTimer;
-downloadLink?.addEventListener("click", (event) => {
+downloadLinks.forEach((link) => link.addEventListener("click", (event) => {
   if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
   clearTimeout(noticeTimer);
   notice.hidden = false;
@@ -10,4 +10,4 @@ downloadLink?.addEventListener("click", (event) => {
   noticeTimer = setTimeout(() => {
     notice.hidden = true;
   }, 4200);
-});
+}));

@@ -4,6 +4,19 @@ name: Windows build
 # SignPath integration will be added after Foundation approval.
 on:
   workflow_dispatch:
+    inputs:
+      retain_installer:
+        description: Retain the unsigned installer for installation testing (7 days)
+        type: boolean
+        default: false
+      release_run_id:
+        description: Export a successful existing build to a draft release (optional run ID)
+        type: string
+        default: ''
+      release_tag:
+        description: Existing draft release tag for the exported build
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -14,6 +27,7 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ inputs.release_run_id == '' }}
     runs-on: windows-2022
     timeout-minutes: 90
     defaults:
@@ -54,7 +68,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Source tests failed.' }
 
       - name: Build native extension, app and unsigned installer
+        id: package
         run: ./scripts/build-windows.ps1 -SkipDependencies -NativeComponentTestsOnly
+
+      - name: Verify installation, packaged app and uninstall
+        run: ./scripts/test-installer.ps1 -NativeComponentTestsOnly
 
       # This remains visible even if Windows Server cannot assemble the menu.
       # A successful review build does not certify Windows 10/11 installation.
@@ -87,7 +105,7 @@ jobs:
             signing_status = 'unsigned; Foundation approval and integration pending'
             explorer_menu_check = $env:EXPLORER_CHECK
             release_validation_complete = $false
-            installed_app_verification = 'not performed by this workflow'
+            installed_app_verification = 'install, payload hashes, app smoke, worker exports, standalone tools and uninstall passed on Windows Server 2022'
           } | ConvertTo-Json | Set-Content -LiteralPath .tools/ci/build-origin.json -Encoding utf8
 
       - name: Upload unsigned review artifacts
@@ -95,15 +113,33 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ADF-Windows-unsigned-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          # Retain our own signing inputs, matching source and checks. The full
-          # installer is built and verified but is not stored before approval.
+          # Retain signing inputs, matching source and checks. The full installer
+          # is retained separately only when requested for installation testing.
           path: |
             dist/ADF/ADF.exe
             dist/ADF/ADFShell-*.dll
             release/ADF-Source-*.zip
             release/SHA256SUMS-*.txt
             LICENSES/build-manifest.json
+            release/*smoke-*.json
+            release/*smoke-*.png
+            .tools/verification/installer-*.log
             .tools/ci/
+          include-hidden-files: true
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: Retain unsigned installer for installation testing
+        if: ${{ !cancelled() && inputs.retain_installer && steps.package.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ADF-Windows-installer-unsigned-${{ github.sha }}-${{ github.run_id }}
+          path: |
+            release/ADF-Setup-*.exe
+            release/ADF-Source-*.zip
+            release/SHA256SUMS-*.txt
+            .tools/ci/build-origin.json
           include-hidden-files: true
           if-no-files-found: error
           compression-level: 0
@@ -114,6 +150,7 @@ jobs:
           ARTIFACT_URL: ${{ steps.unsigned.outputs.artifact-url }}
           ARTIFACT_ID: ${{ steps.unsigned.outputs.artifact-id }}
           EXPLORER_CHECK: ${{ steps.explorer.outcome }}
+          INSTALLER_RETAINED: ${{ inputs.retain_installer }}
         run: |
           @(
             'Unsigned Windows build for review. No release has been published.',
@@ -123,10 +160,11 @@ jobs:
             "Artifact: $env:ARTIFACT_URL",
             '',
             'Source/OCR tests, native component tests and static package verification passed.',
+            'Installation, payload hashes, packaged app, worker exports, standalone tools and uninstall passed on Windows Server 2022.',
             "Windows-assembled Explorer menu check: $env:EXPLORER_CHECK",
             'Artifact contains ADF-owned signing inputs, corresponding source and verification records.',
-            'The full installer was verified but is not retained in this review artifact.',
-            'RELEASE VALIDATION INCOMPLETE: Windows 10/11 Explorer and installed/frozen app validation are still required.',
+            "Unsigned installer retained in a separate test artifact: $env:INSTALLER_RETAINED",
+            'RELEASE VALIDATION INCOMPLETE: interactive Windows 10/11 Explorer and app validation are still required.',
             'Code signing requires Foundation approval, integration and manual release approval.'
           ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
 
@@ -137,7 +175,29 @@ jobs:
           name: ADF-Windows-checks-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             .tools/ci/
+            .tools/verification/installer-*.log
+            release/*smoke-*.json
+            release/*smoke-*.png
             build/native-shell/*.log
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
+
+  release-assets:
+    if: ${{ inputs.release_run_id != '' }}
+    runs-on: windows-2022
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Export verified installer and bundled sources to draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN: ${{ inputs.release_run_id }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: ./scripts/prepare-windows-release.ps1 -RunId $env:BUILD_RUN -Tag $env:RELEASE_TAG

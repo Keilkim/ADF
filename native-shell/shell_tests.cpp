@@ -345,7 +345,7 @@ int wmain(int argc, wchar_t** argv) {
         const auto parent = dll.substr(0, dll.find_last_of(L"\\/"));
         const std::wstring fixture = parent + L"\\fixture 한글 ' & (메뉴) " + std::to_wstring(GetCurrentProcessId());
         Check(CreateDirectoryW(fixture.c_str(), nullptr) != FALSE, "Create unique local test fixture");
-        const std::wstring testDll = fixture + L"\\ADFShell-0.3.25.dll";
+        const std::wstring testDll = fixture + L"\\ADFShell-fixture.dll";
         const std::wstring sink = fixture + L"\\ADF.exe";
         Check(CopyFileW(argv[1], testDll.c_str(), TRUE) != FALSE, "Copy production DLL into fixture");
         Check(CopyFileW(argv[2], sink.c_str(), TRUE) != FALSE, "Copy test-only executable sink");

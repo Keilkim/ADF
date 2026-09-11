@@ -127,16 +127,15 @@ QMenu::item:selected { background: #d9d9dc; color: #303238; }
 QMenu::item:disabled { color: #a2a8b1; }
 QToolBar { background: #f6f7f9; border: none; spacing: 4px; padding: 9px 15px; }
 QToolBar::separator { background: #dfe3e9; width: 1px; margin: 7px 10px; }
-QToolButton { border: none; border-radius: 9px; padding: 7px 10px; background: transparent; }
+QToolButton { border: 1px solid transparent; border-radius: 9px; padding: 6px 9px; background: transparent; }
 QToolButton:hover { background: #e8e8ea; }
-QToolButton:pressed, QToolButton:checked { background: #d5d5d8; border: none; color: #303238; }
-QPushButton { background: #eeeeef; border: none; border-radius: 9px; padding: 8px 16px; min-height: 18px; }
-QPushButton:hover { background: #e5e5e8; border: none; }
-QPushButton:pressed, QPushButton:checked { background: #d5d5d8; border: none; }
-QPushButton:default, QPushButton#primary { background: #dedee1; border: none; color: #303238; font-weight: 600; }
+QToolButton:pressed, QToolButton:checked { background: #d5d5d8; color: #303238; }
+QPushButton { background: #eeeeef; border: 1px solid transparent; border-radius: 9px; padding: 7px 15px; min-height: 18px; }
+QPushButton:hover { background: #e5e5e8; }
+QPushButton:pressed, QPushButton:checked { background: #d5d5d8; }
+QPushButton:default, QPushButton#primary { background: #dedee1; color: #303238; font-weight: 600; }
 QPushButton#primary:hover, QPushButton:default:hover { background: #eeeeef; }
 QPushButton:disabled, QToolButton:disabled { color: #a1a8b4; background: transparent; }
-QPushButton:focus, QToolButton:focus { background: #d5d5d8; border: none; }
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QTextEdit, QPlainTextEdit { background: #eeeeef; border: none; border-radius: 9px; padding: 6px 8px; selection-background-color: #dedfe2; selection-color: #303238; }
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QTextEdit:focus, QPlainTextEdit:focus { background: #e2e2e5; border: none; }
 QComboBox::drop-down { border: none; width: 23px; }
@@ -169,11 +168,10 @@ QFrame#card { background: white; border: 1px solid #e2e6ed; border-radius: 12px;
 QFrame#sidebar { background: #f4f5f8; border: none; }
 QFrame#pageSidebarRail { background: #f4f5f8; border: none; }
 QToolButton#pageSidebarToggle {
-    background: #e8e8ea; border: none; border-radius: 10px; padding: 0;
+    background: #e8e8ea; border: 1px solid transparent; border-radius: 10px; padding: 0;
 }
-QToolButton#pageSidebarToggle:hover { background: #dddddf; border: none; }
+QToolButton#pageSidebarToggle:hover { background: #dddddf; }
 QToolButton#pageSidebarToggle:pressed { background: #e0e1e4; }
-QToolButton#pageSidebarToggle:focus { background: #d5d5d8; border: none; }
 QFrame#pagebar { background: #f8f9fb; border: none; }
 QWidget#fullscreenStage { background: #e8ebef; }
 QFrame#fullscreenPanel { background: #f8f9fb; border: none; }
@@ -189,7 +187,7 @@ QToolTip { background: white; color: #303238; border: 1px solid #d7d8dc; padding
 QToolBar#readerToolbar { padding: 5px 14px; background: #f8f9fb; }
 QToolBar#pdfTools { padding: 5px 14px; background: #f0f2f6; border: none; }
 QFrame#unifiedToolbar { background: #f8f9fb; border: none; }
-QFrame#unifiedToolbar QToolButton { font-size: 9pt; padding: 6px 8px; }
+QFrame#unifiedToolbar QToolButton { font-size: 9pt; padding: 5px 7px; }
 QFrame#unifiedToolbar QComboBox { font-size: 9pt; padding-top: 5px; padding-bottom: 5px; }
 QFrame#toolbarSeparator { color: #dfe3e9; max-width: 1px; margin: 6px; }
 QFrame#toolbarDivider { color: #e6e8ec; max-width: 1px; margin: 9px 4px; }
@@ -204,6 +202,7 @@ QFrame#contextToolbar QLineEdit, QFrame#contextToolbar QPlainTextEdit, QFrame#co
 QFrame#contextToolbar QDoubleSpinBox, QFrame#contextToolbar QPushButton {
     font-size: 9pt; padding-top: 5px; padding-bottom: 5px;
 }
+QFrame#contextToolbar QPushButton { padding-top: 4px; padding-bottom: 4px; }
 QWidget#numberSettings, QScrollArea#numberSettingsScroll,
 QScrollArea#numberSettingsScroll QWidget#qt_scrollarea_viewport {
     background: #ffffff;
@@ -213,10 +212,13 @@ QScrollArea#numberSettingsScroll {
 }
 QFrame#exportResult { background: #eaf4ed; border: 1px solid #cee1d4; border-radius: 7px; }
 QWidget#numberSettings { border: 1px solid #dfe3ea; border-radius: 10px; }
-QToolButton#numberPosition { background: #eeeeef; border: none; border-radius: 9px; padding: 2px; }
-QToolButton#numberPosition:hover { background: #eeeeef; border-color: #a3a6ad; }
-QToolButton#numberPosition:checked { background: #d5d5d8; border: none; }
+QToolButton#numberPosition { background: #eeeeef; border: 1px solid transparent; border-radius: 9px; padding: 1px; }
+QToolButton#numberPosition:hover { background: #eeeeef; }
+QToolButton#numberPosition:checked { background: #d5d5d8; }
 QLabel#numberExample { background: #f0f0f2; color: #454950; border-radius: 7px; padding: 12px; font-size: 12pt; }
+/* Focus gets a ring; only checked/pressed buttons get the active fill. */
+QPushButton:focus, QToolButton:focus,
+QToolButton#pageSidebarToggle:focus, QToolButton#numberPosition:focus { border-color: #8793a5; }
 '''
 
 _asset_dir = (Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent.parent)) / 'assets').as_posix()

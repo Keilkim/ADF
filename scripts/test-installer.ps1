@@ -1,10 +1,11 @@
 ﻿[CmdletBinding()]
-param([switch]$SkipNativeHarness, [switch]$SkipBlockedUninstaller)
+param([switch]$SkipNativeHarness, [switch]$SkipBlockedUninstaller, [switch]$NativeComponentTestsOnly)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+$pythonPath = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $releaseRoot = Join-Path $repoRoot 'release'
 $verificationRoot = Join-Path $repoRoot '.tools\verification'
-$version = '0.3.25'
+$version = '0.3.26'
 New-Item -ItemType Directory -Path $verificationRoot -Force | Out-Null
 $setupPath = Join-Path $releaseRoot "ADF-Setup-$version.exe"
 if (-not (Test-Path -LiteralPath $setupPath)) { throw 'Build the installer first.' }
@@ -50,7 +51,7 @@ try {
     $report.unacknowledged_install_rejected = $true
     # Seed 0.1's static verb only inside our new private registry subtree.
     New-Item -Path "$registryPrefix\Classes\SystemFileAssociations\.pdf\shell\ADF.Split" -Force | Out-Null
-    Run-CheckedProcess $setupPath @("/ADFACKNOTICE=$version", '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/ADFISOLATEDTEST=$token", ('/DIR="{0}"' -f $installRoot), ('/LOG="{0}"' -f (Join-Path $verificationRoot "installer-$version-install.log")))
+    Run-CheckedProcess $setupPath @("/ADFACKNOTICE=$version", '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/ADFISOLATEDTEST=$token", ('/DIR="{0}"' -f $installRoot), ('/LOG="{0}"' -f (Join-Path $verificationRoot "installer-$version-install.log"))) -TimeoutSeconds 240
     $installedExe = Join-Path $installRoot 'ADF.exe'
     $installedDll = Join-Path $installRoot "ADFShell-$version.dll"
     if (-not (Test-Path -LiteralPath $installedExe) -or -not (Test-Path -LiteralPath $installedDll)) { throw 'Installed executable or native shell DLL missing.' }
@@ -73,14 +74,30 @@ try {
         '오픈소스 라이선스' = '_internal\LICENSES\index.html'
         '소스코드' = '_internal\SOURCES'
     }
-    $shortcutShell = New-Object -ComObject WScript.Shell
+    # WScript.Shell returns empty targets for Korean shortcut names on CI.
+    # Read the installed links through the same Unicode shell API as Explorer.
+    $shortcutShell = New-Object -ComObject Shell.Application
+    $shortcutFolder = $shortcutShell.NameSpace($shortcutDirectory)
+    if ($null -eq $shortcutFolder) { throw 'Cannot read installed shortcut folder.' }
     $helpSections = @{ '사용 안내' = 'guide'; '오픈소스 라이선스' = 'licenses'; '소스코드' = 'sources' }
     foreach ($label in $helpTargets.Keys) {
         $target = Join-Path $installRoot $helpTargets[$label]
         $shortcut = Join-Path $shortcutDirectory "$label.lnk"
         if (-not (Test-Path -LiteralPath $target) -or -not (Test-Path -LiteralPath $shortcut)) { throw "Installed help or shortcut missing: $label" }
-        $link = $shortcutShell.CreateShortcut($shortcut)
-        if ($link.TargetPath -ne $installedExe -or $link.Arguments -ne ('--help-section ' + $helpSections[$label])) { throw "Incorrect in-app help shortcut: $label" }
+        $item = $shortcutFolder.ParseName((Split-Path -Leaf $shortcut))
+        if ($null -eq $item) { throw "Cannot read installed shortcut: $label" }
+        $link = $item.GetLink
+        # Windows shortcuts can return an 8.3 path even when Inno was given a long path.
+        # Compare the file identity so an alias is accepted, but another EXE is not.
+        $actualTarget = $link.Path
+        $actualArguments = $link.Arguments
+        $expectedArguments = '--help-section ' + $helpSections[$label]
+        if (-not $report.Contains('help_shortcut_targets')) { $report.help_shortcut_targets = @() }
+        $report.help_shortcut_targets += [ordered]@{ label = $label; target = $actualTarget; arguments = $actualArguments; expected_target = $installedExe; expected_arguments = $expectedArguments }
+        & $pythonPath -c 'import os, sys; sys.exit(0 if os.path.samefile(sys.argv[1], sys.argv[2]) else 1)' $actualTarget $installedExe
+        if ($LASTEXITCODE -ne 0 -or $actualArguments -ne $expectedArguments) {
+            throw "Incorrect in-app help shortcut: $label; target=$actualTarget; arguments=$actualArguments"
+        }
     }
     foreach ($name in @("ADF-Source-$version.zip", "ADF-ThirdParty-Sources-$version.zip", 'SHA256SUMS.txt')) {
         if (-not (Test-Path -LiteralPath (Join-Path $installRoot "_internal\SOURCES\$name"))) { throw "Installed corresponding source missing: $name" }
@@ -108,7 +125,7 @@ try {
     $report.legacy_split_removed = $true
     if ($before -ne (Get-ExistingStateSnapshot)) { throw 'Isolated installation changed the existing ADF installation or PDF association.' }
     $report.install = $true
-    Run-CheckedProcess $installedExe @('--smoke-test', ('"{0}"' -f $smokeJson))
+    Run-CheckedProcess $installedExe @('--smoke-test', ('"{0}"' -f $smokeJson)) -TimeoutSeconds 180
     if (-not (Test-Path -LiteralPath $smokeJson)) { throw 'Installed app smoke result missing.' }
     $smoke = Get-Content -LiteralPath $smokeJson -Encoding UTF8 -Raw | ConvertFrom-Json
     if (-not $smoke.ok) { throw "Installed app smoke test failed: $($smoke | ConvertTo-Json -Compress)" }
@@ -117,7 +134,6 @@ try {
     Copy-Item -LiteralPath $smokeJson -Destination (Join-Path $releaseRoot "installed-app-smoke-$version.json")
     $smokeImage = [IO.Path]::ChangeExtension($smokeJson, '.png')
     if (Test-Path -LiteralPath $smokeImage) { Copy-Item -LiteralPath $smokeImage -Destination (Join-Path $releaseRoot "installed-app-smoke-$version.png") }
-    $pythonPath = Join-Path $repoRoot '.venv\Scripts\python.exe'
     & $pythonPath (Join-Path $PSScriptRoot 'test-frozen-worker.py') $installedExe --report (Join-Path $releaseRoot "installed-worker-smoke-$version.json")
     if ($LASTEXITCODE -ne 0) { throw 'Installed app worker export test failed.' }
     $report.worker_exports = $true
@@ -130,8 +146,14 @@ try {
         $report.native_selection_harness = $false
         $report.native_selection_harness_skipped = 'Explicitly skipped: native test executable is blocked by Windows Application Control.'
     } else {
-        Run-CheckedProcess $harness @(('"{0}"' -f $installedDll), ('"{0}"' -f $sink))
-        $report.native_selection_harness = $true
+        $harnessArguments = @(('"{0}"' -f $installedDll), ('"{0}"' -f $sink))
+        if ($NativeComponentTestsOnly) { $harnessArguments += '--component-only' }
+        Run-CheckedProcess $harness $harnessArguments
+        $report.native_component_harness = $true
+        $report.native_selection_harness = -not $NativeComponentTestsOnly
+        if ($NativeComponentTestsOnly) {
+            $report.native_selection_harness_skipped = 'Component tests only; Windows-assembled Explorer menus are checked separately.'
+        }
     }
 } catch {
     $report.failure = $_.Exception.Message
