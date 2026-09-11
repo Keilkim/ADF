@@ -41,11 +41,11 @@ ADF 앱은 사용자 문서와 도장을 네트워크로 전송하지 않습니�
 
 ## 검증 가능한 Windows 빌드
 
-[Windows build 워크플로](.github/workflows/windows-build.yml)는 유지관리자가 수동 실행하며 GitHub에서 제공하는 Windows 실행기에서 공개 소스로 빌드합니다. 소스·OCR 검사, 네이티브 DLL 구성 요소 검사와 설치 패키지 정적 검사를 거쳐 커밋과 실행 번호가 붙은 미서명 검토용 아티팩트를 7일간 보관합니다. 보관 대상은 ADF EXE·확장 DLL과 대응 소스, 검사 기록입니다. 대용량 설치 파일은 빌드·검사하되 지원 승인 전 검토용 아티팩트에는 보관하지 않습니다. 빌드 결과와 실행 기록은 [GitHub Actions](https://github.com/Keilkim/ADF/actions/workflows/windows-build.yml)에서 확인합니다.
+[Windows build 워크플로](.github/workflows/windows-build.yml)는 유지관리자가 수동 실행하며 GitHub에서 제공하는 Windows 실행기에서 공개 소스로 빌드합니다. 소스·OCR 검사, 네이티브 DLL 구성 요소 검사와 설치 패키지 정적 검사를 거쳐 커밋과 실행 번호가 붙은 미서명 검토용 아티팩트를 7일간 보관합니다. 보관 대상은 ADF EXE·확장 DLL과 대응 소스, 검사 기록입니다. `retain_installer`를 선택한 수동 실행은 설치 시험에 사용할 미서명 설치 파일도 별도 아티팩트로 7일간 보관합니다. 이 선택은 공개 릴리즈 게시나 서명 승인이 아닙니다. 빌드 결과와 실행 기록은 [GitHub Actions](https://github.com/Keilkim/ADF/actions/workflows/windows-build.yml)에서 확인합니다.
 
 GitHub Windows Server 실행기의 실제 탐색기 메뉴 조합 검사는 [초기 실행](https://github.com/Keilkim/ADF/actions/runs/34458193465)에서 실패했습니다. 워크플로는 이 검사를 계속 별도로 실행하고 실패도 빌드 요약·기록에 표시하지만 미서명 검토용 빌드를 중단시키지는 않습니다. CI 성공을 최종 릴리즈 검증 완료로 해석하지 않으며, 지원 대상 Windows 10/11에서 탐색기 메뉴와 설치한 앱을 별도로 검증해야 합니다. 기본 로컬 빌드에서는 전체 네이티브 검사 실패가 여전히 빌드를 중단시킵니다.
 
-이 워크플로는 GitHub 릴리즈를 자동 게시하거나 서명을 요청하지 않습니다. 설치한 앱의 실행 검증도 별도로 필요합니다. 기존 0.3.24 릴리즈는 로컬에서 만든 미서명 파일이며, 이 워크플로의 새 검토용 빌드와 구분합니다. SignPath의 실제 연동은 지원 승인 후 설정합니다.
+이 워크플로는 GitHub 릴리즈를 자동 게시하거나 서명을 요청하지 않습니다. Windows Server 2022 실행기에서는 격리된 설치·전체 설치 파일 해시 대조·설치 앱 기능·병합/분할 작업·독립 도구 창·제거를 검사합니다. Windows 10/11의 실제 사용자 환경과 탐색기 메뉴는 별도로 확인해야 합니다. 기존 0.3.24 릴리즈는 로컬에서 만든 미서명 파일이며, 이 워크플로의 새 검토용 빌드와 구분합니다. SignPath의 실제 연동은 지원 승인 후 설정합니다.
 
 ## macOS 서명과 공증
 

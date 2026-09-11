@@ -1,5 +1,5 @@
 ﻿[CmdletBinding()]
-param([switch]$SkipNativeHarness, [switch]$SkipBlockedUninstaller)
+param([switch]$SkipNativeHarness, [switch]$SkipBlockedUninstaller, [switch]$NativeComponentTestsOnly)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $releaseRoot = Join-Path $repoRoot 'release'
@@ -50,7 +50,7 @@ try {
     $report.unacknowledged_install_rejected = $true
     # Seed 0.1's static verb only inside our new private registry subtree.
     New-Item -Path "$registryPrefix\Classes\SystemFileAssociations\.pdf\shell\ADF.Split" -Force | Out-Null
-    Run-CheckedProcess $setupPath @("/ADFACKNOTICE=$version", '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/ADFISOLATEDTEST=$token", ('/DIR="{0}"' -f $installRoot), ('/LOG="{0}"' -f (Join-Path $verificationRoot "installer-$version-install.log")))
+    Run-CheckedProcess $setupPath @("/ADFACKNOTICE=$version", '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/ADFISOLATEDTEST=$token", ('/DIR="{0}"' -f $installRoot), ('/LOG="{0}"' -f (Join-Path $verificationRoot "installer-$version-install.log"))) -TimeoutSeconds 240
     $installedExe = Join-Path $installRoot 'ADF.exe'
     $installedDll = Join-Path $installRoot "ADFShell-$version.dll"
     if (-not (Test-Path -LiteralPath $installedExe) -or -not (Test-Path -LiteralPath $installedDll)) { throw 'Installed executable or native shell DLL missing.' }
@@ -108,7 +108,7 @@ try {
     $report.legacy_split_removed = $true
     if ($before -ne (Get-ExistingStateSnapshot)) { throw 'Isolated installation changed the existing ADF installation or PDF association.' }
     $report.install = $true
-    Run-CheckedProcess $installedExe @('--smoke-test', ('"{0}"' -f $smokeJson))
+    Run-CheckedProcess $installedExe @('--smoke-test', ('"{0}"' -f $smokeJson)) -TimeoutSeconds 180
     if (-not (Test-Path -LiteralPath $smokeJson)) { throw 'Installed app smoke result missing.' }
     $smoke = Get-Content -LiteralPath $smokeJson -Encoding UTF8 -Raw | ConvertFrom-Json
     if (-not $smoke.ok) { throw "Installed app smoke test failed: $($smoke | ConvertTo-Json -Compress)" }
@@ -130,8 +130,14 @@ try {
         $report.native_selection_harness = $false
         $report.native_selection_harness_skipped = 'Explicitly skipped: native test executable is blocked by Windows Application Control.'
     } else {
-        Run-CheckedProcess $harness @(('"{0}"' -f $installedDll), ('"{0}"' -f $sink))
-        $report.native_selection_harness = $true
+        $harnessArguments = @(('"{0}"' -f $installedDll), ('"{0}"' -f $sink))
+        if ($NativeComponentTestsOnly) { $harnessArguments += '--component-only' }
+        Run-CheckedProcess $harness $harnessArguments
+        $report.native_component_harness = $true
+        $report.native_selection_harness = -not $NativeComponentTestsOnly
+        if ($NativeComponentTestsOnly) {
+            $report.native_selection_harness_skipped = 'Component tests only; Windows-assembled Explorer menus are checked separately.'
+        }
     }
 } catch {
     $report.failure = $_.Exception.Message

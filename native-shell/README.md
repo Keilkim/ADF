@@ -4,12 +4,12 @@
 `IContextMenu`, and `IClassFactory`. Explorer only loads this small native
 component. The PDF application remains a separate process.
 
-The installer copies it as `ADFShell-0.3.25.dll` beside `ADF.exe` and registers
+The installer copies it as `ADFShell-0.3.26.dll` beside `ADF.exe` and registers
 these values under `HKCU\Software\Classes`:
 
 ```text
 CLSID\{8093F936-820B-4CDB-A64B-7A39EC807A11}\InprocServer32
-  (Default) = <install directory>\ADFShell-0.3.25.dll
+  (Default) = <install directory>\ADFShell-0.3.26.dll
   ThreadingModel = Apartment
 SystemFileAssociations\.pdf\shellex\ContextMenuHandlers\ADF
   (Default) = {8093F936-820B-4CDB-A64B-7A39EC807A11}
