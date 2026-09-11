@@ -1,0 +1,65 @@
+name: Windows installer inspection
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Build run in this repository containing the test installer
+        required: true
+        type: string
+      artifact_name:
+        description: Exact unsigned installer artifact name
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  inspect:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Download and verify the selected installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN: ${{ inputs.run_id }}
+          BUILD_ARTIFACT: ${{ inputs.artifact_name }}
+        run: |
+          if ($env:BUILD_RUN -notmatch '^\d+$' -or $env:BUILD_ARTIFACT -notmatch '^ADF-Windows-installer-unsigned-[a-f0-9]{40}-\d+$') { throw 'Invalid artifact selector.' }
+          gh run download $env:BUILD_RUN --name $env:BUILD_ARTIFACT --dir .tools/artifact
+          if ($LASTEXITCODE -ne 0) { throw 'Artifact download failed.' }
+          New-Item -ItemType Directory .tools/ci -Force | Out-Null
+          $setup = @(Get-ChildItem .tools/artifact -Recurse -Filter 'ADF-Setup-*.exe')
+          $sums = @(Get-ChildItem .tools/artifact -Recurse -Filter 'SHA256SUMS-*.txt')
+          if ($setup.Count -ne 1 -or $sums.Count -ne 1) { throw 'Ambiguous installer artifact.' }
+          $hash = (Get-FileHash $setup[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ((Get-Content $sums[0].FullName) -notcontains ($hash + '  ' + $setup[0].Name)) { throw 'Installer checksum mismatch.' }
+          [ordered]@{ run = $env:BUILD_RUN; artifact = $env:BUILD_ARTIFACT; sha256 = $hash } | ConvertTo-Json | Set-Content .tools/ci/origin.json
+      - name: Inspect isolated installation and packaged app
+        run: |
+          $requirement = Get-Content requirements.txt | Where-Object { $_ -match '^PyMuPDF==' }
+          python -m pip install $requirement
+          if ($LASTEXITCODE -ne 0) { throw 'Oracle dependency installation failed.' }
+          ./scripts/inspect-windows-installer.ps1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: ADF-installer-inspection-${{ github.run_id }}
+          path: .tools/ci/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
