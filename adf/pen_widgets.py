@@ -175,9 +175,10 @@ class ToolOptionsButton(QToolButton):
         self.options.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.options.clicked.connect(self.optionsRequested.emit)
         self.setStyleSheet('''
-            QToolButton#drawingTool { padding-right: 20px; }
-            QToolButton#drawingToolOptions { border: none; border-radius: 5px; padding: 0; background: transparent; }
-            QToolButton#drawingToolOptions:hover, QToolButton#drawingToolOptions:focus { background: #c8c8cc; }
+            QToolButton#drawingTool { padding-right: 19px; }
+            QToolButton#drawingToolOptions { border: 1px solid transparent; border-radius: 5px; padding: 0; background: transparent; }
+            QToolButton#drawingToolOptions:hover { background: #c8c8cc; }
+            QToolButton#drawingToolOptions:focus { border-color: #8793a5; }
         ''')
 
     def resizeEvent(self, event):
@@ -291,9 +292,10 @@ class PenMenu(QWidget):
             QLabel#penTitle { font-size: 11pt; font-weight: 600; }
             QLabel#penHint { color: #77787c; font-size: 9pt; }
             QFrame#penSegments { background: #eeeeef; border: none; border-radius: 13px; }
-            QToolButton { border: none; border-radius: 10px; padding: 4px; color: #444548; }
-            QToolButton:hover, QToolButton:focus { background: #e8e8ea; border: none; }
-            QToolButton:checked, QToolButton:pressed { background: #d5d5d8; border: none; color: #252528; }
+            QToolButton { border: 1px solid transparent; border-radius: 10px; padding: 3px; color: #444548; }
+            QToolButton:hover { background: #e8e8ea; }
+            QToolButton:checked, QToolButton:pressed { background: #d5d5d8; color: #252528; }
+            QToolButton:focus { border-color: #8793a5; }
             QComboBox, QLineEdit { background: #eeeeef; border: none; border-radius: 8px; padding: 5px 8px; }
             QComboBox:focus, QLineEdit:focus { background: #e2e2e5; border: none; }
             QComboBox QAbstractItemView { background: #fafafa; border: none; outline: none; padding: 6px; selection-background-color: #d5d5d8; }

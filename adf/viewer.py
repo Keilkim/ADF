@@ -1,8 +1,8 @@
 from collections import OrderedDict
 import math
 import pymupdf
-from PySide6.QtCore import Qt, QRectF, QPointF, QSize, QSizeF, QTimer, Signal, QSignalBlocker, QEvent
-from PySide6.QtGui import QColor, QFont, QPalette, QPainter, QPixmap, QImage, QPen, QBrush, QCursor, QTransform, QTextCursor, QTextCharFormat, QTextBlockFormat
+from PySide6.QtCore import Qt, QRectF, QPointF, QSize, QSizeF, QTimer, QElapsedTimer, Signal, QSignalBlocker, QEvent
+from PySide6.QtGui import QColor, QFont, QPalette, QPainter, QPixmap, QImage, QPen, QBrush, QCursor, QTransform, QTextCursor, QTextCharFormat, QTextBlockFormat, QInputDevice
 from PySide6.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsItem,
     QGraphicsObject, QGraphicsProxyWidget, QListWidget, QListWidgetItem, QAbstractItemView, QToolButton, QApplication,
     QStyledItemDelegate, QStyleOptionViewItem, QStyle)
@@ -303,6 +303,8 @@ class PdfView(QGraphicsView):
         self.pages = []
         self.current = 0
         self.mode = 'continuous'
+        self.page_wheel_clock = QElapsedTimer()
+        self.reset_page_wheel()
         self.fit_mode = 'page'
         self.start_right = False
         self.text_mode = False
@@ -350,6 +352,7 @@ class PdfView(QGraphicsView):
         self.pen = PenInput(self)
 
     def load(self, document, current=0):
+        self.reset_page_wheel()
         self.pen.cancel()
         self.clear_ink_selection()
         self.clear_text_selection()
@@ -658,6 +661,7 @@ class PdfView(QGraphicsView):
             self.goto(target)
 
     def set_mode(self, mode):
+        self.reset_page_wheel()
         self.mode = mode
         self.layout_pages()
         self.goto(self.current)
@@ -793,23 +797,90 @@ class PdfView(QGraphicsView):
         self.apply_fit()
         self.schedule_render()
 
+    def reset_page_wheel(self):
+        self.page_wheel_clock.invalidate()
+        self.page_wheel_delta = 0
+        self.page_wheel_pixels = None
+        self.page_wheel_turned = False
+
+    def scroll_page_wheel(self, event, precise):
+        if not precise:
+            super().wheelEvent(event)
+        else:
+            # QGraphicsView's scene wheel path reduces precise pixel scrolling
+            # to an angle delta. Keep macOS scrolling at its native distance.
+            dx, dy = event.pixelDelta().x(), event.pixelDelta().y()
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                dx, dy = dy, dx
+            horizontal, vertical = self.horizontalScrollBar(), self.verticalScrollBar()
+            horizontal.setValue(horizontal.value() - dx)
+            vertical.setValue(vertical.value() - dy)
+        event.accept()
+
+    def wheel_page(self, event):
+        phase = event.phase()
+        if (phase == Qt.ScrollPhase.ScrollBegin or
+                (phase == Qt.ScrollPhase.NoScrollPhase and self.page_wheel_clock.isValid()
+                 and self.page_wheel_clock.elapsed() > 250)):
+            self.reset_page_wheel()
+        if phase == Qt.ScrollPhase.ScrollEnd:
+            self.reset_page_wheel()
+            event.accept()
+            return
+        self.page_wheel_clock.start()
+        # Cocoa also supplies estimated pixels for ordinary mouse notches.
+        # Only precise devices / phased gestures should use pixel thresholds.
+        pixels = not event.pixelDelta().isNull() and (
+            phase != Qt.ScrollPhase.NoScrollPhase or
+            bool(event.pointingDevice().capabilities() & QInputDevice.Capability.PixelScroll))
+        delta = event.pixelDelta() if pixels else event.angleDelta()
+        if delta.isNull():
+            event.accept()
+            return
+        if (abs(delta.x()) > abs(delta.y()) or
+                event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+            self.page_wheel_delta = 0
+            self.scroll_page_wheel(event, pixels)
+            return
+        # A trackpad gesture can deliver dozens of updates and momentum events.
+        # Once it turns a page, leave that page still until the next gesture.
+        if self.page_wheel_turned:
+            event.accept()
+            return
+        scroll = self.verticalScrollBar()
+        dy = delta.y()
+        at_edge = (dy < 0 and scroll.value() >= scroll.maximum() - 1 or
+                   dy > 0 and scroll.value() <= scroll.minimum() + 1)
+        if not at_edge:
+            self.page_wheel_delta = 0
+            self.scroll_page_wheel(event, pixels)
+            return
+        event.accept()
+        if phase == Qt.ScrollPhase.ScrollMomentum:
+            return
+        if self.page_wheel_pixels != pixels or self.page_wheel_delta * dy < 0:
+            self.page_wheel_delta = 0
+        self.page_wheel_pixels = pixels
+        self.page_wheel_delta += dy
+        # One mouse notch is 120 eighth-degrees; touch scrolling uses pixels.
+        if abs(self.page_wheel_delta) < (48 if pixels else 120):
+            return
+        self.page_wheel_delta = 0
+        target = self.navigation_target(1 if dy < 0 else -1)
+        if 0 <= target < len(self.pages):
+            self.goto(target)
+            scroll.setValue(scroll.minimum() if dy < 0 else scroll.maximum())
+            self.page_wheel_turned = pixels or phase != Qt.ScrollPhase.NoScrollPhase
+
     def wheelEvent(self, event):
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            self.set_zoom(self.transform().m11() * (1.12 if event.angleDelta().y() > 0 else 1/1.12))
+            self.reset_page_wheel()
+            delta = event.pixelDelta() if not event.pixelDelta().isNull() else event.angleDelta()
+            if delta.y():
+                self.set_zoom(self.transform().m11() * (1.12 if delta.y() > 0 else 1/1.12))
             event.accept()
         elif self.mode in ('single', 'spread') and self.pages:
-            delta = event.angleDelta().y() or event.pixelDelta().y()
-            scroll = self.verticalScrollBar()
-            if delta < 0 and scroll.value() >= scroll.maximum() - 1 and self.navigation_target(1) < len(self.pages):
-                self.navigate(1)
-                self.verticalScrollBar().setValue(self.verticalScrollBar().minimum())
-                event.accept()
-            elif delta > 0 and scroll.value() <= scroll.minimum() + 1 and self.navigation_target(-1) >= 0:
-                self.navigate(-1)
-                self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
-                event.accept()
-            else:
-                super().wheelEvent(event)
+            self.wheel_page(event)
         else:
             super().wheelEvent(event)
 

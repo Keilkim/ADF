@@ -12,7 +12,7 @@ import pymupdf
 from PySide6.QtCore import Qt, QTimer, QSettings, QStandardPaths, QUrl, QProcess, QByteArray, QBuffer, QIODevice, QEvent, Signal
 from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QFont, QFontDatabase, QIcon, QKeySequence, QPixmap, QPainter, QPageSize, QPageLayout
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QToolButton, QStackedWidget, QFrame,
+    QLabel, QPushButton, QToolButton, QButtonGroup, QStackedWidget, QFrame,
     QComboBox, QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QFontComboBox, QFileDialog, QMessageBox, QInputDialog, QMenu,
     QProgressDialog, QDialog, QDialogButtonBox, QFormLayout, QCheckBox)
 from PySide6.QtPrintSupport import QPrinter, QPrintDialog
@@ -482,6 +482,7 @@ class MainWindow(QMainWindow):
         following.setToolTip('다음 페이지 (PgDn)')
         following.clicked.connect(lambda: self.view.navigate(1))
         self.view_buttons = {}
+        self.view_button_group = QButtonGroup(self)
         def view_separator():
             separator = QFrame()
             separator.setObjectName('viewGroupSeparator')
@@ -497,6 +498,7 @@ class MainWindow(QMainWindow):
             button.setToolTip(label)
             button.setAccessibleName(label)
             button.setCheckable(True)
+            self.view_button_group.addButton(button)
             button.setChecked(mode == 'continuous')
             button.clicked.connect(lambda checked=False, value=mode: self.set_view_mode(value))
             row.addWidget(button)
@@ -815,6 +817,7 @@ class MainWindow(QMainWindow):
             self.refresh_document()
             self.stack.setCurrentIndex(1)
             self.view.apply_fit()
+            self.view.setFocus(Qt.FocusReason.OtherFocusReason)
             if not self.smoke:
                 recent = self.settings.value('recent',[],type=list)
                 absolute = str(Path(path).resolve())

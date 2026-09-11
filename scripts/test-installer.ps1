@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $releaseRoot = Join-Path $repoRoot 'release'
 $verificationRoot = Join-Path $repoRoot '.tools\verification'
-$version = '0.3.25'
+$version = '0.3.26'
 New-Item -ItemType Directory -Path $verificationRoot -Force | Out-Null
 $setupPath = Join-Path $releaseRoot "ADF-Setup-$version.exe"
 if (-not (Test-Path -LiteralPath $setupPath)) { throw 'Build the installer first.' }
