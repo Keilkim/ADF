@@ -2,6 +2,7 @@
 param([switch]$SkipNativeHarness, [switch]$SkipBlockedUninstaller, [switch]$NativeComponentTestsOnly)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+$pythonPath = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $releaseRoot = Join-Path $repoRoot 'release'
 $verificationRoot = Join-Path $repoRoot '.tools\verification'
 $version = '0.3.26'
@@ -80,7 +81,17 @@ try {
         $shortcut = Join-Path $shortcutDirectory "$label.lnk"
         if (-not (Test-Path -LiteralPath $target) -or -not (Test-Path -LiteralPath $shortcut)) { throw "Installed help or shortcut missing: $label" }
         $link = $shortcutShell.CreateShortcut($shortcut)
-        if ($link.TargetPath -ne $installedExe -or $link.Arguments -ne ('--help-section ' + $helpSections[$label])) { throw "Incorrect in-app help shortcut: $label" }
+        # Windows shortcuts can return an 8.3 path even when Inno was given a long path.
+        # Compare the file identity so an alias is accepted, but another EXE is not.
+        $actualTarget = $link.TargetPath
+        $actualArguments = $link.Arguments
+        $expectedArguments = '--help-section ' + $helpSections[$label]
+        if (-not $report.Contains('help_shortcut_targets')) { $report.help_shortcut_targets = @() }
+        $report.help_shortcut_targets += [ordered]@{ label = $label; target = $actualTarget; arguments = $actualArguments; expected_target = $installedExe; expected_arguments = $expectedArguments }
+        & $pythonPath -c 'import os, sys; sys.exit(0 if os.path.samefile(sys.argv[1], sys.argv[2]) else 1)' $actualTarget $installedExe
+        if ($LASTEXITCODE -ne 0 -or $actualArguments -ne $expectedArguments) {
+            throw "Incorrect in-app help shortcut: $label; target=$actualTarget; arguments=$actualArguments"
+        }
     }
     foreach ($name in @("ADF-Source-$version.zip", "ADF-ThirdParty-Sources-$version.zip", 'SHA256SUMS.txt')) {
         if (-not (Test-Path -LiteralPath (Join-Path $installRoot "_internal\SOURCES\$name"))) { throw "Installed corresponding source missing: $name" }
@@ -117,7 +128,6 @@ try {
     Copy-Item -LiteralPath $smokeJson -Destination (Join-Path $releaseRoot "installed-app-smoke-$version.json")
     $smokeImage = [IO.Path]::ChangeExtension($smokeJson, '.png')
     if (Test-Path -LiteralPath $smokeImage) { Copy-Item -LiteralPath $smokeImage -Destination (Join-Path $releaseRoot "installed-app-smoke-$version.png") }
-    $pythonPath = Join-Path $repoRoot '.venv\Scripts\python.exe'
     & $pythonPath (Join-Path $PSScriptRoot 'test-frozen-worker.py') $installedExe --report (Join-Path $releaseRoot "installed-worker-smoke-$version.json")
     if ($LASTEXITCODE -ne 0) { throw 'Installed app worker export test failed.' }
     $report.worker_exports = $true

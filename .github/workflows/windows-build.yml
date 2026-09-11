@@ -59,6 +59,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Source tests failed.' }
 
       - name: Build native extension, app and unsigned installer
+        id: package
         run: ./scripts/build-windows.ps1 -SkipDependencies -NativeComponentTestsOnly
 
       - name: Verify installation, packaged app and uninstall
@@ -121,7 +122,7 @@ jobs:
           retention-days: 7
 
       - name: Retain unsigned installer for installation testing
-        if: ${{ inputs.retain_installer }}
+        if: ${{ !cancelled() && inputs.retain_installer && steps.package.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ADF-Windows-installer-unsigned-${{ github.sha }}-${{ github.run_id }}
