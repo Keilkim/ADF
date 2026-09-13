@@ -283,6 +283,19 @@ class MainWindow(QMainWindow):
         self.search_timer = QTimer(self)
         self.search_timer.setSingleShot(True)
         self.search_timer.timeout.connect(self.search_step)
+        # Meaning-based search: passages are collected page by page on this
+        # thread, and a SearchJob embeds them once per document revision.
+        self.semantic_index = None
+        self.semantic_encoder = None
+        self.semantic_job = None
+        self.semantic_pending = False
+        self.semantic_timer = QTimer(self)
+        self.semantic_timer.setSingleShot(True)
+        self.semantic_timer.timeout.connect(self.semantic_step)
+        self.semantic_delay = QTimer(self)
+        self.semantic_delay.setSingleShot(True)
+        self.semantic_delay.setInterval(700)
+        self.semantic_delay.timeout.connect(self.run_semantic_search)
         self.setWindowTitle('ADF — 문서 작업, 가볍게')
         self.setWindowIcon(QIcon(str(resource_path('assets/adf.ico'))))
         self.resize(1320, 900)
@@ -587,11 +600,20 @@ class MainWindow(QMainWindow):
         self.search_input.setPlaceholderText('문서에서 찾을 텍스트')
         self.search_input.setMaximumWidth(340)
         self.search_input.textChanged.connect(self.start_search)
-        self.search_input.returnPressed.connect(self.next_match)
+        self.search_input.returnPressed.connect(self.search_return)
         sr.addWidget(self.search_input)
+        from .semantic_search import available
+        self.semantic_toggle = QToolButton()
+        self.semantic_toggle.setText('뜻으로')
+        self.semantic_toggle.setCheckable(True)
+        self.semantic_toggle.setEnabled(available())
+        self.semantic_toggle.setToolTip('비슷한 뜻의 문단을 가까운 순서로 찾습니다 · 이 PC에서 처리합니다' if available()
+                                        else '뜻 검색 모델이 없습니다 · scripts/prepare-ocr.py로 준비하세요')
+        self.semantic_toggle.toggled.connect(self.search_mode_changed)
+        sr.addWidget(self.semantic_toggle)
         self.search_count = QLabel()
         sr.addWidget(self.search_count)
-        for text, callback in [('이전',lambda: self.next_match(-1)),('다음',self.next_match),('닫기',lambda: self.searchbar.hide())]:
+        for text, callback in [('이전',lambda: self.next_match(-1)),('다음',self.next_match),('닫기',self.close_search)]:
             b = QPushButton(text)
             b.clicked.connect(callback)
             sr.addWidget(b)
@@ -913,6 +935,7 @@ class MainWindow(QMainWindow):
         self.fullscreen.exit()
         self.stop_stamp()
         self.search_timer.stop()
+        self.cancel_semantic_search(forget=True)
         self.search_input.clear()
         self.search_matches = []
         self.searchbar.hide()
@@ -1961,7 +1984,7 @@ class MainWindow(QMainWindow):
         elif self.isFullScreen():
             self.showNormal()
         else:
-            self.searchbar.hide()
+            self.close_search()
             self.clear_content_selection()
             self.view.set_highlights([])
 
@@ -1976,10 +1999,16 @@ class MainWindow(QMainWindow):
         self.search_index = -1
         self.search_page = 0
         self.search_timer.stop()
+        self.semantic_delay.stop()
         self.view.set_highlights([])
         if self.search_input.text().strip() and self.document.page_count:
-            self.search_count.setText('찾는 중…')
-            self.search_timer.start(150)
+            if self.semantic_toggle.isChecked():
+                # Each query is embedded; wait until typing pauses or Enter.
+                self.search_count.setText('입력을 마치면 찾습니다')
+                self.semantic_delay.start()
+            else:
+                self.search_count.setText('찾는 중…')
+                self.search_timer.start(150)
         else:
             self.search_count.clear()
 
@@ -2009,6 +2038,110 @@ class MainWindow(QMainWindow):
             r = rect*self.document.doc[index].rotation_matrix
             self.view.ensureVisible(page.mapRectToScene(r.x0,r.y0,r.width,r.height),40,40)
             self.search_count.setText(f'{self.search_index+1} / {len(self.search_matches)}')
+
+    def search_mode_changed(self, semantic):
+        self.search_input.setPlaceholderText('찾고 싶은 내용을 문장으로 입력하세요' if semantic else '문서에서 찾을 텍스트')
+        self.cancel_semantic_search()
+        self.start_search()
+        self.search_input.setFocus()
+
+    def search_return(self):
+        if self.semantic_toggle.isChecked() and not self.search_matches:
+            self.run_semantic_search()
+        else:
+            self.next_match()
+
+    def close_search(self):
+        self.cancel_semantic_search()
+        self.searchbar.hide()
+
+    def run_semantic_search(self):
+        self.semantic_delay.stop()
+        if not self.search_input.text().strip() or not self.document.page_count:
+            return
+        if self.semantic_job is not None:
+            # The running job finishes first and then starts this query.
+            self.semantic_pending = True
+            return
+        token = (self.document.path, id(self.document.doc), self.document.revision)
+        if self.semantic_index is None or self.semantic_index['token'] != token:
+            self.semantic_timer.stop()
+            self.semantic_index = dict(token=token, passages=[], vectors=None, page=0)
+            self.semantic_step()
+        elif not self.semantic_timer.isActive():
+            self.start_semantic_job()
+
+    def semantic_step(self):
+        from .semantic_search import page_passages
+        index = self.semantic_index
+        stop = min(index['page']+8, self.document.page_count)
+        for number in range(index['page'], stop):
+            index['passages'] += [(number, rect, text) for rect, text in page_passages(self.document.doc[number])]
+        index['page'] = stop
+        if stop < self.document.page_count:
+            self.search_count.setText(f'글 모으는 중 {stop}/{self.document.page_count}쪽')
+            self.semantic_timer.start(0)
+        elif index['passages']:
+            self.start_semantic_job()
+        else:
+            self.search_count.setText('찾을 글자가 없습니다')
+            self.statusBar().showMessage('글자가 없는 페이지는 뜻으로 찾을 수 없습니다 · 스캔 문서는 OCR · MD로 내보내 확인하세요', 8000)
+
+    def start_semantic_job(self):
+        from .semantic_search import SearchJob
+        index = self.semantic_index
+        job = SearchJob(self.semantic_encoder, [text for _, _, text in index['passages']], index['vectors'],
+                        self.search_input.text().strip(), index['token'], self)
+        job.progressed.connect(lambda done, total, job=job: self.semantic_progress(job, done, total))
+        job.finished.connect(lambda job=job: self.semantic_finished(job))
+        self.semantic_job = job
+        self.semantic_pending = False
+        self.search_count.setText('뜻 찾는 중…' if index['vectors'] is not None else '뜻 색인 준비 중…')
+        job.start()
+
+    def semantic_progress(self, job, done, total):
+        if job is self.semantic_job:
+            self.search_count.setText(f'뜻 색인 {done*100//total}%')
+
+    def semantic_finished(self, job):
+        job.deleteLater()
+        if job is not self.semantic_job:
+            return
+        self.semantic_job = None
+        if job.error is not None:
+            self.search_count.setText('검색 실패')
+            self.statusBar().showMessage(str(job.error), 7000)
+            return
+        self.semantic_encoder = job.encoder
+        index = self.semantic_index
+        current = index is not None and index['token'] == job.token
+        if current:
+            index['vectors'] = job.vectors
+        query = self.search_input.text().strip()
+        if self.semantic_pending or not current or job.query != query:
+            # The document or the query changed while this job ran.
+            self.semantic_pending = False
+            if query and self.semantic_toggle.isChecked():
+                self.run_semantic_search()
+            return
+        self.search_matches = [(index['passages'][number][0], pymupdf.Rect(index['passages'][number][1])) for number in job.order]
+        self.search_index = -1
+        self.view.set_highlights(self.search_matches)
+        self.next_match()
+        page, _, text = index['passages'][job.order[0]]
+        self.statusBar().showMessage(f'뜻이 가까운 순서로 {len(self.search_matches)}곳을 표시합니다 · 1위 {page+1}쪽: {text[:40]}', 8000)
+
+    def cancel_semantic_search(self, forget=False):
+        self.semantic_delay.stop()
+        self.semantic_timer.stop()
+        self.semantic_pending = False
+        if self.semantic_job is not None:
+            # The thread stops after its current batch; its results are ignored.
+            self.semantic_job.cancelled = True
+            self.semantic_job = None
+        if forget:
+            self.semantic_index = None
+            self.semantic_encoder = None
 
     def print_document(self):
         from PySide6.QtCore import QRectF, QSizeF
@@ -2200,6 +2333,11 @@ class MainWindow(QMainWindow):
         for dialog in list(self.help_dialogs.values()):
             dialog.close()
         self.search_timer.stop()
+        self.cancel_semantic_search(forget=True)
+        from .semantic_search import SearchJob
+        for job in self.findChildren(SearchJob):
+            # A cancelled job stops after its current batch; it must end before its parent.
+            job.wait(5000)
         self.view.clear_text_selection()
         self.release_edit_font()
         self.view.pen.cancel()
@@ -2569,7 +2707,7 @@ def main():
                     window.close_document()
                     assert window.stack.currentWidget() is window.empty_workspace
                     result.update(paragraph_edit=True, deferred_save=True, empty_after_close=True)
-                    from .release_checks import check_alignment_and_sidebar, check_intro, check_stamp_and_compare, check_printing_and_extraction, check_fullscreen, check_help, check_ocr_and_loading, check_pen_and_save
+                    from .release_checks import check_alignment_and_sidebar, check_intro, check_stamp_and_compare, check_printing_and_extraction, check_fullscreen, check_help, check_ocr_and_loading, check_pen_and_save, check_semantic_search
                     result.update(check_stamp_and_compare(window, Path(folder), output))
                     result.update(check_alignment_and_sidebar(window, Path(folder), output))
                     result.update(check_intro(window, Path(folder), output))
@@ -2578,6 +2716,7 @@ def main():
                     result.update(check_pen_and_save(window, Path(folder), output))
                     result.update(check_fullscreen(window, Path(folder), output))
                     result.update(check_ocr_and_loading(window, Path(folder), output))
+                    result.update(check_semantic_search(window, Path(folder), output))
                 output.write_text(json.dumps(result),encoding='utf-8')
                 app.exit(0)
             except Exception as e:

@@ -1,4 +1,4 @@
-# Exact runtime dependencies validated with the bundled OCR models.
+# Exact runtime dependencies validated with the bundled OCR and search models.
 antlr4-python3-runtime==4.9.3
 certifi==2026.7.22
 charset-normalizer==3.5.1
@@ -19,6 +19,7 @@ rapid-layout==1.2.1
 rapid-table==3.0.2
 rapidocr==3.9.2
 requests==2.34.2
+sentencepiece==0.2.2
 shapely==2.1.2
 six==1.17.0
 tqdm==4.70.0

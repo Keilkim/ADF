@@ -738,6 +738,35 @@ def check_stamp_and_compare(window, folder, output):
                 stamp_registered_only=True, comparison_worker=True)
 
 
+def check_semantic_search(window, folder, output):
+    """Meaning-based search with the bundled model: a paraphrase finds its page."""
+    assert window.smoke, 'Release checks must use an isolated test window'
+    source = folder/'semantic-search.pdf'
+    paragraphs = ['회의실 예약은 사내 포털에서 신청하고 사용한 뒤에는 정리합니다.',
+                  '계약을 해지하려면 30일 전에 서면으로 알려야 하며 위약금이 발생할 수 있습니다.',
+                  '분기별 매출 보고서는 매월 마지막 영업일까지 제출합니다.']
+    with pymupdf.open() as doc:
+        for text in paragraphs:
+            doc.new_page(width=420, height=300).insert_textbox(pymupdf.Rect(40, 60, 380, 200), text, fontname='korea', fontsize=11)
+        doc.save(source)
+    assert window.open_path(source)
+    window.show_search()
+    assert window.semantic_toggle.isEnabled(), 'Search model missing from the application'
+    window.semantic_toggle.setChecked(True)
+    window.search_input.setText('계약 해지 조건')
+    window.run_semantic_search()
+    deadline = time.monotonic()+60
+    while (window.semantic_job is not None or window.semantic_timer.isActive()) and time.monotonic() < deadline:
+        QTest.qWait(50)
+    assert window.search_matches and window.search_matches[0][0] == 1, window.search_count.text()
+    assert window.current == 1 and window.search_count.text() == f'1 / {len(window.search_matches)}'
+    window.grab().save(str(output.with_name(output.stem+'-semantic-search.png')))
+    window.close_search()
+    window.semantic_toggle.setChecked(False)
+    window.close_document()
+    return dict(semantic_search=True, semantic_search_bundled_model=True)
+
+
 def make_layout_fixture(folder):
     native, scanned = folder/'layout.pdf', folder/'scan.pdf'
     with pymupdf.open() as doc:

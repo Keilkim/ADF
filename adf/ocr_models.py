@@ -16,3 +16,15 @@ MODELS = [
          url='https://www.modelscope.cn/models/RapidAI/RapidTable/resolve/v2.0.0/slanet-plus.onnx',
          sha256='d57a942af6a2f57d6a4a0372573c696a2379bf5857c45e2ac69993f3b334514b'),
 ]
+
+# Meaning-based search: the ONNX export of intfloat/multilingual-e5-small (MIT,
+# per its model card) and the SentencePiece vocabulary it was trained with.
+SEARCH_REVISION = '614241f622f53c4eeff9890bdc4f31cfecc418b3'
+SEARCH_MODELS = [
+    dict(name='multilingual-e5-small.onnx', role='text_embedding',
+         url=f'https://huggingface.co/intfloat/multilingual-e5-small/resolve/{SEARCH_REVISION}/onnx/model.onnx',
+         sha256='ca456c06b3a9505ddfd9131408916dd79290368331e7d76bb621f1cba6bc8665'),
+    dict(name='sentencepiece.bpe.model', role='tokenizer_vocabulary',
+         url=f'https://huggingface.co/intfloat/multilingual-e5-small/resolve/{SEARCH_REVISION}/sentencepiece.bpe.model',
+         sha256='cfc8146abe2a0488e9e2a0c56de7952f7c11ab059eca145a0a727afce0db2865'),
+]

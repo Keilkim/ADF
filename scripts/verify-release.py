@@ -98,9 +98,12 @@ def verify():
         data_count += 1
     manifest = json.loads((notices/'build-manifest.json').read_text(encoding='utf-8'))
     assert manifest['version'] == version
-    for model in manifest.get('ocr_models', []):
-        assert digest(internal/'OCR_MODELS'/model['name']) == model['sha256'], 'OCR model mismatch: '+model['name']
-    assert {path.name for path in bundle.rglob('*.onnx')} == {model['name'] for model in manifest['ocr_models']}, 'Unexpected bundled model'
+    models = {'OCR_MODELS': manifest.get('ocr_models', []), 'SEARCH_MODEL': manifest.get('search_models', [])}
+    for folder, entries in models.items():
+        for model in entries:
+            assert digest(internal/folder/model['name']) == model['sha256'], 'Model mismatch: '+model['name']
+    assert {path.name for path in bundle.rglob('*.onnx')} == {model['name'] for entries in models.values() for model in entries
+                                                              if model['name'].endswith('.onnx')}, 'Unexpected bundled model'
     assert not [path for pattern in VIDEO_CODECS for path in bundle.rglob(pattern)], 'Unused video codecs bundled'
     # Code signing and notarization reject links to files that were not collected.
     assert not [path for path in bundle.rglob('*') if path.is_symlink() and not path.exists()], 'Broken links in the application'
@@ -126,6 +129,7 @@ def verify():
     return dict(ok=True, platform=sys.platform, version=version, source_files=len(files), frozen_modules=count,
                 frozen_resources=data_count, source_and_executable_match=True, sources_bundled=True,
                 bundled_ocr_models=len(manifest.get('ocr_models', [])),
+                bundled_search_models=len(manifest.get('search_models', [])),
                 source_archives=len(manifest['source_archives']), checksums=checksums, **platform)
 
 
