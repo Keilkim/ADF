@@ -19,6 +19,10 @@ ocr_models = root / '.tools' / 'ocr-models'
 if not (ocr_models / 'pp_doc_layoutv3.onnx').is_file():
     raise RuntimeError('Run scripts/prepare-ocr.py before building the application.')
 datas.append((str(ocr_models), 'OCR_MODELS'))
+search_model = root / '.tools' / 'search-model'
+if not (search_model / 'multilingual-e5-small.onnx').is_file():
+    raise RuntimeError('Run scripts/prepare-ocr.py before building the application.')
+datas.append((str(search_model), 'SEARCH_MODEL'))
 for package in ('rapidocr', 'rapid_layout', 'rapid_table', 'onnxruntime'):
     # The wheels include demo/default weights that this application never uses.
     # Only the five verified models in OCR_MODELS are distributed.
@@ -34,7 +38,7 @@ datas += collect_data_files('pymupdf')
 binaries = collect_dynamic_libs('pymupdf')
 a = Analysis(
     [str(root / 'main.py')], pathex=[str(root)], binaries=binaries, datas=datas,
-    hiddenimports=['pymupdf', 'PIL.Image', 'PIL.ImageQt', 'numpy', 'cv2', 'onnxruntime',
+    hiddenimports=['pymupdf', 'PIL.Image', 'PIL.ImageQt', 'numpy', 'cv2', 'onnxruntime', 'sentencepiece',
                    'rapidocr.main', 'rapidocr.inference_engine.onnxruntime.main',
                    'rapid_layout.inference_engine.onnxruntime.main',
                    'rapid_table.inference_engine.onnxruntime.main'] + collect_submodules('fontTools.ttLib.tables'),

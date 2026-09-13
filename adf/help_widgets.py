@@ -41,6 +41,7 @@ def license_articles(root):
                  ('PaddleOCR-APACHE-2.0.txt', 'OCR 모델 · PaddlePaddle / RapidAI'),
                  ('onnxruntime/onnxruntime/LICENSE', 'ONNX Runtime'),
                  ('onnxruntime/onnxruntime/ThirdPartyNotices.txt', 'ONNX Runtime · 외부 구성 요소'),
+                 ('multilingual-e5-small-NOTICE.txt', '뜻 검색 모델 · multilingual-e5-small'),
                  ('shapely/licenses/LICENSE_GEOS', 'GEOS · LGPL-2.1')]
     used = {name for name, _ in preferred}
     original_names = {}

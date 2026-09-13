@@ -20,6 +20,8 @@ Qt/PySide DLL은 설치 폴더의 `_internal/PySide6` 등에 독립 파일로 �
 
 OCR에는 **RapidOCR, RapidLayout, RapidTable**(Apache-2.0), **ONNX Runtime**(MIT), **PaddlePaddle / PaddleOCR 모델**(Apache-2.0)을 사용합니다. 모델 저작권은 PaddlePaddle Authors 및 기여자에게 있으며, RapidAI가 배포한 ONNX 변환본을 수정 없이 포함합니다. [모델 라이선스 원문](PaddleOCR-APACHE-2.0.txt), 모델의 다운로드 출처·SHA-256·역할은 `build-manifest.json`에 있습니다. 모델 파일 5개는 설치 폴더의 `_internal/OCR_MODELS`에 있으며 직원 PC에서 별도 다운로드하지 않습니다.
 
+**뜻으로 찾기**에는 intfloat의 **multilingual-e5-small** 텍스트 인코더와 **SentencePiece**(Apache-2.0)를 사용합니다. 모델 저장소에는 별도 라이선스 파일이 없고 모델 카드에 MIT로 표기되어 있습니다. 수정하지 않은 ONNX 모델과 어휘 파일을 설치 폴더의 `SEARCH_MODEL`에 넣으며, 출처·리비전·SHA-256은 `build-manifest.json`의 `search_models`와 [고지](multilingual-e5-small-NOTICE.txt)에 기록합니다. 문서의 글은 이 PC 안에서만 처리합니다.
+
 **OpenCV, NumPy, Shapely**와 OCR의 나머지 Python 의존성도 해당 패키지별 고지와 원본 소스를 함께 제공합니다. ONNX Runtime의 [외부 구성 요소 고지](onnxruntime/onnxruntime/ThirdPartyNotices.txt)도 포함합니다. Shapely가 사용하는 **GEOS 3.13.1**에는 [LGPL-2.1](shapely/licenses/LICENSE_GEOS)이 적용되며, 대응하는 GEOS 소스를 동봉합니다. GEOS DLL은 `_internal/shapely.libs`의 독립 파일입니다. 사용자는 해당 조건에 따른 라이브러리 수정·호환 DLL 교체와 그 수정을 디버깅하기 위한 역공학을 할 수 있으며, 동봉한 소스로 다시 빌드할 수도 있습니다. ADF는 수정한 GEOS DLL의 서명을 강제하지 않습니다. 사용하지 않는 OpenCV의 영상 코덱 DLL은 설치본에 포함하지 않습니다.
 
 정식 설치 파일에는 아래 두 소스 ZIP을 함께 넣습니다. 설치 후 **도움말 → 소스코드 → 소스 파일 폴더 열기**에서 찾을 수 있습니다. 위치는 설치 폴더의 `_internal/SOURCES`이며 파일명에는 설치된 앱의 버전이 들어갑니다.

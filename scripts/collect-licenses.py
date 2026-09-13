@@ -194,13 +194,17 @@ def main() -> None:
                 "packages": installed, "source_archives": sources,
                 "license_text_sources": texts, "library_modifications": "None; official upstream wheels are bundled."}
     sys.path.insert(0, str(ROOT))
-    from adf.ocr_models import MODELS
+    from adf.ocr_models import MODELS, SEARCH_MODELS, SEARCH_REVISION
     manifest['ocr_models'] = MODELS
     manifest['ocr'] = dict(runtime='ONNX Runtime CPU', network='Offline; model files are included in the installer.',
         model_origin='PaddlePaddle / PaddleOCR; ONNX conversions distributed by RapidAI',
         model_license='Apache-2.0', notices='PaddleOCR-APACHE-2.0.txt',
         upstream_models=['https://huggingface.co/PaddlePaddle/PP-DocLayoutV3',
                          'https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec'])
+    manifest['search_models'] = SEARCH_MODELS
+    manifest['search'] = dict(runtime='ONNX Runtime CPU', network='Offline; model files are included in the installer.',
+        model='intfloat/multilingual-e5-small', revision=SEARCH_REVISION,
+        model_license='MIT, as declared in the model card metadata', notices='multilingual-e5-small-NOTICE.txt')
     if sys.platform == "win32":
         manifest["native_shell"] = {
             "version": VERSION, "source": "native-shell/",

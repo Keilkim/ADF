@@ -1,0 +1,38 @@
+multilingual-e5-small
+=====================
+
+ADF's meaning-based search uses these files from
+https://huggingface.co/intfloat/multilingual-e5-small at revision
+614241f622f53c4eeff9890bdc4f31cfecc418b3, bundled without modification:
+
+- onnx/model.onnx, bundled as multilingual-e5-small.onnx
+  SHA-256 ca456c06b3a9505ddfd9131408916dd79290368331e7d76bb621f1cba6bc8665
+- sentencepiece.bpe.model
+  SHA-256 cfc8146abe2a0488e9e2a0c56de7952f7c11ab059eca145a0a727afce0db2865
+
+License: MIT, as declared in the model card metadata ("license: mit"). The model
+repository does not contain a separate license file or copyright line.
+
+Model reference:
+Liang Wang, Nan Yang, Xiaolong Huang, Linjun Yang, Rangan Majumder and Furu Wei.
+"Multilingual E5 Text Embeddings: A Technical Report." arXiv:2402.05672, 2024.
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

@@ -1,4 +1,4 @@
-"""Build-time model download with publisher SHA-256 verification."""
+"""Build-time download of the OCR and search models with publisher SHA-256 verification."""
 import hashlib
 from pathlib import Path
 import shutil
@@ -7,13 +7,12 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from adf.ocr_models import MODELS
+from adf.ocr_models import MODELS, SEARCH_MODELS
 
 
-def main():
-    folder = ROOT/'.tools/ocr-models'
+def fetch(models, folder):
     folder.mkdir(parents=True, exist_ok=True)
-    for model in MODELS:
+    for model in models:
         target = folder/model['name']
         if not target.is_file():
             temporary = target.with_suffix('.partial')
@@ -23,8 +22,13 @@ def main():
             temporary.replace(target)
         with target.open('rb') as stream:
             if hashlib.file_digest(stream, 'sha256').hexdigest() != model['sha256']:
-                raise RuntimeError('OCR model checksum mismatch: '+model['name'])
-    print('Offline OCR models verified.')
+                raise RuntimeError('Model checksum mismatch: '+model['name'])
+
+
+def main():
+    fetch(MODELS, ROOT/'.tools/ocr-models')
+    fetch(SEARCH_MODELS, ROOT/'.tools/search-model')
+    print('Offline OCR and search models verified.')
 
 
 if __name__ == '__main__':
