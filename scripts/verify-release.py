@@ -15,7 +15,7 @@ import types
 import zipfile
 
 from PyInstaller.archive.readers import CArchiveReader
-from release_common import notice_dir, platform_suffix, source_files
+from release_common import notice_dir, platform_suffix, source_files, third_party_manifest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -116,7 +116,7 @@ def verify():
         platform['minimum_macos'] = declared
     with zipfile.ZipFile(release/f'ADF-ThirdParty-Sources-{version}{suffix}.zip') as archive:
         assert archive.testzip() is None, 'Third-party archive CRC failure'
-        assert archive.read('build-manifest.json') == (notices/'build-manifest.json').read_bytes()
+        assert archive.read('build-manifest.json') == third_party_manifest(manifest)
         for source in manifest['source_archives']:
             with archive.open(source['filename']) as stream:
                 assert hashlib.file_digest(stream, 'sha256').hexdigest() == source['sha256'], source['filename']

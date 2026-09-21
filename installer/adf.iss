@@ -1,5 +1,7 @@
 #define AppName "ADF"
-#define AppVersion "0.3.27"
+#ifndef AppVersion
+  #define AppVersion "0.3.27"
+#endif
 #define RepoRoot AddBackslash(SourcePath) + ".."
 #ifndef AppBuildDir
   #define AppBuildDir RepoRoot + "\dist\ADF"
@@ -20,7 +22,13 @@ ArchitecturesAllowed=x64os
 ArchitecturesInstallIn64BitMode=x64os
 MinVersion=10.0.17763
 OutputDir={#RepoRoot}\release
+#ifdef PatchFrom
+; Updates exactly one installed version with only the files that changed.
+; scripts/make-update-patches.py writes PatchDir and compiles this mode.
+OutputBaseFilename=ADF-Update-{#PatchFrom}-to-{#AppVersion}
+#else
 OutputBaseFilename=ADF-Setup-{#AppVersion}
+#endif
 SetupIconFile={#RepoRoot}\assets\adf.ico
 UninstallDisplayIcon={app}\ADF.exe
 Compression=lzma2/fast
@@ -49,7 +57,12 @@ korean.FinishedLabel=ADF 설치가 완료되었습니다.%n%nPDF를 ADF에서 �
 Name: "desktopicon"; Description: "바탕 화면에 바로가기 만들기"; Flags: unchecked
 
 [Files]
+#ifdef PatchFrom
+#include AddBackslash(PatchDir) + "files.iss"
+[Files]
+#else
 Source: "{#AppBuildDir}\*"; DestDir: "{app}"; Excludes: "ADFShell-*.dll"; Flags: ignoreversion recursesubdirs createallsubdirs
+#endif
 ; A versioned filename lets an upgrade install without unloading Explorer's DLL.
 ; Normal version comparison skips an identical DLL on same-version reinstalls.
 ; Do not use reboot-replacement flags: per-user installation has no admin rights.
@@ -151,13 +164,6 @@ begin
   end;
 end;
 
-function PrepareToInstall(var NeedsRestart: Boolean): String;
-begin
-  Result := '';
-  if not DistributionPage.Values[0] then
-    Result := 'ADF redistribution notice acknowledgement is required.';
-end;
-
 function TestToken: String;
 begin
   Result := ExpandConstant('{param:ADFISOLATEDTEST|}');
@@ -218,4 +224,96 @@ begin
     if Pos(Token[I], '0123456789abcdef') = 0 then Result := False;
   if not Result then
     MsgBox('Invalid isolated installer test token.', mbError, MB_OK);
+end;
+
+{ Update patches check which version they update. Inno Setup stores this in the
+  installation's uninstall key, whatever name a long isolated-test AppId gets. }
+procedure RegisterPreviousData(PreviousDataKey: Integer);
+begin
+  SetPreviousData(PreviousDataKey, 'Version', '{#AppVersion}');
+end;
+
+#ifdef PatchFrom
+function InstalledVersion: String;
+begin
+  Result := GetPreviousData('Version', '');
+end;
+
+function PatchFileMatches(Path, Expected: String): Boolean;
+var
+  FileName: String;
+begin
+  FileName := ExpandConstant('{app}\') + Path;
+  Result := FileExists(FileName) and (CompareText(GetSHA256OfFile(FileName), Expected) = 0);
+end;
+
+{ Unchanged files are reused from the installation the patch was built for.
+  Check them before changing anything; the app then falls back to the full installer. }
+function PatchBaseProblem: String;
+begin
+  Result := '';
+  if InstalledVersion <> '{#PatchFrom}' then begin
+    Result := 'This update requires ADF {#PatchFrom}. Installed: ' + InstalledVersion;
+    Exit;
+  end;
+#include AddBackslash(PatchDir) + "checks.iss"
+end;
+#endif
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  if not DistributionPage.Values[0] then
+    Result := 'ADF redistribution notice acknowledgement is required.';
+#ifdef PatchFrom
+  if Result = '' then
+    Result := PatchBaseProblem;
+#endif
+  if Result <> '' then
+    Log(Result);
+end;
+
+procedure DeleteOtherVersions(Folder, Pattern, Keep: String);
+var
+  Found: TFindRec;
+begin
+  if FindFirst(Folder + Pattern, Found) then
+  try
+    repeat
+      if (Found.Attributes and FILE_ATTRIBUTE_DIRECTORY = 0) and (CompareText(Found.Name, Keep) <> 0) then
+        if not DeleteFile(Folder + Found.Name) then
+          Log('Kept a file that is in use: ' + Found.Name);
+    until not FindNext(Found);
+  finally
+    FindClose(Found);
+  end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep <> ssPostInstall then
+    Exit;
+  { Every version bundles its own sources (about 0.7 GB); keep only this version's.
+    An old Explorer DLL that Explorer still has loaded is removed by a later update. }
+  DeleteOtherVersions(ExpandConstant('{app}\_internal\SOURCES\'), 'ADF-Source-*.zip', 'ADF-Source-{#AppVersion}.zip');
+  DeleteOtherVersions(ExpandConstant('{app}\_internal\SOURCES\'), 'ADF-ThirdParty-Sources-*.zip', 'ADF-ThirdParty-Sources-{#AppVersion}.zip');
+  DeleteOtherVersions(ExpandConstant('{app}\'), 'ADFShell-*.dll', 'ADFShell-{#AppVersion}.dll');
+end;
+
+{ ADF closes itself to update. Start it again, also after a failed or cancelled
+  update, so that the user is never left without the app and the open document. }
+procedure DeinitializeSetup;
+var
+  App, Document, Parameters: String;
+  Code: Integer;
+begin
+  App := ExpandConstant('{param:ADFRELAUNCH|}');
+  if (App = '') or (CompareText(ExtractFileName(App), 'ADF.exe') <> 0) or not FileExists(App) then
+    Exit;
+  Document := ExpandConstant('{param:ADFOPEN|}');
+  Parameters := '';
+  if (Document <> '') and FileExists(Document) then
+    Parameters := AddQuotes(Document);
+  if not ShellExec('', App, Parameters, '', SW_SHOWNORMAL, ewNoWait, Code) then
+    Log('Could not restart ADF: ' + SysErrorMessage(Code));
 end;

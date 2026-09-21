@@ -27,7 +27,7 @@ for name, target in archives.items():
 checksums = []
 for file in sorted(release.iterdir()):
     if (file.is_file() and VERSION in file.name and file.suffix.lower() in (".exe", ".zip", ".dmg", ".html", ".pdf")
-            and (SUFFIX in file.name or file.suffix.lower() == ".html")):
+            and (SUFFIX in file.name or file.suffix.lower() == ".html")) or file.name == f"ADF-Files-{VERSION}-Windows.json":
         with file.open("rb") as stream:
             checksums.append(f"{hashlib.file_digest(stream, 'sha256').hexdigest()}  {file.name}")
 (release / f"SHA256SUMS-{VERSION}{SUFFIX}.txt").write_text("\n".join(checksums) + "\n", encoding="utf-8")

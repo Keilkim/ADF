@@ -154,6 +154,9 @@ QScrollBar::handle:horizontal { background: #bdc4cf; border-radius: 4px; min-wid
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
 QStatusBar { background: #f6f7f9; color: #707988; padding: 3px 12px; border: none; }
+QPushButton#updateButton { background: #39393d; color: white; border: none; border-radius: 9px; padding: 2px 12px; margin-left: 8px; font-size: 9pt; font-weight: 600; min-height: 16px; }
+QPushButton#updateButton:hover { background: #4a4a50; }
+QPushButton#updateButton:disabled { background: transparent; color: #707988; font-weight: 400; }
 QLabel#muted { color: #77808e; }
 QWidget#emptyWorkspace { background: #e8ebef; }
 QLabel#emptyTitle { font-size: 13pt; font-weight: 600; color: #667180; }

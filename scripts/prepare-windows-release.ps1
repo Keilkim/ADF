@@ -54,8 +54,15 @@ try {
     if (Test-Path -LiteralPath $uninstaller) { Run-Installer $uninstaller @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') }
 }
 Copy-Item -LiteralPath $setup -Destination $output
+# Update patches, and the file list the next release builds its patches from.
+$updates = @(Get-ChildItem -LiteralPath $inputRoot -Filter "ADF-Update-*-to-$version.exe" | ForEach-Object Name) + @("ADF-Files-$version-Windows.json")
+foreach ($name in $updates) {
+    $file = Join-Path $inputRoot $name
+    Check-File $file $name
+    Copy-Item -LiteralPath $file -Destination $output
+}
 Copy-Item -LiteralPath (Join-Path $download '.tools/ci/build-origin.json') -Destination (Join-Path $output "ADF-Build-$version-Windows.json")
-$sums = foreach ($name in @("ADF-Setup-$version.exe", "ADF-Source-$version.zip", "ADF-ThirdParty-Sources-$version.zip", "ADF-Guide-$version-Windows.html")) {
+$sums = foreach ($name in @("ADF-Setup-$version.exe", "ADF-Source-$version.zip", "ADF-ThirdParty-Sources-$version.zip", "ADF-Guide-$version-Windows.html") + $updates) {
     $file = Join-Path $output $name
     (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $name
 }

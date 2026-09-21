@@ -31,6 +31,9 @@ if (-not $SkipInstaller) {
     $compilerPath = Join-Path $repoRoot '.tools\innosetup-6.7.3\ISCC.exe'
     & $compilerPath '/Qp' 'installer\adf.iss'
     if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }
+    # Small installers from recent releases. GH_TOKEN avoids the API rate limit.
+    & $pythonPath scripts/make-update-patches.py --iscc $compilerPath
+    if ($LASTEXITCODE -ne 0) { throw 'Update patch build failed.' }
 }
 & $pythonPath scripts/package-release.py
 if ($LASTEXITCODE -ne 0) { throw 'Release packaging failed.' }

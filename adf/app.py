@@ -29,6 +29,15 @@ def resource_path(name):
     return Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent.parent)) / name
 
 
+def updates_supported():
+    """Installed builds update themselves; source runs and copied folders do not."""
+    if not getattr(sys, 'frozen', False):
+        return False
+    if sys.platform == 'win32':
+        return (Path(sys.executable).parent/'unins000.exe').is_file()
+    return sys.platform == 'darwin'
+
+
 def sample_pdf(path):
     doc = pymupdf.open()
     blue = (0.14, 0.36, 0.79)
@@ -320,6 +329,16 @@ class MainWindow(QMainWindow):
         self.status_label = QLabel('모든 문서는 이 컴퓨터에서 처리됩니다')
         self.status_label.setObjectName('muted')
         self.statusBar().addPermanentWidget(self.status_label)
+        # Bottom right, below the document: it never covers pages or notices.
+        self.update_button = QPushButton()
+        self.update_button.setObjectName('updateButton')
+        self.update_button.clicked.connect(self.update_clicked)
+        self.update_button.hide()
+        self.statusBar().addPermanentWidget(self.update_button)
+        self.updates = None
+        self.update_notifier = None
+        self.installing_update = False
+        self.closed_document = None
         self.statusBar().showMessage('준비됨')
         self.refresh_actions()
         if not smoke:
@@ -327,6 +346,8 @@ class MainWindow(QMainWindow):
             if geometry:
                 self.restoreGeometry(geometry)
             self.intro_timer.start(300)
+            if updates_supported():
+                self.start_updates()
 
     def action(self, key, label, callback, shortcut=None, glyph=None, checkable=False):
         a = QAction(icon(glyph) if glyph else QIcon(), label, self)
@@ -386,6 +407,9 @@ class MainWindow(QMainWindow):
         a('help', '사용 안내', lambda: self.show_help('guide'), 'F1')
         a('licenses', '오픈소스 라이선스', lambda: self.show_help('licenses'))
         a('sources', '소스코드', lambda: self.show_help('sources'))
+        auto_update = a('auto_update', '업데이트 자동 확인', self.toggle_auto_update, checkable=True)
+        auto_update.setChecked(self.settings.value('updates/auto', True, type=bool))
+        auto_update.setToolTip('인터넷에 연결되면 새 버전을 확인하고 뒤에서 받아 둡니다. 문서는 보내지 않습니다.')
         self.pointer_actions = QActionGroup(self)
         self.pointer_mode = 'select_tool'
         for key, label in [('select_tool', '선택 도구'), ('hand_tool', '손 도구')]:
@@ -408,7 +432,7 @@ class MainWindow(QMainWindow):
                   ('편집',['undo','redo',None,'copy','copy_region','region_tool','paste','image','stamps','text','select_image']),
                   ('페이지',['rotate','rotate_left','blank','replace','delete',None,'up','down','number','number_remove']),
                   ('보기',['find','fullscreen',None,'select_tool','hand_tool','pen','eraser',None,'snap','settings']),
-                  ('도움말',['help','licenses','sources',None,'intro','about'])]
+                  ('도움말',['help','licenses','sources',None,'intro','auto_update','about'])]
         for title, keys in groups:
             menu = self.menuBar().addMenu(title)
             for key in keys:
@@ -2295,6 +2319,171 @@ class MainWindow(QMainWindow):
     def about(self):
         QMessageBox.information(self,'ADF 정보',f'ADF {__version__}\n문서 작업, 가볍게.\n\n컴퓨터 안에서 동작하는 PDF 편집기입니다.\n표준 PDF 열기 · 편집 · 병합 · 분할 · 인쇄\n\nADF: GNU AGPL v3 이상 · 보증 없이 제공\nPDF 처리: PyMuPDF / MuPDF (AGPL)\n화면 구성: Qt / PySide6 (LGPL 및 구성 요소별 조건)\n\n도움말에서 사용안내·라이선스 원문·소스코드를 확인하세요.')
 
+    def start_updates(self, service=None):
+        from .update_widgets import UpdateNotifier
+        if service is None:
+            from .updates import UpdateService
+            folder = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation))/'updates'
+            service = UpdateService(self.settings, folder, parent=self)
+        self.updates = service
+        service.changed.connect(self.show_update_state)
+        service.notify.connect(self.announce_update)
+        self.update_notifier = UpdateNotifier(self.windowIcon(), self)
+        self.update_notifier.clicked.connect(self.update_clicked)
+        service.start()
+
+    def toggle_auto_update(self, checked):
+        self.settings.setValue('updates/auto', checked)
+        if self.updates is not None:
+            self.updates.set_enabled(checked)
+
+    def show_update_state(self):
+        service = self.updates
+        package = service.package
+        if service.state == 'idle' or package is None:
+            self.update_button.hide()
+            self.update_notifier.hide()
+            return
+        mac = service.platform == 'darwin'
+        texts = {
+            'available': (f'새 버전 받기 · {package.version}',
+                          '누르면 새 버전을 받습니다. 받는 동안 계속 작업할 수 있습니다.'),
+            'downloading': (f'업데이트 받는 중 · {service.percent}%',
+                            f'새 버전({package.version})을 받고 있습니다. 계속 작업할 수 있습니다.'),
+            'ready': (f'업데이트 설치 · {package.version}',
+                      '누르면 새 버전의 설치 화면을 엽니다. ADF를 응용 프로그램 폴더로 끌어 놓아 바꾸세요.' if mac else
+                      '누르면 ADF를 다시 시작하며 업데이트합니다.\n저장하지 않은 변경은 먼저 저장 여부를 묻고, '
+                      '업데이트 뒤 보던 문서를 다시 엽니다.\n배포 조건은 처음 설치할 때와 같습니다.'),
+            'manual': (f'새 버전 받기 · {package.version}',
+                       '자동 업데이트를 설치하지 못했습니다. 누르면 다운로드 페이지를 엽니다.'),
+        }
+        text, tip = texts.get(service.state, ('업데이트 준비 중…', ''))
+        self.update_button.setText(text)
+        self.update_button.setToolTip(tip)
+        self.update_button.setAccessibleName(text)
+        self.update_button.setEnabled(service.state in ('available', 'ready', 'manual') and not self.installing_update)
+        self.update_button.show()
+        if service.state == 'ready' and mac and service.open_when_ready:
+            service.open_when_ready = False
+            self.update_clicked()
+
+    def announce_update(self):
+        """Windows stacks these with other apps' notifications at the bottom right."""
+        service = self.updates
+        package = service.package
+        if package is None:
+            return
+        if service.state == 'ready' and service.platform != 'darwin':
+            self.update_notifier.show('ADF 업데이트 준비 완료',
+                f'새 버전({package.version})을 설치할 준비가 되었습니다. 이 알림을 누르면 ADF를 다시 시작하며 '
+                '업데이트합니다. 배포 조건은 처음 설치할 때와 같습니다.', '지금 업데이트')
+        elif service.state == 'available':
+            self.update_notifier.show(f'ADF 새 버전 {package.version}',
+                '이 알림을 누르면 새 버전을 받습니다.' if service.platform == 'darwin' else
+                '데이터 요금제 연결이라 자동으로 받지 않았습니다. 이 알림을 누르면 받습니다.', '새 버전 받기')
+        elif service.state == 'manual':
+            self.update_notifier.show('ADF 업데이트를 설치하지 못했습니다',
+                '이 알림을 누르면 다운로드 페이지를 엽니다.', '다운로드 페이지 열기')
+
+    def update_clicked(self):
+        service = self.updates
+        if service is None or service.package is None or self.installing_update:
+            return
+        if self.isMinimized():
+            self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        if service.state == 'available':
+            service.open_when_ready = True
+            service.download()
+        elif service.state == 'manual':
+            from .updates import RELEASES
+            QDesktopServices.openUrl(QUrl(f'{RELEASES}/tag/v{service.package.version}'))
+        elif service.state == 'ready':
+            self.install_update()
+
+    def install_update(self):
+        service = self.updates
+        if self.worker is not None or self.loading_dialog is not None:
+            QMessageBox.information(self, 'ADF 업데이트', '진행 중인 작업을 마치거나 취소한 뒤 다시 눌러 주세요.')
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            valid = service.verify_staged()
+        finally:
+            QApplication.restoreOverrideCursor()
+        if not valid:
+            QMessageBox.warning(self, 'ADF 업데이트', '받은 업데이트 파일이 손상되어 다시 받습니다. 준비되면 다시 알려 드립니다.')
+            return
+        if service.platform == 'darwin':
+            # Finder replaces ADF in Applications only after ADF has quit.
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(service.staged())))
+            self.close()
+            return
+        from .updates import close_windows, other_windows
+        import time
+        self.installing_update = True
+        self.show_update_state()
+        try:
+            windows = other_windows(sys.executable)
+        except OSError:
+            windows = {}  # The installer still closes ADF windows it finds.
+        if not windows:
+            self.finish_update_install()
+            return
+        # Each window asks about its own unsaved changes before closing.
+        close_windows(windows)
+        self.update_waiting = set(windows)
+        self.update_deadline = time.monotonic()+120
+        self.statusBar().showMessage('다른 ADF 창을 닫는 중입니다. 저장 여부를 묻는 창이 뜨면 답해 주세요.')
+        QTimer.singleShot(300, self.wait_for_other_windows)
+
+    def wait_for_other_windows(self):
+        from .updates import running
+        import time
+        self.update_waiting = running(self.update_waiting)
+        if not self.update_waiting:
+            self.statusBar().clearMessage()
+            self.finish_update_install()
+        elif time.monotonic() < self.update_deadline:
+            QTimer.singleShot(300, self.wait_for_other_windows)
+        else:
+            self.statusBar().clearMessage()
+            self.installing_update = False
+            self.show_update_state()
+            QMessageBox.information(self, 'ADF 업데이트', '다른 ADF 창이 아직 열려 있어 업데이트를 멈췄습니다.\n'
+                                    '그 창의 작업을 마치고 닫은 뒤 다시 눌러 주세요.')
+
+    def finish_update_install(self):
+        from .updates import installer_arguments
+        service = self.updates
+        app = QApplication.instance()
+        app.setQuitOnLastWindowClosed(False)
+        if not self.close():
+            app.setQuitOnLastWindowClosed(True)
+            self.installing_update = False
+            self.show_update_state()
+            return
+        document = self.closed_document
+        if document and not Path(document).is_file():
+            document = None
+        service.mark_attempt()
+        # The installer reopens ADF, and the document, whether or not it succeeds.
+        started, _ = QProcess.startDetached(str(service.staged()), installer_arguments(
+            service.package, sys.executable, document, str(service.log_path())))
+        if started:
+            app.quit()
+            return
+        service.clear_attempt()
+        app.setQuitOnLastWindowClosed(True)
+        self.installing_update = False
+        self.show()
+        self.show_update_state()
+        if document:
+            self.open_path(document)
+        QMessageBox.warning(self, 'ADF 업데이트', '업데이트 설치 프로그램을 시작하지 못했습니다.\n'
+                            '보안 프로그램이 막았을 수 있습니다. 나중에 다시 눌러 주세요.')
+
     def dragEnterEvent(self,event):
         if event.mimeData().hasUrls() and any(u.toLocalFile().lower().endswith('.pdf') for u in event.mimeData().urls()):
             event.acceptProposedAction()
@@ -2323,6 +2512,7 @@ class MainWindow(QMainWindow):
         if not self.maybe_save():
             event.ignore()
             return
+        self.closed_document = self.document.path
         self.fullscreen.exit()
         self.stop_stamp()
         if not self.smoke:
@@ -2348,6 +2538,10 @@ class MainWindow(QMainWindow):
         if self.stamp_temp:
             self.stamp_temp.cleanup()
             self.stamp_temp = None
+        if self.updates is not None and not self.installing_update:
+            self.updates.shutdown()
+        if self.update_notifier is not None:
+            self.update_notifier.hide()
         event.accept()
 
 

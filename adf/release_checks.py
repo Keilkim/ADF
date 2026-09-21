@@ -312,7 +312,10 @@ def check_help(window, folder, output):
         with zipfile.ZipFile(dialog.sources_path/dialog.source_files[0]) as archive:
             assert __version__ in archive.read('ADF/adf/__init__.py').decode('utf-8')
         with zipfile.ZipFile(dialog.sources_path/dialog.source_files[1]) as archive:
-            assert json.loads(archive.read('build-manifest.json'))['version'] == __version__
+            # The archive leaves out ADF's version so that updates can reuse it.
+            recorded = json.loads(archive.read('build-manifest.json'))['source_archives']
+        bundled = json.loads((dialog.sources_path.parent/'LICENSES/build-manifest.json').read_text(encoding='utf-8'))
+        assert recorded == bundled['source_archives']
     QTest.qWait(60)
     dialog.grab().save(str(output.with_name(output.stem+'-sources.png')))
     QTest.keyClick(dialog, Qt.Key.Key_Escape)
