@@ -3,6 +3,7 @@ import hashlib
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 
@@ -79,9 +80,14 @@ def test_release_checksums_list_every_uploaded_file(tmp_path):
     runner.write_text(f"$ErrorActionPreference = 'Stop'\n$version = '9.9.9'\n$download = '{download}'\n$output = '{output}'\n"
                       f"$updates = @({', '.join(repr(name) for name in updates)})\n{block}\n", encoding='utf-8-sig')
 
+    # The release job runs in PowerShell 7. A module path inherited from it breaks
+    # Windows PowerShell's own cmdlets such as Get-FileHash, so neither inherits it.
+    shell = shutil.which('pwsh') or 'powershell'
+    env = {key: value for key, value in os.environ.items() if key.upper() != 'PSMODULEPATH'}
+
     def run():
-        return subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', str(runner)],
-                              capture_output=True, text=True)
+        return subprocess.run([shell, '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', str(runner)],
+                              capture_output=True, text=True, env=env)
 
     assert run().returncode == 0
     sums = dict(reversed(line.split('  ', 1)) for line in (output/'SHA256SUMS-9.9.9.txt').read_text(encoding='utf-8-sig').splitlines())
