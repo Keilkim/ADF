@@ -120,6 +120,12 @@ try {
     if ($inproc.GetValue('') -ne $installedDll -or $inproc.GetValue('ThreadingModel') -ne 'Apartment') { throw 'Native COM server registration is incorrect.' }
     $handler = Get-Item -LiteralPath "$registryPrefix\Classes\SystemFileAssociations\.pdf\shellex\ContextMenuHandlers\ADF"
     if ($handler.GetValue('') -ne $clsid) { throw 'Native PDF handler registration is incorrect.' }
+    $thumbnailClsid = '{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}'
+    $thumbnailServer = Get-Item -LiteralPath "$registryPrefix\Classes\CLSID\$thumbnailClsid\InprocServer32"
+    if ($thumbnailServer.GetValue('') -ne $installedDll -or $thumbnailServer.GetValue('ThreadingModel') -ne 'Apartment') { throw 'Thumbnail COM server registration is incorrect.' }
+    $thumbnail = Get-Item -LiteralPath "$registryPrefix\Classes\SystemFileAssociations\.pdf\shellex\{E357FCCD-A995-4576-B01F-234630154E96}"
+    if ($thumbnail.GetValue('') -ne $thumbnailClsid) { throw 'PDF thumbnail handler registration is incorrect.' }
+    $report.thumbnail_registration = $true
     if (Test-Path -LiteralPath "$registryPrefix\Classes\SystemFileAssociations\.pdf\shell\ADF.Split") { throw 'Legacy static split verb remains.' }
     $report.native_registration = $true
     $report.legacy_split_removed = $true

@@ -1,8 +1,9 @@
 # ADF Explorer extension
 
-`ADFShell.dll` is a native x64 COM DLL implementing `IShellExtInit`,
-`IContextMenu`, and `IClassFactory`. Explorer only loads this small native
-component. The PDF application remains a separate process.
+`ADFShell.dll` is a native x64 COM DLL with two classes: a context menu
+(`IShellExtInit`, `IContextMenu`) and a PDF thumbnail handler
+(`IInitializeWithStream`, `IThumbnailProvider`). Explorer only loads this small
+native component. The PDF application remains a separate process.
 
 The installer copies it as `ADFShell-0.3.27.dll` beside `ADF.exe` and registers
 these values under `HKCU\Software\Classes`:
@@ -14,6 +15,19 @@ CLSID\{8093F936-820B-4CDB-A64B-7A39EC807A11}\InprocServer32
 SystemFileAssociations\.pdf\shellex\ContextMenuHandlers\ADF
   (Default) = {8093F936-820B-4CDB-A64B-7A39EC807A11}
 ```
+
+The thumbnail handler is registered beside it:
+
+```text
+CLSID\{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}\InprocServer32
+  (Default) = <install directory>\ADFShell-0.3.27.dll
+  ThreadingModel = Apartment
+SystemFileAssociations\.pdf\shellex\{E357FCCD-A995-4576-B01F-234630154E96}
+  (Default) = {A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}
+```
+
+The installer writes the thumbnail slot only when it is empty or already
+ADF's, so another program's PDF thumbnail handler keeps its place.
 
 The association supplements the user's existing PDF default application.
 No `DllRegisterServer` or self-registration is used. On Windows 10 the commands
@@ -36,6 +50,28 @@ involved. Request names are random GUIDs in
 `%LOCALAPPDATA%\ADF\ShellRequests\request-<GUID>.json`; directory and request
 files have protected current-user-only DACLs. The application validates and
 consumes the request. The bounds are 4,096 files and 8 MiB per request.
+
+## Thumbnails
+
+Explorer runs stream-based thumbnail handlers in its isolated thumbnail
+process. The handler copies the stream into memory (at most 1 GiB), so the
+renderer's threads never call the stream Explorer handed to the calling
+thread. ADF parses no PDF here: Windows' own `Windows.Data.Pdf` renders the
+first page, rotation included, to fit the requested size (at most 2560
+pixels), and WIC decodes the result into an opaque 32-bit DIB. Loading and
+rendering are asynchronous; the handler waits up to 20 seconds with
+`CoWaitForMultipleHandles`, and its completion handlers are agile so they never
+need the waiting apartment. A timed-out operation is cancelled. Encrypted,
+damaged or empty files return an error, and Explorer shows the icon.
+
+LLVM-MinGW has no header for `Windows.Data.Pdf`. `windows.data.pdf.idl`
+declares the interfaces with the IDs and method order of `Windows.Data.winmd`,
+and `build-shell.ps1` generates the header with the toolchain's `widl`, which
+also derives the IDs of the parameterized async interfaces. MinGW's `boolean`
+is `BYTE`, so `windows.foundation.h` would specialize `IReference<BYTE>`
+twice; `thumbnail.cpp` skips the unused `IReference<boolean>` definition.
+Beyond Windows system libraries the DLL imports only the WinRT core API sets
+and `shcore.dll`.
 
 ## Build and verify
 
@@ -70,6 +106,13 @@ validating their DACL and argv. Tests include selection filtering, canonical
 verbs, default-only behavior, object lifetime, changed selections, Korean and
 Chinese paths, punctuation, 512 PDFs in one process and the file-count bound.
 All generated files are deleted by exact paths inside the unique fixture.
+The harness also writes PDFs with exact cross-reference tables and renders
+them through the thumbnail class: a portrait two-page file must produce a
+128×256 bitmap of its first page with the red left third in place, a
+1024-pixel request must render at full resolution, and a page with `/Rotate 90`
+must turn to 256×128 with that third at the top. Sizes Explorer never requests,
+repeated or missing initialization, a damaged PDF, an empty file and non-PDF
+bytes must fail without a bitmap, and the DLL must be unloadable afterwards.
 Five corrupt `DROPFILES` inputs verify rejection before out-of-bounds memory
 access. The production parser validates the global allocation, header, offset,
 alignment, string bounds and the final double NUL before accepting paths.

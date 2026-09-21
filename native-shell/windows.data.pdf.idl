@@ -1,0 +1,179 @@
+/*
+ * Windows.Data.Pdf for the thumbnail handler. LLVM-MinGW has no header for
+ * this namespace. Interface IDs and method order were read from
+ * Windows.Data.winmd; shell_tests.cpp checks each interface ID against the
+ * system component and renders through every method the handler uses.
+ */
+
+#ifdef __WIDL__
+#pragma winrt ns_prefix
+#endif
+
+import "inspectable.idl";
+import "asyncinfo.idl";
+import "eventtoken.idl";
+import "windowscontracts.idl";
+import "windows.foundation.idl";
+import "windows.storage.idl";
+import "windows.storage.streams.idl";
+import "windows.ui.idl";
+
+namespace Windows.Data.Pdf {
+    typedef enum PdfPageRotation PdfPageRotation;
+
+    interface IPdfDocument;
+    interface IPdfDocumentStatics;
+    interface IPdfPage;
+    interface IPdfPageDimensions;
+    interface IPdfPageRenderOptions;
+
+    runtimeclass PdfDocument;
+    runtimeclass PdfPage;
+    runtimeclass PdfPageDimensions;
+    runtimeclass PdfPageRenderOptions;
+
+    declare {
+        interface Windows.Foundation.AsyncOperationCompletedHandler<Windows.Data.Pdf.PdfDocument *>;
+        interface Windows.Foundation.IAsyncOperation<Windows.Data.Pdf.PdfDocument *>;
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0)
+    ]
+    enum PdfPageRotation
+    {
+        Normal    = 0,
+        Rotate90  = 1,
+        Rotate180 = 2,
+        Rotate270 = 3,
+    };
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        exclusiveto(Windows.Data.Pdf.PdfDocument),
+        uuid(ac7ebedd-80fa-4089-846e-81b77ff5a86c)
+    ]
+    interface IPdfDocument : IInspectable
+    {
+        HRESULT GetPage([in] UINT32 index, [out, retval] Windows.Data.Pdf.PdfPage **value);
+        [propget] HRESULT PageCount([out, retval] UINT32 *value);
+        [propget] HRESULT IsPasswordProtected([out, retval] boolean *value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        exclusiveto(Windows.Data.Pdf.PdfDocument),
+        uuid(433a0b5f-c007-4788-90f2-08143d922599)
+    ]
+    interface IPdfDocumentStatics : IInspectable
+    {
+        [overload("LoadFromFileAsync")]
+        HRESULT LoadFromFileAsync([in] Windows.Storage.IStorageFile *file,
+                                  [out, retval] Windows.Foundation.IAsyncOperation<Windows.Data.Pdf.PdfDocument *> **operation);
+        [overload("LoadFromFileAsync")]
+        HRESULT LoadFromFileWithPasswordAsync([in] Windows.Storage.IStorageFile *file, [in] HSTRING password,
+                                              [out, retval] Windows.Foundation.IAsyncOperation<Windows.Data.Pdf.PdfDocument *> **operation);
+        [overload("LoadFromStreamAsync")]
+        HRESULT LoadFromStreamAsync([in] Windows.Storage.Streams.IRandomAccessStream *stream,
+                                    [out, retval] Windows.Foundation.IAsyncOperation<Windows.Data.Pdf.PdfDocument *> **operation);
+        [overload("LoadFromStreamAsync")]
+        HRESULT LoadFromStreamWithPasswordAsync([in] Windows.Storage.Streams.IRandomAccessStream *stream, [in] HSTRING password,
+                                                [out, retval] Windows.Foundation.IAsyncOperation<Windows.Data.Pdf.PdfDocument *> **operation);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        exclusiveto(Windows.Data.Pdf.PdfPage),
+        uuid(9db4b0c8-5320-4cfc-ad76-493fdad0e594)
+    ]
+    interface IPdfPage : IInspectable
+    {
+        [overload("RenderToStreamAsync")]
+        HRESULT RenderToStreamAsync([in] Windows.Storage.Streams.IRandomAccessStream *output,
+                                    [out, retval] Windows.Foundation.IAsyncAction **operation);
+        [overload("RenderToStreamAsync")]
+        HRESULT RenderWithOptionsToStreamAsync([in] Windows.Storage.Streams.IRandomAccessStream *output,
+                                               [in] Windows.Data.Pdf.PdfPageRenderOptions *options,
+                                               [out, retval] Windows.Foundation.IAsyncAction **operation);
+        HRESULT PreparePageAsync([out, retval] Windows.Foundation.IAsyncAction **operation);
+        [propget] HRESULT Index([out, retval] UINT32 *value);
+        [propget] HRESULT Size([out, retval] Windows.Foundation.Size *value);
+        [propget] HRESULT Dimensions([out, retval] Windows.Data.Pdf.PdfPageDimensions **value);
+        [propget] HRESULT Rotation([out, retval] Windows.Data.Pdf.PdfPageRotation *value);
+        [propget] HRESULT PreferredZoom([out, retval] FLOAT *value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        exclusiveto(Windows.Data.Pdf.PdfPageDimensions),
+        uuid(22170471-313e-44e8-835d-63a3e7624a10)
+    ]
+    interface IPdfPageDimensions : IInspectable
+    {
+        [propget] HRESULT MediaBox([out, retval] Windows.Foundation.Rect *value);
+        [propget] HRESULT CropBox([out, retval] Windows.Foundation.Rect *value);
+        [propget] HRESULT BleedBox([out, retval] Windows.Foundation.Rect *value);
+        [propget] HRESULT TrimBox([out, retval] Windows.Foundation.Rect *value);
+        [propget] HRESULT ArtBox([out, retval] Windows.Foundation.Rect *value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        exclusiveto(Windows.Data.Pdf.PdfPageRenderOptions),
+        uuid(3c98056f-b7cf-4c29-9a04-52d90267f425)
+    ]
+    interface IPdfPageRenderOptions : IInspectable
+    {
+        [propget] HRESULT SourceRect([out, retval] Windows.Foundation.Rect *value);
+        [propput] HRESULT SourceRect([in] Windows.Foundation.Rect value);
+        [propget] HRESULT DestinationWidth([out, retval] UINT32 *value);
+        [propput] HRESULT DestinationWidth([in] UINT32 value);
+        [propget] HRESULT DestinationHeight([out, retval] UINT32 *value);
+        [propput] HRESULT DestinationHeight([in] UINT32 value);
+        [propget] HRESULT BackgroundColor([out, retval] Windows.UI.Color *value);
+        [propput] HRESULT BackgroundColor([in] Windows.UI.Color value);
+        [propget] HRESULT IsIgnoringHighContrast([out, retval] boolean *value);
+        [propput] HRESULT IsIgnoringHighContrast([in] boolean value);
+        [propget] HRESULT BitmapEncoderId([out, retval] GUID *value);
+        [propput] HRESULT BitmapEncoderId([in] GUID value);
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        marshaling_behavior(agile),
+        static(Windows.Data.Pdf.IPdfDocumentStatics, Windows.Foundation.UniversalApiContract, 1.0)
+    ]
+    runtimeclass PdfDocument
+    {
+        [default] interface Windows.Data.Pdf.IPdfDocument;
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        marshaling_behavior(agile)
+    ]
+    runtimeclass PdfPage
+    {
+        [default] interface Windows.Data.Pdf.IPdfPage;
+        interface Windows.Foundation.IClosable;
+    }
+
+    [
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        marshaling_behavior(agile)
+    ]
+    runtimeclass PdfPageDimensions
+    {
+        [default] interface Windows.Data.Pdf.IPdfPageDimensions;
+    }
+
+    [
+        activatable(Windows.Foundation.UniversalApiContract, 1.0),
+        contract(Windows.Foundation.UniversalApiContract, 1.0),
+        marshaling_behavior(agile)
+    ]
+    runtimeclass PdfPageRenderOptions
+    {
+        [default] interface Windows.Data.Pdf.IPdfPageRenderOptions;
+    }
+}

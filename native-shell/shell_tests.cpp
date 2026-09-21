@@ -1,6 +1,8 @@
 #include <windows.h>
 #include <shlobj.h>
 #include <shellapi.h>
+#include <shlwapi.h>
+#include <thumbcache.h>
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -8,6 +10,7 @@
 #include <string>
 #include <vector>
 #include "shell_icon.h"
+#include "shell_module.h"
 
 namespace {
 const CLSID kClassId = {0x8093f936, 0x820b, 0x4cdb, {0xa6, 0x4b, 0x7a, 0x39, 0xec, 0x80, 0x7a, 0x11}};
@@ -190,6 +193,137 @@ struct PrivateClasses {
 
 void CheckCaptured(const std::wstring& directory, const std::vector<std::wstring>& paths, const char* operation);
 
+// A PDF whose first page has a red left third; later pages are blue.
+std::string PdfFixture(int width, int height, int rotate, int pages) {
+    std::vector<std::string> objects = {"<< /Type /Catalog /Pages 2 0 R >>", ""};
+    std::string kids;
+    for (int page = 0; page < pages; ++page) {
+        const int number = 3 + page * 2;
+        kids += std::to_string(number) + " 0 R ";
+        objects.push_back("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + std::to_string(width) + " " + std::to_string(height) +
+                          "] /Rotate " + std::to_string(rotate) + " /Resources << >> /Contents " + std::to_string(number + 1) + " 0 R >>");
+        const std::string content = page ? "0 0 1 rg 0 0 " + std::to_string(width) + " " + std::to_string(height) + " re f"
+                                         : "1 0 0 rg 0 0 " + std::to_string(width / 3) + " " + std::to_string(height) + " re f";
+        objects.push_back("<< /Length " + std::to_string(content.size()) + " >>\nstream\n" + content + "\nendstream");
+    }
+    objects[1] = "<< /Type /Pages /Kids [" + kids + "] /Count " + std::to_string(pages) + " >>";
+    std::string pdf = "%PDF-1.4\n";
+    std::vector<size_t> offsets;
+    for (size_t index = 0; index < objects.size(); ++index) {
+        offsets.push_back(pdf.size());
+        pdf += std::to_string(index + 1) + " 0 obj\n" + objects[index] + "\nendobj\n";
+    }
+    const size_t xref = pdf.size();
+    pdf += "xref\n0 " + std::to_string(objects.size() + 1) + "\n0000000000 65535 f\r\n";
+    for (size_t offset : offsets) {
+        char entry[21];
+        std::snprintf(entry, sizeof(entry), "%010zu 00000 n\r\n", offset);
+        pdf += entry;
+    }
+    return pdf + "trailer\n<< /Size " + std::to_string(objects.size() + 1) + " /Root 1 0 R >>\nstartxref\n" + std::to_string(xref) + "\n%%EOF\n";
+}
+
+void WriteBytes(const std::wstring& path, const std::string& bytes) {
+    HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+    Check(file != INVALID_HANDLE_VALUE, "Create thumbnail fixture");
+    DWORD written = 0;
+    const BOOL ok = WriteFile(file, bytes.data(), static_cast<DWORD>(bytes.size()), &written, nullptr);
+    CloseHandle(file);
+    Check(ok && written == bytes.size(), "Write thumbnail fixture");
+}
+
+struct Thumbnail {
+    HRESULT result = E_FAIL;
+    int width = 0, height = 0;
+    std::vector<BYTE> pixels;
+    WTS_ALPHATYPE alpha = WTSAT_UNKNOWN;
+    // Blue, green and red of the pixel at x, y; rows run top to bottom.
+    const BYTE* At(int x, int y) const { return pixels.data() + (y * width + x) * 4; }
+    bool Red(int x, int y) const { const BYTE* p = At(x, y); return p[2] > 200 && p[1] < 60 && p[0] < 60; }
+    bool White(int x, int y) const { const BYTE* p = At(x, y); return p[2] > 240 && p[1] > 240 && p[0] > 240; }
+};
+
+Thumbnail RenderThumbnail(IClassFactory* factory, IStream* stream, UINT size) {
+    IInitializeWithStream* init = nullptr;
+    CheckHr(factory->CreateInstance(nullptr, IID_IInitializeWithStream, reinterpret_cast<void**>(&init)), "Thumbnail handler construction");
+    IThumbnailProvider* provider = nullptr;
+    CheckHr(init->QueryInterface(IID_PPV_ARGS(&provider)), "Thumbnail handler IThumbnailProvider interface");
+    HBITMAP bitmap = nullptr;
+    Thumbnail thumbnail;
+    Check(FAILED(provider->GetThumbnail(size, &bitmap, &thumbnail.alpha)) && !bitmap, "Thumbnail requires a stream first");
+    Check(init->Initialize(nullptr, STGM_READ) == E_INVALIDARG, "Thumbnail rejects a missing stream");
+    CheckHr(init->Initialize(stream, STGM_READ), "Initialize thumbnail with a file stream");
+    Check(FAILED(init->Initialize(stream, STGM_READ)), "Thumbnail handler initializes once");
+    thumbnail.result = provider->GetThumbnail(size, &bitmap, &thumbnail.alpha);
+    if (SUCCEEDED(thumbnail.result)) {
+        DIBSECTION section{};
+        Check(bitmap && GetObjectW(bitmap, sizeof(section), &section) == sizeof(section), "Thumbnail is a DIB section");
+        // The rotated page checks the row order: GetObject reports a positive height.
+        Check(section.dsBm.bmBitsPixel == 32 && section.dsBm.bmBits, "Thumbnail has 32-bit pixels");
+        thumbnail.width = section.dsBm.bmWidth;
+        thumbnail.height = section.dsBm.bmHeight;
+        const auto* bytes = static_cast<const BYTE*>(section.dsBm.bmBits);
+        thumbnail.pixels.assign(bytes, bytes + thumbnail.width * thumbnail.height * 4);
+        DeleteObject(bitmap);
+    } else Check(!bitmap && thumbnail.alpha == WTSAT_UNKNOWN, "Failed thumbnail returns no bitmap");
+    provider->Release();
+    init->Release();
+    return thumbnail;
+}
+
+Thumbnail FileThumbnail(IClassFactory* factory, const std::wstring& path, UINT size) {
+    IStream* stream = nullptr;
+    CheckHr(SHCreateStreamOnFileEx(path.c_str(), STGM_READ | STGM_SHARE_DENY_WRITE, FILE_ATTRIBUTE_NORMAL, FALSE, nullptr, &stream), "Open thumbnail fixture stream");
+    Thumbnail thumbnail = RenderThumbnail(factory, stream, size);
+    stream->Release();
+    return thumbnail;
+}
+
+void ThumbnailTests(const std::wstring& dll, const std::wstring& fixture) {
+    HMODULE module = LoadLibraryW(dll.c_str());
+    Check(module != nullptr, "LoadLibrary production DLL for thumbnails");
+    auto get = reinterpret_cast<GetFactory>(GetProcAddress(module, "DllGetClassObject"));
+    auto unload = reinterpret_cast<CanUnload>(GetProcAddress(module, "DllCanUnloadNow"));
+    IClassFactory* factory = nullptr;
+    CheckHr(get(adf::kThumbnailClassId, IID_IClassFactory, reinterpret_cast<void**>(&factory)), "Thumbnail class factory");
+    const std::wstring portrait = fixture + L"\\세로 썸네일.pdf";
+    const std::wstring rotated = fixture + L"\\회전 썸네일.pdf";
+    const std::wstring corrupt = fixture + L"\\손상.pdf";
+    const std::wstring empty = fixture + L"\\빈 파일.pdf";
+    WriteBytes(portrait, PdfFixture(300, 600, 0, 2));
+    WriteBytes(rotated, PdfFixture(300, 600, 90, 1));
+    const char damaged[] = "%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 9 0 R >>\nstream\n\xff\xfe\x00 garbage";
+    WriteBytes(corrupt, std::string(damaged, sizeof(damaged) - 1));
+    WriteBytes(empty, "");
+
+    Thumbnail page = FileThumbnail(factory, portrait, 256);
+    CheckHr(page.result, "Render the first page through Windows.Data.Pdf");
+    Check(page.width == 128 && page.height == 256, "Portrait thumbnail fits the requested size and keeps the page ratio");
+    Check(page.alpha == WTSAT_RGB, "Thumbnail is opaque");
+    Check(page.Red(10, 128) && page.White(118, 128), "Thumbnail shows the first page, red on the left third");
+    Thumbnail large = FileThumbnail(factory, portrait, 1024);
+    CheckHr(large.result, "Render an extra-large thumbnail");
+    Check(large.width == 512 && large.height == 1024 && large.Red(40, 512) && large.White(480, 512), "Extra-large thumbnail renders at full resolution");
+
+    Thumbnail turned = FileThumbnail(factory, rotated, 256);
+    CheckHr(turned.result, "Render a rotated page");
+    Check(turned.width == 256 && turned.height == 128, "Page rotation turns the thumbnail");
+    Check(turned.Red(128, 10) && turned.White(128, 118), "Rotated page's left third is at the top");
+
+    for (UINT size : {0U, 2561U}) Check(FAILED(FileThumbnail(factory, portrait, size).result), "Thumbnail rejects sizes Explorer never requests");
+    for (const auto& path : {corrupt, empty}) Check(FAILED(FileThumbnail(factory, path, 256).result), "Corrupt or empty PDF fails without a bitmap");
+    IStream* text = SHCreateMemStream(reinterpret_cast<const BYTE*>("not a pdf"), 9);
+    Check(text != nullptr, "Create in-memory non-PDF stream");
+    Check(FAILED(RenderThumbnail(factory, text, 256).result), "Non-PDF content fails without a bitmap");
+    text->Release();
+
+    factory->Release();
+    CoFreeUnusedLibrariesEx(0, 0);
+    Check(unload() == S_OK, "Thumbnail objects released; DLL unloadable");
+    FreeLibrary(module);
+    for (const auto& path : {portrait, rotated, corrupt, empty}) Check(DeleteFileW(path.c_str()) != FALSE, "Remove exact thumbnail fixture");
+}
+
 void ShellAssembledMenu(const std::wstring& dll, const std::wstring& directory, const std::vector<std::wstring>& names, const wchar_t* expected) {
     PIDLIST_ABSOLUTE folderId = nullptr;
     CheckHr(SHParseDisplayName(directory.c_str(), nullptr, &folderId, 0, nullptr), "Parse native shell folder");
@@ -362,6 +496,7 @@ int wmain(int argc, wchar_t** argv) {
             ShellAssembledMenu(testDll, fixture, {two.substr(fixture.size() + 1), one.substr(fixture.size() + 1)}, L"ADF로 PDF 병합…");
             ShellAssembledMenu(testDll, fixture, {one.substr(fixture.size() + 1), text.substr(fixture.size() + 1)}, nullptr);
         }
+        ThumbnailTests(testDll, fixture);
         {
             Library library(testDll);
             {
@@ -436,7 +571,7 @@ int wmain(int argc, wchar_t** argv) {
         Check(RemoveDirectoryW(folder.c_str()) != FALSE, "Remove empty PDF-named folder");
         Check(RemoveDirectoryW(fixture.c_str()) != FALSE, "Remove empty unique test fixture");
         CoUninitialize();
-        std::printf("PASS native %s: %d assertions; real COM selection matrix, owner-only request ACL, Unicode handoff, 512-file single-process invoke.\n", componentOnly ? "component tests (Explorer menu assembly excluded)" : "Explorer integration", checks);
+        std::printf("PASS native %s: %d assertions; real COM selection matrix, owner-only request ACL, Unicode handoff, 512-file single-process invoke, PDF thumbnails.\n", componentOnly ? "component tests (Explorer menu assembly excluded)" : "Explorer integration", checks);
         return 0;
     } catch (const std::exception& error) { std::fprintf(stderr, "FAIL: %s (after %d assertions)\n", error.what(), checks); return 1; }
 }

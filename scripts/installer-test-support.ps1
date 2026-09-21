@@ -22,6 +22,7 @@ function Get-ExistingStateSnapshot {
         'Software\Classes\ADF.Document', 'Software\Classes\Applications\ADF.exe',
         'Software\ADF\Capabilities', 'Software\Classes\SystemFileAssociations\.pdf',
         'Software\Classes\CLSID\{8093F936-820B-4CDB-A64B-7A39EC807A11}',
+        'Software\Classes\CLSID\{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}',
         'Software\Microsoft\Windows\CurrentVersion\Uninstall\{941DF95F-945A-4A82-BB29-ED83E65BC1B1}_is1'
     )) { $state.registry[$relative] = Get-RegistryTree $relative }
     $registered = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\RegisteredApplications')

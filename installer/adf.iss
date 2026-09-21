@@ -102,6 +102,12 @@ Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{8093F936-8
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{8093F936-820B-4CDB-A64B-7A39EC807A11}\InprocServer32"; ValueType: string; ValueName: ""; ValueData: "{app}\ADFShell-{#AppVersion}.dll"
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{8093F936-820B-4CDB-A64B-7A39EC807A11}\InprocServer32"; ValueType: string; ValueName: "ThreadingModel"; ValueData: "Apartment"
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\SystemFileAssociations\.pdf\shellex\ContextMenuHandlers\ADF"; ValueType: string; ValueName: ""; ValueData: "{{8093F936-820B-4CDB-A64B-7A39EC807A11}"; Flags: uninsdeletekey
+; First-page thumbnails in Explorer, drawn by Windows' own PDF renderer. A PDF
+; thumbnail handler that another program registered here keeps its place.
+Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}"; ValueType: string; ValueName: ""; ValueData: "ADF PDF thumbnails"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}\InprocServer32"; ValueType: string; ValueName: ""; ValueData: "{app}\ADFShell-{#AppVersion}.dll"
+Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}\InprocServer32"; ValueType: string; ValueName: "ThreadingModel"; ValueData: "Apartment"
+Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\SystemFileAssociations\.pdf\shellex\{{E357FCCD-A995-4576-B01F-234630154E96}"; ValueType: string; ValueName: ""; ValueData: "{{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}"; Flags: uninsdeletekey; Check: ThumbnailSlotAvailable
 
 [Run]
 Filename: "{app}\ADF.exe"; Description: "ADF 시작"; Flags: nowait postinstall skipifsilent
@@ -209,6 +215,16 @@ begin
     Result := GetPrivateTestRoot('') + '\'
   else
     Result := '';
+end;
+
+function ThumbnailSlotAvailable: Boolean;
+var
+  Handler: String;
+begin
+  Result := not RegQueryStringValue(HKCU, GetRegistryPrefix('') + 'Software\Classes\SystemFileAssociations\.pdf\shellex\{E357FCCD-A995-4576-B01F-234630154E96}', '', Handler)
+    or (Handler = '') or (CompareText(Handler, '{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}') = 0);
+  if not Result then
+    Log('Kept the PDF thumbnail handler of another program: ' + Handler);
 end;
 
 function InitializeSetup: Boolean;
