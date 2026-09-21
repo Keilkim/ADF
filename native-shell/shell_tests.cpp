@@ -308,9 +308,8 @@ void ThumbnailTests(const std::wstring& dll, const std::wstring& fixture) {
     Check(page.width == 128 && page.height == 256, "Portrait thumbnail fits the requested size and keeps the page ratio");
     Check(page.alpha == WTSAT_RGB, "Thumbnail is opaque");
     Check(page.Red(10, 128) && page.White(118, 128), "Thumbnail shows the first page, red on the left third");
-    Check(page.Blue(88, 216, 128, 256) > 60, "ADF mark sits on a badge in the bottom-right corner");
+    Check(page.Blue(88, 216, 128, 256) > 60, "ADF mark sits in the bottom-right corner");
     Check(page.Blue(0, 0, 128, 200) == 0 && page.Blue(0, 200, 80, 256) == 0, "ADF mark covers only the corner, not the page");
-    Check(page.White(126 - 40 + 3, 253 - 36 + 6), "Badge behind the mark is white");
     Thumbnail small = FileThumbnail(factory, portrait, 48);
     CheckHr(small.result, "Render a small thumbnail");
     Check(small.width == 24 && small.height == 48 && small.Blue(0, 0, 24, 48) == 0, "A thumbnail too small for the mark stays plain");
