@@ -203,10 +203,8 @@ class DesktopWorkflowTests(unittest.TestCase):
                 self.assertFalse(selection.text_path.isEmpty())
                 highlight = selection.text_path.boundingRect()
                 self.assertTrue(selection.rect().adjusted(-2, -2, 2, 2).contains(highlight))
-                self.assertTrue(selection.timer.isActive())
-                phase = selection.phase
-                QTest.qWait(130)
-                self.assertNotEqual(selection.phase, phase)
+                # Like Acrobat, selected text is highlighted without a moving boundary.
+                self.assertFalse(selection.timer.isActive())
                 # Reflow and zoom retain the same page-local selection geometry.
                 view.set_zoom(1.2)
                 self.assertEqual(selection.text_path.boundingRect(), highlight)
@@ -229,8 +227,17 @@ class DesktopWorkflowTests(unittest.TestCase):
         self.assertTrue(selection.finished)
         self.assertTrue(selection.text_path.isEmpty())
         self.assertFalse(selection.timer.isActive())
+        with patch('adf.selection_widgets.motion_enabled', return_value=True):
+            QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=points[0])
+            QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=points[1])
+        selection = view.selection_item
+        self.assertTrue(selection.timer.isActive())
+        phase = selection.phase
+        QTest.qWait(130)
+        self.assertNotEqual(selection.phase, phase)
         self.window.close_document()
         self.assertIsNone(view.selection_item)
+        self.assertFalse(selection.timer.isActive())
         QApplication.clipboard().clear()
 
     def test_clipboard_notice_is_visible_in_fullscreen_and_does_not_take_focus(self):
