@@ -5,6 +5,8 @@ installer is downloaded in the background and verified against the release's
 SHA256SUMS file. Documents and file names are never sent. Windows prefers a
 small patch installer built for the running version and falls back to the full
 installer; the Mac app downloads the new disk image when the user asks for it.
+When the installer cannot run here, the 'manual' state sends the user to the
+download page; `reason` says why.
 
 Only one ADF process per user checks and downloads. The others show the staged
 update that the owner recorded in the settings.
@@ -17,7 +19,9 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import sys
+import threading
 
 from PySide6.QtCore import QLockFile, QObject, QTimer, QUrl, Signal
 from PySide6.QtNetwork import (QNetworkAccessManager, QNetworkInformation, QNetworkProxyFactory,
@@ -30,10 +34,13 @@ CHECK_DELAY = 20_000              # after start, so opening a document stays fas
 RECONNECT_DELAY = 5_000           # let a new connection settle before using it
 RECHECK = 12*60*60*1000           # while ADF stays open
 RETRY = 30*60*1000                # offline, behind a login page or GitHub unreachable
-LATER = 60*60*1000                # the release is still being assembled
+LATER = 60*60*1000                # the release is still being assembled, or the disk is full
 OWNER_RETRY = 10*60*1000          # another ADF window owns updates; take over when it closes
 HASH_CHUNK = 8 << 20
 SUMS_LIMIT = 256 << 10
+SPACE_MARGIN = 512 << 20          # left free beside a download: the installer and Windows need room too
+MISMATCHES = 2                    # downloads of one published file that failed its digest before giving up
+INSTALLER_START = 15              # seconds for the installer's setup program to start and write its log
 KINDS = ('patch', 'setup', 'dmg', 'manual')
 _NUMBER = re.compile(r'(\d+)\.(\d+)\.(\d+)')
 _ASSET = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]*')
@@ -126,6 +133,24 @@ def file_sha256(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+def smart_app_control_blocks_updates(platform=sys.platform):
+    """Smart App Control in enforce mode stops programs that are neither signed nor widely known.
+
+    ADF's installers are not code-signed yet, so Windows would stop them after ADF
+    has closed. Such PCs get the download page instead. Once releases are signed,
+    return False here.
+    """
+    if platform != 'win32':
+        return False
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Control\CI\Policy') as key:
+            state, _ = winreg.QueryValueEx(key, 'VerifiedAndReputablePolicyState')
+    except (ImportError, OSError):
+        return False
+    return state == 1  # 0 off, 1 on, 2 evaluation
+
+
 class _Transfer:
     def __init__(self, file, hasher, offset):
         self.file, self.hasher, self.offset = file, hasher, offset
@@ -147,13 +172,15 @@ class UpdateService(QObject):
         self.releases = releases.rstrip('/')
         self.state = 'idle'
         self.package = None
+        self.reason = None                # why the state is 'manual': failed, blocked, security or mismatch
         self.percent = 0
-        self.open_when_ready = False
+        self.requested = False            # the user asked for this download
         self.lock = None
         self.network = None
         self.reply = None
         self.busy = False
         self.pending = False
+        self.paused = False
         self.closed = False
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
@@ -171,7 +198,7 @@ class UpdateService(QObject):
         self.start() if enabled else self.stop()
 
     def start(self):
-        if not self.enabled or self.closed:
+        if not self.enabled or self.closed or self.paused:
             return
         try:
             self.folder.mkdir(parents=True, exist_ok=True)
@@ -207,8 +234,21 @@ class UpdateService(QObject):
         self.closed = True
         self.stop()
 
+    def pause(self):
+        """Leave the staged package alone while ADF closes to install it."""
+        self.paused = True
+        self.timer.stop()
+        self.owner_timer.stop()
+        if self.reply is not None:
+            self.reply.abort()  # A newer release found now must not replace the package being installed.
+
+    def resume(self):
+        if self.paused:
+            self.paused = False
+            self.start()
+
     def check(self):
-        if not self.enabled or self.closed or self.network is None:
+        if not self.enabled or self.closed or self.paused or self.network is None:
             return
         if self.busy:
             return self.timer.start(RETRY)
@@ -221,7 +261,7 @@ class UpdateService(QObject):
 
     def download(self):
         package = self.package
-        if package is None or package.kind == 'manual' or self.busy or self.closed:
+        if package is None or package.kind == 'manual' or self.busy or self.closed or self.paused:
             return
         self.busy = True
         for path in self.folder.glob('ADF-*'):
@@ -251,33 +291,65 @@ class UpdateService(QObject):
             self._get(package, part, hasher, offset)
         step()
 
-    def staged(self):
-        return self.folder/self.package.name
+    def staged(self, package=None):
+        return self.folder/(package or self.package).name
 
-    def verify_staged(self):
-        """Hash the staged installer again right before running it."""
-        try:
-            valid = file_sha256(self.staged()) == self.package.sha256
-        except OSError:
-            valid = False
-        if not valid:
-            self._remove(self.staged())
-            self.settings.remove('updates/ready')
-            self.package = None
-            self._set('idle')
-            self._retry(RECONNECT_DELAY)
-        return valid
+    def verify_staged(self, package, done):
+        """Hash the staged installer again right before running it, then call done(valid).
 
-    def mark_attempt(self):
-        self.settings.setValue('updates/attempt', json.dumps({'version': self.package.version, 'kind': self.package.kind}))
+        A full installer is over a gigabyte, so a worker thread hashes it while the
+        window keeps painting. done runs on the GUI thread.
+        """
+        result = []
+
+        def work():
+            try:
+                result.append(file_sha256(self.staged(package)) == package.sha256)
+            except OSError:
+                result.append(False)
+
+        worker = threading.Thread(target=work, name='ADF update check', daemon=True)
+        worker.start()
+
+        def finish():
+            if worker.is_alive():
+                return QTimer.singleShot(40, finish)
+            valid = bool(result and result[0])
+            if not valid:
+                self._remove(self.staged(package))
+                self.settings.remove('updates/ready')
+                if self.package == package:
+                    self.package = None
+                    self._set('idle')
+                self._retry(RECONNECT_DELAY)
+            done(valid)
+        QTimer.singleShot(40, finish)
+
+    def give_up(self, package, reason):
+        """The installer did not run on this PC; offer the download page for its version."""
+        self.settings.setValue('updates/failed', package.version)
+        self.clear_attempt()
+        self.settings.remove('updates/ready')
+        self._remove(self.staged(package))
+        self._manual(package.version, reason, announce=False)
+
+    def mark_attempt(self, package):
+        self.settings.setValue('updates/attempt', json.dumps({'version': package.version, 'kind': package.kind}))
         self.settings.sync()
 
     def clear_attempt(self):
         self.settings.remove('updates/attempt')
         self.settings.sync()
 
-    def log_path(self):
-        return self.folder/f'install-{self.package.version}.log'
+    def installer_log(self, package):
+        """A log path for the next installer run, with any earlier log removed.
+
+        The setup program that the installer unpacks writes this log as it starts,
+        so the file proves that Windows let it run.
+        """
+        path = self.folder/f'install-{package.version}.log'
+        self._remove(path)
+        return path
 
     def _own(self):
         if self.lock is not None and self.lock.isLocked():
@@ -328,8 +400,14 @@ class UpdateService(QObject):
             package = None
         if (package is not None and package.valid() and is_newer(package.version, self.current)
                 and (self.folder/package.name).is_file()):
-            if self.state != 'ready' or self.package != package:
-                self.package = package
+            if smart_app_control_blocks_updates(self.platform):
+                if self.lock is not None:
+                    # Windows would stop this installer; do not keep a gigabyte for nothing.
+                    self.settings.remove('updates/ready')
+                    self._remove(self.folder/package.name)
+                self._manual(package.version, 'blocked', announce)
+            elif self.state != 'ready' or self.package != package:
+                self.package, self.reason = package, None
                 self._set('ready', announce)
         elif self.state == 'ready' and self.lock is None:
             # Another window installed or discarded the staged update.
@@ -340,7 +418,7 @@ class UpdateService(QObject):
         self.reply = None
         reply.deleteLater()
         self.busy = False
-        if self.closed:
+        if self.closed or self.paused:
             return
         location = reply.header(QNetworkRequest.KnownHeaders.LocationHeader)
         version = None
@@ -350,13 +428,20 @@ class UpdateService(QObject):
             # Offline, a login page, a proxy error or no published release.
             return self._retry()
         self.pending = False
+        if self.package is not None and is_newer(self.package.version, version):
+            self._withdrawn(version)
         if not is_newer(version, self.current):
             return self.timer.start(RECHECK)
-        if self.package is not None and self.package.version == version and self.state != 'idle':
+        # After failed digests, keep reading SHA256SUMS: a corrected upload changes it.
+        if (self.package is not None and self.package.version == version and self.state != 'idle'
+                and self.reason != 'mismatch'):
+            return self.timer.start(RECHECK)
+        # Smart App Control first: it is the likelier reason an earlier installer failed.
+        if smart_app_control_blocks_updates(self.platform):
+            self._manual(version, 'blocked')
             return self.timer.start(RECHECK)
         if self.settings.value('updates/failed', '') == version:
-            self.package = Package(version, '', '', 'manual')
-            self._set('manual', announce=True)
+            self._manual(version, 'failed')
             return self.timer.start(RECHECK)
         self.busy = True
         reply = self.reply = self.network.get(self._request(f'{self.releases}/download/v{version}/{sums_name(version, self.platform)}'))
@@ -366,7 +451,7 @@ class UpdateService(QObject):
         self.reply = None
         reply.deleteLater()
         self.busy = False
-        if self.closed:
+        if self.closed or self.paused:
             return
         data = bytes(reply.read(SUMS_LIMIT)) if reply.error() == QNetworkReply.NetworkError.NoError else b''
         if not data:
@@ -377,7 +462,9 @@ class UpdateService(QObject):
         if package is None:
             return self._retry(LATER)
         self.timer.start(RECHECK)
-        self.package = package
+        if self._mismatches(package) >= MISMATCHES:
+            return self._manual(version, 'mismatch')
+        self.package, self.reason = package, None
         if self._stored('updates/ready') == asdict(package) and self.staged().is_file():
             return self._set('ready', announce=True)
         # A disk image must be installed by hand. A full installer waits on metered networks.
@@ -385,13 +472,43 @@ class UpdateService(QObject):
             return self._set('available', announce=True)
         self.download()
 
+    def _withdrawn(self, latest):
+        """GitHub's latest release moved back below the staged one, which was withdrawn."""
+        try:
+            paths = list(self.folder.iterdir())
+        except OSError:
+            paths = []
+        for path in paths:
+            version = staged_version(path.name)
+            if version and is_newer(version, latest):
+                self._remove(path)
+        ready = self._stored('updates/ready')
+        if ready is not None and is_newer(ready.get('version'), latest):
+            self.settings.remove('updates/ready')
+        self.package, self.reason = None, None
+        self._set('idle')
+
+    def _manual(self, version, reason, announce=True):
+        """ADF cannot install this version itself; the button opens its download page."""
+        package = Package(version, '', '', 'manual')
+        changed = self.state != 'manual' or self.package != package or self.reason != reason
+        self.package, self.reason = package, reason
+        self._set('manual', announce and changed)
+
+    def _mismatches(self, package):
+        """How often this exact published file arrived with a different digest."""
+        stored = self._stored('updates/mismatch') or {}
+        count = stored.get('count')
+        same = all(stored.get(key) == getattr(package, key) for key in ('version', 'name', 'sha256'))
+        return count if same and isinstance(count, int) else 0
+
     def _get(self, package, part, hasher, offset):
         try:
             file = part.open('ab' if offset else 'wb')
         except OSError:
             self.busy = False
             self._set(self._waiting())
-            return self._retry()
+            return self._retry(LATER)
         transfer = _Transfer(file, hasher, offset)
         request = self._request(package.url(self.releases))
         if offset:
@@ -414,6 +531,9 @@ class UpdateService(QObject):
                 transfer.file.truncate()
                 transfer.hasher = hashlib.sha256()
                 transfer.offset = 0
+            if not self._room_for(reply.header(QNetworkRequest.KnownHeaders.ContentLengthHeader)):
+                transfer.failed = True
+                return reply.abort()
         data = bytes(reply.readAll())
         try:
             transfer.file.write(data)
@@ -430,20 +550,32 @@ class UpdateService(QObject):
                 self.changed.emit()
 
     def _downloaded(self, reply, package, part, transfer):
+        self.busy = False
         self.reply = None
         reply.deleteLater()
-        transfer.file.close()
-        self.busy = False
-        if self.closed:
-            return
+        try:
+            transfer.file.close()
+        except OSError:
+            transfer.failed = True  # The last buffered bytes did not fit on the disk.
         if transfer.rejected or transfer.failed:
             self._remove(part)
-        if reply.error() != QNetworkReply.NetworkError.NoError or transfer.rejected or transfer.failed:
+        if self.closed:
+            return
+        if transfer.failed:
+            # A full disk rarely frees up within minutes.
+            self._set(self._waiting())
+            return self._retry(LATER)
+        if reply.error() != QNetworkReply.NetworkError.NoError or transfer.rejected:
             # Keep a partial download; the next attempt continues from it.
             self._set(self._waiting())
             return self._retry()
         if transfer.hasher.hexdigest() != package.sha256:
             self._remove(part)
+            count = self._mismatches(package)+1
+            self.settings.setValue('updates/mismatch', json.dumps(dict(asdict(package), count=count)))
+            if count >= MISMATCHES:
+                # Something between GitHub and this PC changes the file; downloading again will not help.
+                return self._manual(package.version, 'mismatch')
             self._set(self._waiting())
             return self._retry(LATER)
         try:
@@ -451,14 +583,26 @@ class UpdateService(QObject):
         except OSError:
             self._set(self._waiting())
             return self._retry()
+        self.settings.remove('updates/mismatch')
         self.settings.setValue('updates/ready', json.dumps(asdict(package)))
         self.settings.sync()
+        # Also after a click on '새 버전 받기': installing waits for the next click.
+        self.requested = False
         self._set('ready', announce=True)
+
+    def _room_for(self, length):
+        """Whether a download of this many bytes still leaves a margin on the disk."""
+        if not isinstance(length, int) or length <= 0:
+            return True  # Unknown size: a full disk shows up as a failed write instead.
+        try:
+            return shutil.disk_usage(self.folder).free >= length+SPACE_MARGIN
+        except OSError:
+            return True
 
     def _waiting(self):
         """The state after an unfinished download: ask again only if the user had to ask."""
         package = self.package
-        if package is not None and (package.kind == 'dmg' or self.open_when_ready or (package.kind == 'setup' and self._metered())):
+        if package is not None and (package.kind == 'dmg' or self.requested or (package.kind == 'setup' and self._metered())):
             return 'available'
         return 'idle'
 
@@ -467,7 +611,8 @@ class UpdateService(QObject):
         return bool(info is not None and info.supports(QNetworkInformation.Feature.Metered) and info.isMetered())
 
     def _reachability(self, reachability):
-        if reachability == QNetworkInformation.Reachability.Online and self.pending and not self.busy:
+        if (reachability == QNetworkInformation.Reachability.Online and self.pending
+                and not self.busy and not self.paused):
             self.timer.start(RECONNECT_DELAY)
 
     def _retry(self, delay=RETRY):

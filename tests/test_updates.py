@@ -1,6 +1,7 @@
 """Background update checks, downloads and one-click installation."""
 from __future__ import annotations
 
+import errno
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -12,21 +13,48 @@ import tempfile
 import threading
 import time
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
+import pymupdf
 from PySide6.QtCore import QSettings
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from adf import updates
 from adf.updates import (Package, UpdateService, choose_package, installer_arguments, is_newer, parse_sums,
-                         parse_version, staged_version, tag_version)
+                         parse_version, smart_app_control_blocks_updates, staged_version, tag_version)
 
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def without_smart_app_control(test):
+    """This PC may enforce Smart App Control; each test decides whether it does."""
+    patcher = patch('adf.updates.smart_app_control_blocks_updates', return_value=False)
+    test.addCleanup(patcher.stop)
+    return patcher.start()
+
+
+class FullDisk:
+    """A download file whose writes, or whose final flush, find no space left."""
+    def __init__(self, file, write=True):
+        self.file, self.write_fails = file, write
+
+    def write(self, data):
+        if self.write_fails:
+            raise OSError(errno.ENOSPC, 'No space left on device')
+        return self.file.write(data)
+
+    def close(self):
+        self.file.close()
+        if not self.write_fails:
+            raise OSError(errno.ENOSPC, 'No space left on device')
+
+    def __getattr__(self, name):
+        return getattr(self.file, name)
 
 
 def wait_until(condition, timeout=10):
@@ -140,6 +168,21 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(staged_version('install-0.3.28.log'), '0.3.28')
         self.assertIsNone(staged_version('update.lock'))
 
+    def test_smart_app_control_blocks_updates_only_when_enforced(self):
+        for state, blocked in ((0, False), (1, True), (2, False)):
+            winreg = MagicMock(HKEY_LOCAL_MACHINE='HKLM')
+            winreg.QueryValueEx.return_value = (state, 4)
+            with patch.dict(sys.modules, {'winreg': winreg}):
+                self.assertEqual(smart_app_control_blocks_updates('win32'), blocked, state)
+            winreg.OpenKey.assert_called_once_with('HKLM', r'SYSTEM\CurrentControlSet\Control\CI\Policy')
+            self.assertEqual(winreg.QueryValueEx.call_args.args[1], 'VerifiedAndReputablePolicyState')
+        winreg = MagicMock()
+        winreg.OpenKey.side_effect = FileNotFoundError
+        with patch.dict(sys.modules, {'winreg': winreg}):
+            self.assertFalse(smart_app_control_blocks_updates('win32'))
+            self.assertFalse(smart_app_control_blocks_updates('darwin'))
+        self.assertEqual(winreg.OpenKey.call_count, 1)
+
 
 class UpdateServiceTests(unittest.TestCase):
     @classmethod
@@ -158,6 +201,7 @@ class UpdateServiceTests(unittest.TestCase):
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
         self.publish(**{'ADF-Update-0.3.27-to-0.3.28.exe': self.patch, 'ADF-Setup-0.3.28.exe': self.setup})
+        self.smart_app_control = without_smart_app_control(self)
 
     def publish(self, sums_name='SHA256SUMS-0.3.28.txt', **assets):
         self.server.assets = dict(assets)
@@ -279,10 +323,12 @@ class UpdateServiceTests(unittest.TestCase):
         self.publish('SHA256SUMS-0.3.28-macOS.txt', **{'ADF-0.3.28-macOS.dmg': image})
         service = self.checked(self.service(platform='darwin'))
         self.assertEqual(service.state, 'available')
+        service.requested = True
         service.download()
         wait_until(lambda: not service.busy)
         self.assertEqual(service.state, 'ready')
         self.assertEqual(service.staged().read_bytes(), image)
+        self.assertFalse(service.requested)
 
     def test_only_one_window_checks_and_the_others_show_its_update(self):
         owner = self.checked(self.service())
@@ -307,13 +353,145 @@ class UpdateServiceTests(unittest.TestCase):
         self.assertIsNone(service.network)
         self.assertEqual(self.server.requests, [])
 
+    def verified(self, service):
+        results = []
+        service.verify_staged(service.package, results.append)
+        self.assertEqual(results, [])  # The answer arrives later, after hashing off the GUI thread.
+        wait_until(lambda: results)
+        return results
+
     def test_changed_staged_file_is_downloaded_again(self):
         service = self.checked(self.service())
         service.staged().write_bytes(b'changed')
-        self.assertFalse(service.verify_staged())
+        self.assertEqual(self.verified(service), [False])
         self.assertEqual(service.state, 'idle')
         self.assertIsNone(service.package)
         self.assertEqual(list(self.folder.glob('ADF-*')), [])
+
+    def test_staged_file_is_hashed_on_a_worker_thread(self):
+        service = self.checked(self.service())
+        threads, hash_file = [], updates.file_sha256
+        with patch('adf.updates.file_sha256', side_effect=lambda path: threads.append(threading.current_thread()) or hash_file(path)):
+            self.assertEqual(self.verified(service), [True])
+        self.assertEqual(len(threads), 1)
+        self.assertIsNot(threads[0], threading.main_thread())
+        self.assertEqual(service.state, 'ready')
+        self.assertTrue(service.staged().is_file())
+
+    def test_smart_app_control_sends_users_to_the_download_page(self):
+        self.smart_app_control.return_value = True
+        service = self.service()
+        announced = []
+        service.notify.connect(lambda: announced.append((service.state, service.reason)))
+        self.checked(service)
+        self.assertEqual((service.state, service.reason, service.package.version), ('manual', 'blocked', '0.3.28'))
+        self.assertEqual(announced, [('manual', 'blocked')])
+        # Nothing is downloaded that Windows would refuse to run.
+        self.assertEqual([path for _, path, _ in self.server.requests], ['/releases/latest'])
+        self.assertEqual(service.timer.interval(), updates.RECHECK)
+        service.check()
+        wait_until(lambda: not service.busy)
+        self.assertEqual(len(announced), 1)
+
+    def test_staged_update_is_not_offered_under_smart_app_control(self):
+        self.folder.mkdir()
+        staged = self.folder/'ADF-Update-0.3.27-to-0.3.28.exe'
+        staged.write_bytes(self.patch)
+        self.settings.setValue('updates/ready', json.dumps({'version': '0.3.28', 'name': staged.name,
+                                                            'sha256': digest(self.patch), 'kind': 'patch'}))
+        self.smart_app_control.return_value = True
+        service = self.service()
+        service.start()
+        self.assertEqual((service.state, service.reason), ('manual', 'blocked'))
+        self.assertFalse(staged.exists())
+        self.assertIsNone(self.settings.value('updates/ready'))
+
+    def test_download_that_does_not_fit_on_the_disk_waits(self):
+        with patch('adf.updates.shutil.disk_usage', return_value=Mock(free=len(self.patch)+updates.SPACE_MARGIN-1)):
+            service = self.checked(self.service())
+        self.assertEqual(service.state, 'idle')
+        self.assertTrue(service.pending)
+        self.assertEqual(service.timer.interval(), updates.LATER)
+        self.assertEqual(list(self.folder.glob('ADF-*')), [])
+        with patch('adf.updates.shutil.disk_usage', return_value=Mock(free=len(self.patch)+updates.SPACE_MARGIN)):
+            service.check()
+            wait_until(lambda: not service.busy)
+        self.assertEqual(service.state, 'ready')
+
+    def test_full_disk_removes_the_partial_download_and_waits(self):
+        transfer = updates._Transfer
+        for write in (True, False):
+            with self.subTest(fails='write' if write else 'close'):
+                self.settings.remove('updates')
+                with patch('adf.updates._Transfer', side_effect=lambda file, *rest: transfer(FullDisk(file, write), *rest)):
+                    service = self.checked(self.service())
+                self.assertFalse(service.busy)
+                self.assertEqual(service.state, 'idle')
+                self.assertEqual(service.timer.interval(), updates.LATER)
+                self.assertEqual(list(self.folder.glob('ADF-*')), [])
+                self.assertIsNone(self.settings.value('updates/ready'))
+                service.shutdown()
+
+    def test_withdrawn_release_removes_the_staged_update(self):
+        service = self.checked(self.service())
+        self.assertEqual(service.state, 'ready')
+        (self.folder/'install-0.3.28.log').write_bytes(b'log')
+        self.server.latest = '0.3.27'
+        service.check()
+        wait_until(lambda: not service.busy)
+        self.assertEqual(service.state, 'idle')
+        self.assertIsNone(service.package)
+        self.assertEqual(sorted(path.name for path in self.folder.iterdir()), ['update.lock'])
+        self.assertIsNone(self.settings.value('updates/ready'))
+        self.assertEqual(service.timer.interval(), updates.RECHECK)
+
+    def test_repeated_digest_mismatch_leaves_the_update_to_the_user(self):
+        name = 'ADF-Update-0.3.27-to-0.3.28.exe'
+        self.publish(**{name: self.patch})
+        self.server.assets[name] = os.urandom(1000)
+        service = self.checked(self.service())
+        self.assertEqual((service.state, service.timer.interval()), ('idle', updates.LATER))
+        service.check()
+        wait_until(lambda: not service.busy)
+        self.assertEqual((service.state, service.reason), ('manual', 'mismatch'))
+        self.assertEqual(len(self.server.downloaded(name)), 2)
+        service.check()
+        wait_until(lambda: not service.busy)
+        self.assertEqual(service.state, 'manual')
+        service.shutdown()
+        # The count survives a restart while the published file stays the same.
+        again = self.checked(self.service())
+        self.assertEqual((again.state, again.reason), ('manual', 'mismatch'))
+        self.assertEqual(len(self.server.downloaded(name)), 2)
+        # A corrected upload changes the published digest and is downloaded.
+        fixed = os.urandom(300_000)
+        self.publish(**{name: fixed})
+        again.check()
+        wait_until(lambda: not again.busy)
+        self.assertEqual((again.state, again.reason), ('ready', None))
+        self.assertEqual(again.staged().read_bytes(), fixed)
+        self.assertIsNone(self.settings.value('updates/mismatch'))
+
+    def test_paused_service_keeps_the_package_being_installed(self):
+        service = self.checked(self.service())
+        package = service.package
+        newer = os.urandom(1000)
+        self.server.latest = '0.3.29'
+        self.publish('SHA256SUMS-0.3.29.txt', **{'ADF-Update-0.3.27-to-0.3.29.exe': newer})
+        requests = len(self.server.requests)
+        service.check()  # Already asking GitHub when the user clicks install.
+        service.pause()
+        wait_until(lambda: not service.busy)
+        service.check()
+        service.download()
+        QTest.qWait(100)
+        self.assertEqual((service.state, service.package), ('ready', package))
+        self.assertTrue(service.staged(package).is_file())
+        self.assertFalse(service.timer.isActive())
+        self.assertLessEqual(len(self.server.requests), requests+1)
+        service.resume()
+        self.assertFalse(service.paused)
+        self.assertEqual((service.timer.isActive(), service.timer.interval()), (True, updates.CHECK_DELAY))
 
 
 class UpdateWindowTests(unittest.TestCase):
@@ -334,6 +512,7 @@ class UpdateWindowTests(unittest.TestCase):
         self.addCleanup(self.window.settings.remove, 'updates')
         # Installing keeps the lock until the process exits; tests release it.
         self.addCleanup(self.service.shutdown)
+        without_smart_app_control(self)
         self.window.start_updates(self.service)
         self.service.timer.stop()
         self.package = Package('0.3.28', 'ADF-Update-0.3.27-to-0.3.28.exe', digest(b'installer'), 'patch')
@@ -355,23 +534,151 @@ class UpdateWindowTests(unittest.TestCase):
         self.assertEqual(self.window.update_button.text(), '업데이트 받는 중 · 42%')
         self.assertFalse(self.window.update_button.isEnabled())
 
+    def pdf(self, name='열린 문서.pdf'):
+        path = self.root/name
+        with pymupdf.open() as doc:
+            for _ in range(2):
+                doc.new_page(width=360, height=480)
+            doc.save(path)
+        return path
+
     def test_one_click_closes_adf_and_starts_the_installer(self):
         self.ready()
         document = self.root/'열린 문서.pdf'
         document.write_bytes(b'%PDF-1.4\n%%EOF\n')
         self.window.document.path = str(document)
+        log = self.root/'updates'/'install-0.3.28.log'
+        log.write_text('an earlier attempt')
         application = Mock()
+        earlier_log = []
+
+        def start(program, arguments):
+            # The setup program that the installer unpacks writes this log as it starts.
+            earlier_log.append(log.exists())
+            Path(next(argument for argument in arguments if argument.startswith('/LOG='))[5:]).write_text('Log opened')
+            return True, 4321
         with patch('adf.updates.other_windows', return_value={}), \
+             patch('adf.updates.running', return_value={4321}), \
              patch('adf.app.QApplication.instance', return_value=application), \
-             patch('adf.app.QProcess.startDetached', return_value=(True, 1)) as start:
+             patch('adf.app.QProcess.startDetached', side_effect=start) as started:
             self.window.update_button.click()
-        program, arguments = start.call_args.args
+            self.assertTrue(self.service.paused)
+            wait_until(lambda: application.quit.called)
+        program, arguments = started.call_args.args
         self.assertEqual(Path(program), self.root/'updates'/self.package.name)
         self.assertIn('/ADFACKNOTICE=0.3.28', arguments)
         self.assertIn(f'/ADFRELAUNCH={sys.executable}', arguments)
         self.assertIn(f'/ADFOPEN={document}', arguments)
+        self.assertIn(f'/LOG={log}', arguments)
+        self.assertEqual(earlier_log, [False])
         application.quit.assert_called_once()
         self.assertFalse(self.window.isVisible())
+        self.assertEqual(json.loads(self.window.settings.value('updates/attempt')), {'version': '0.3.28', 'kind': 'patch'})
+
+    def test_blocked_setup_program_reopens_adf_with_the_document(self):
+        document = self.pdf()
+        self.assertTrue(self.window.open_path(document))
+        self.ready()
+        application = Mock()
+        # The installer starts, but Windows stops the setup program it unpacks, so no log appears.
+        with patch('adf.updates.other_windows', return_value={}), \
+             patch('adf.updates.running', return_value=set()), \
+             patch('adf.app.QApplication.instance', return_value=application), \
+             patch('adf.app.QMessageBox.warning') as warning, \
+             patch('adf.app.QProcess.startDetached', return_value=(True, 4321)):
+            self.window.update_button.click()
+            wait_until(lambda: warning.called)
+        application.quit.assert_not_called()
+        application.setQuitOnLastWindowClosed.assert_called_with(True)
+        self.assertIn('Windows 보안 설정', warning.call_args.args[2])
+        self.assertIn('다운로드 페이지', warning.call_args.args[2])
+        self.assertTrue(self.window.isVisible())
+        self.assertEqual(Path(self.window.document.path).resolve(), document.resolve())
+        self.assertEqual(self.window.document.page_count, 2)
+        self.assertEqual((self.service.state, self.service.reason, self.service.package.version), ('manual', 'security', '0.3.28'))
+        self.assertFalse(self.service.paused)
+        self.assertFalse(self.window.installing_update)
+        self.assertEqual(self.window.update_button.text(), '새 버전 받기 · 0.3.28')
+        self.assertTrue(self.window.update_button.isEnabled())
+        self.assertIn('Windows 보안 설정', self.window.update_button.toolTip())
+        self.assertEqual(self.window.settings.value('updates/failed'), '0.3.28')
+        self.assertIsNone(self.window.settings.value('updates/attempt'))
+        self.assertFalse((self.root/'updates'/self.package.name).exists())
+        with patch('adf.app.QDesktopServices.openUrl') as opened:
+            self.window.update_button.click()
+        self.assertEqual(opened.call_args.args[0].toString(), f'{updates.RELEASES}/tag/v0.3.28')
+
+    def test_setup_program_that_never_starts_is_given_up(self):
+        self.ready()
+        application = Mock()
+        with patch('adf.updates.INSTALLER_START', 0.5), \
+             patch('adf.updates.other_windows', return_value={}), \
+             patch('adf.updates.running', return_value={4321}), \
+             patch('adf.app.QApplication.instance', return_value=application), \
+             patch('adf.app.QMessageBox.warning') as warning, \
+             patch('adf.app.QProcess.startDetached', return_value=(True, 4321)):
+            clicked = time.monotonic()
+            self.window.update_button.click()
+            wait_until(lambda: warning.called)
+        self.assertGreaterEqual(time.monotonic()-clicked, 0.5)
+        application.quit.assert_not_called()
+        self.assertEqual((self.service.state, self.service.reason), ('manual', 'security'))
+        self.assertTrue(self.window.isVisible())
+        self.assertEqual(self.window.stack.currentIndex(), 0)
+
+    def test_installer_that_cannot_start_leaves_an_empty_window(self):
+        self.assertTrue(self.window.open_path(self.pdf()))
+        self.window.show()
+        # The document is gone by the time ADF closes, so nothing is reopened.
+        self.window.document.path = str(self.root/'지운 문서.pdf')
+        self.ready()
+        application = Mock()
+        with patch('adf.updates.other_windows', return_value={}), \
+             patch('adf.app.QApplication.instance', return_value=application), \
+             patch('adf.app.QMessageBox.warning') as warning, \
+             patch('adf.app.QProcess.startDetached', return_value=(False, 0)):
+            self.window.update_button.click()
+            wait_until(lambda: warning.called)
+        self.assertIn('시작하지 못했습니다', warning.call_args.args[2])
+        self.assertTrue(self.window.isVisible())
+        self.assertEqual(self.window.stack.currentIndex(), 0)
+        self.assertEqual(self.window.thumbnails.count(), 0)
+        self.assertEqual(self.window.document.page_count, 0)
+        for key in ('save', 'close', 'print', 'next', 'rotate'):
+            self.assertFalse(self.window.actions[key].isEnabled(), key)
+        self.assertEqual(self.window.windowTitle(), 'ADF — 문서 작업, 가볍게')
+        # The staged update stays ready for another try.
+        self.assertEqual(self.service.state, 'ready')
+        self.assertTrue(self.window.update_button.isEnabled())
+        self.assertFalse(self.service.paused)
+        self.assertIsNone(self.window.settings.value('updates/attempt'))
+
+    def test_install_runs_the_package_that_was_verified(self):
+        self.ready()
+        application = Mock()
+        alive = {4242}
+
+        def start(program, arguments):
+            Path(next(argument for argument in arguments if argument.startswith('/LOG='))[5:]).write_text('Log opened')
+            return True, 4321
+        with patch('adf.updates.other_windows', return_value={4242: [1]}), \
+             patch('adf.updates.close_windows') as close, \
+             patch('adf.updates.running', side_effect=lambda pids: set(pids) & alive), \
+             patch('adf.app.QApplication.instance', return_value=application), \
+             patch('adf.app.QProcess.startDetached', side_effect=start) as started:
+            self.window.update_button.click()
+            wait_until(lambda: close.called)
+            # While another window asks about saving, checks and downloads wait.
+            self.assertTrue(self.service.paused)
+            self.assertFalse(self.service.timer.isActive())
+            self.service.check()
+            self.assertIsNone(self.service.reply)
+            self.service.package = Package('0.3.29', 'ADF-Setup-0.3.29.exe', 'b'*64, 'setup')
+            alive.clear()
+            wait_until(lambda: application.quit.called)
+        program, arguments = started.call_args.args
+        self.assertEqual(Path(program), self.root/'updates'/self.package.name)
+        self.assertIn('/ADFACKNOTICE=0.3.28', arguments)
         self.assertEqual(json.loads(self.window.settings.value('updates/attempt')), {'version': '0.3.28', 'kind': 'patch'})
 
     def test_other_windows_that_stay_open_stop_the_update(self):
@@ -382,13 +689,70 @@ class UpdateWindowTests(unittest.TestCase):
              patch('adf.app.QMessageBox.information') as message, \
              patch('adf.app.QProcess.startDetached') as start:
             self.window.update_button.click()
+            wait_until(lambda: close.called)
             close.assert_called_once_with({4242: [1]})
             self.assertFalse(self.window.update_button.isEnabled())
             self.window.update_deadline = 0
             wait_until(lambda: message.called)
         start.assert_not_called()
         self.assertFalse(self.window.installing_update)
+        self.assertFalse(self.service.paused)
         self.assertTrue(self.window.update_button.isEnabled())
+
+    def test_changed_staged_file_is_not_run(self):
+        self.ready()
+        (self.root/'updates'/self.package.name).write_bytes(b'changed')
+        with patch('adf.app.QMessageBox.warning') as warning, \
+             patch('adf.app.QProcess.startDetached') as start:
+            self.window.update_button.click()
+            wait_until(lambda: warning.called)
+        start.assert_not_called()
+        self.assertIn('손상', warning.call_args.args[2])
+        self.assertEqual(self.service.state, 'idle')
+        self.assertFalse(self.service.paused)
+        self.assertFalse(self.window.installing_update)
+        self.assertFalse((self.root/'updates'/self.package.name).exists())
+
+    def test_mac_download_waits_for_a_click_before_opening_the_disk_image(self):
+        self.service.platform = 'darwin'
+        image = Package('0.3.28', 'ADF-0.3.28-macOS.dmg', digest(b'image'), 'dmg')
+        self.service.package = image
+        self.service._set('available')
+
+        def downloaded():
+            self.service.staged().write_bytes(b'image')
+            self.service._set('ready', announce=True)
+        with patch.object(self.service, 'download', side_effect=downloaded) as download, \
+             patch.object(self.window.update_notifier, 'show') as notified, \
+             patch('adf.app.QDesktopServices.openUrl') as opened, \
+             patch.object(self.window, 'close') as close:
+            self.window.update_button.click()
+            download.assert_called_once()
+            self.assertTrue(self.service.requested)
+            QTest.qWait(200)
+            opened.assert_not_called()
+            close.assert_not_called()
+            self.assertEqual(self.window.update_button.text(), '업데이트 설치 · 0.3.28')
+            self.assertTrue(self.window.update_button.isEnabled())
+            self.assertEqual(notified.call_args.args[2], '설치 화면 열기')
+            self.window.update_button.click()
+            wait_until(lambda: opened.called)
+        self.assertEqual(Path(opened.call_args.args[0].toLocalFile()), self.root/'updates'/image.name)
+        close.assert_called_once()
+
+    def test_manual_state_says_why_and_opens_the_download_page(self):
+        expected = {'failed': '자동 업데이트를 설치하지 못했습니다.', 'blocked': 'Windows 스마트 앱 컨트롤',
+                    'security': 'Windows 보안 설정', 'mismatch': '공개된 파일과 달라'}
+        for reason, sentence in expected.items():
+            with self.subTest(reason=reason), patch.object(self.window.update_notifier, 'show') as notified:
+                self.service._set('idle')
+                self.service._manual('0.3.28', reason)
+                self.assertEqual(self.window.update_button.text(), '새 버전 받기 · 0.3.28')
+                self.assertIn(sentence, self.window.update_button.toolTip())
+                self.assertIn('다운로드 페이지', self.window.update_button.toolTip())
+                _, message, action = notified.call_args.args
+                self.assertIn(sentence, message)
+                self.assertEqual(action, '다운로드 페이지 열기')
 
     def test_help_menu_turns_automatic_checks_off(self):
         help_menu = [action.menu() for action in self.window.menuBar().actions() if action.text() == '도움말'][0]
