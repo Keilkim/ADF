@@ -46,6 +46,17 @@ function Get-ExistingStateSnapshot {
     return ($state | ConvertTo-Json -Depth 30 -Compress)
 }
 
+function Test-UninstallLogMentions([string]$Path, [string]$Text) {
+    # unins000.dat holds each recorded uninstall action's expanded paths as
+    # UTF-16 text, at even or odd byte offsets.
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    foreach ($offset in 0, 1) {
+        $decoded = [Text.Encoding]::Unicode.GetString($bytes, $offset, $bytes.Length - $offset)
+        if ($decoded.IndexOf($Text, [StringComparison]::OrdinalIgnoreCase) -ge 0) { return $true }
+    }
+    return $false
+}
+
 function Get-IsolatedUninstallKeys([string]$InstallDirectory) {
     # Inno Setup may shorten a long AppId with a hash in the uninstall key.
     # Identify this test by its full install directory, never by the prefix alone.

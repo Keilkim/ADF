@@ -106,11 +106,19 @@ Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{8093F936-8
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{8093F936-820B-4CDB-A64B-7A39EC807A11}\InprocServer32"; ValueType: string; ValueName: "ThreadingModel"; ValueData: "Apartment"
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\SystemFileAssociations\.pdf\shellex\ContextMenuHandlers\ADF"; ValueType: string; ValueName: ""; ValueData: "{{8093F936-820B-4CDB-A64B-7A39EC807A11}"; Flags: uninsdeletekey
 ; First-page thumbnails in Explorer, drawn by Windows' own PDF renderer. A PDF
-; thumbnail handler that another program registered here keeps its place.
+; thumbnail handler that another program registered here, for this user or for
+; all users, keeps its place. Uninstalling removes the slot only while it still
+; names ADF (CurUninstallStepChanged), so it has no uninsdeletekey flag.
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}"; ValueType: string; ValueName: ""; ValueData: "ADF PDF thumbnails"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}\InprocServer32"; ValueType: string; ValueName: ""; ValueData: "{app}\ADFShell-{#AppVersion}.dll"
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}\InprocServer32"; ValueType: string; ValueName: "ThreadingModel"; ValueData: "Apartment"
-Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\SystemFileAssociations\.pdf\shellex\{{E357FCCD-A995-4576-B01F-234630154E96}"; ValueType: string; ValueName: ""; ValueData: "{{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}"; Flags: uninsdeletekey; Check: ThumbnailSlotAvailable
+Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\SystemFileAssociations\.pdf\shellex\{{E357FCCD-A995-4576-B01F-234630154E96}"; ValueType: string; ValueName: ""; ValueData: "{{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}"; Check: ThumbnailSlotAvailable
+
+[UninstallDelete]
+; Updates the app downloaded: a staged installer (over 1 GB), partial downloads
+; and install logs. Stamps and other data in the parent folder stay. Setup
+; records this at install time, so an isolated test never deletes the real folder.
+Type: filesandordirs; Name: "{localappdata}\ADF\ADF\updates"; Check: not IsIsolatedTest
 
 [Run]
 Filename: "{app}\ADF.exe"; Description: "ADF 시작"; Flags: nowait postinstall skipifsilent
@@ -220,14 +228,46 @@ begin
     Result := '';
 end;
 
+const
+  ThumbnailSlot = 'Software\Classes\SystemFileAssociations\.pdf\shellex\{E357FCCD-A995-4576-B01F-234630154E96}';
+  ThumbnailHandler = '{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}';
+
+function OtherThumbnailHandler(RootKey: Integer; Prefix: String; var Handler: String): Boolean;
+begin
+  Result := RegQueryStringValue(RootKey, Prefix + ThumbnailSlot, '', Handler)
+    and (Handler <> '') and (CompareText(Handler, ThumbnailHandler) <> 0);
+end;
+
+{ Explorer reads this user's HKCU entry before the one in HKLM, so ADF would hide
+  a handler that another program registered for all users. An isolated test
+  writes only its private HKCU tree, which hides nothing. }
 function ThumbnailSlotAvailable: Boolean;
 var
   Handler: String;
 begin
-  Result := not RegQueryStringValue(HKCU, GetRegistryPrefix('') + 'Software\Classes\SystemFileAssociations\.pdf\shellex\{E357FCCD-A995-4576-B01F-234630154E96}', '', Handler)
-    or (Handler = '') or (CompareText(Handler, '{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}') = 0);
+  Result := not OtherThumbnailHandler(HKCU, GetRegistryPrefix(''), Handler);
+  if Result and not IsIsolatedTest then
+    Result := not OtherThumbnailHandler(HKLM, '', Handler);
   if not Result then
     Log('Kept the PDF thumbnail handler of another program: ' + Handler);
+end;
+
+{ Another program may have taken the slot since ADF was installed. Remove it only
+  while it names ADF's handler served from this installation. The uninstaller of
+  an isolated test gets no test token, and this check keeps it off the real slot;
+  its own slot goes with its private registry tree. }
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Handler, Server: String;
+begin
+  if CurUninstallStep <> usUninstall then
+    Exit;
+  if RegQueryStringValue(HKCU, ThumbnailSlot, '', Handler) and (CompareText(Handler, ThumbnailHandler) = 0)
+    and RegQueryStringValue(HKCU, 'Software\Classes\CLSID\' + ThumbnailHandler + '\InprocServer32', '', Server)
+    and (CompareText(ExtractFilePath(Server), ExpandConstant('{app}\')) = 0) then begin
+    RegDeleteValue(HKCU, ThumbnailSlot, '');
+    RegDeleteKeyIfEmpty(HKCU, ThumbnailSlot);
+  end;
 end;
 
 function InitializeSetup: Boolean;
