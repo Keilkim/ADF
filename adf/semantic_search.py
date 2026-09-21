@@ -58,7 +58,9 @@ class Encoder:
         import sentencepiece
         folder = folder or model_folder()
         self.session = onnxruntime.InferenceSession(str(folder/MODEL_FILE), providers=['CPUExecutionProvider'])
-        self.vocabulary = sentencepiece.SentencePieceProcessor(model_file=str(folder/VOCABULARY_FILE))
+        # SentencePiece cannot open a Windows path with Korean characters, such as
+        # an installation under a Korean user name, so it gets the file's bytes.
+        self.vocabulary = sentencepiece.SentencePieceProcessor(model_proto=(folder/VOCABULARY_FILE).read_bytes())
         self.dimension = self.session.get_outputs()[0].shape[-1]
 
     def tokens(self, text: str) -> list[int]:
