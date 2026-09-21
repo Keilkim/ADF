@@ -58,7 +58,10 @@ process. The handler copies the stream into memory (at most 1 GiB), so the
 renderer's threads never call the stream Explorer handed to the calling
 thread. ADF parses no PDF here: Windows' own `Windows.Data.Pdf` renders the
 first page, rotation included, to fit the requested size (at most 2560
-pixels), and WIC decodes the result into an opaque 32-bit DIB. Loading and
+pixels), and WIC decodes the result into an opaque 32-bit DIB. The ADF mark
+from the DLL's icon resource sits on a small white rounded badge in the
+bottom-right corner, about a seventh of the thumbnail's longer side, so it
+stays visible on dark pages; thumbnails under 64 pixels stay plain. Loading and
 rendering are asynchronous; the handler waits up to 20 seconds with
 `CoWaitForMultipleHandles`, and its completion handlers are agile so they never
 need the waiting apartment. A timed-out operation is cancelled. Encrypted,
@@ -110,7 +113,9 @@ The harness also writes PDFs with exact cross-reference tables and renders
 them through the thumbnail class: a portrait two-page file must produce a
 128×256 bitmap of its first page with the red left third in place, a
 1024-pixel request must render at full resolution, and a page with `/Rotate 90`
-must turn to 256×128 with that third at the top. Sizes Explorer never requests,
+must turn to 256×128 with that third at the top. The mark must appear only in
+the bottom-right corner at 256, 1024 and landscape sizes, on a white badge, and
+not at all on a 48-pixel thumbnail. Sizes Explorer never requests,
 repeated or missing initialization, a damaged PDF, an empty file and non-PDF
 bytes must fail without a bitmap, and the DLL must be unloadable afterwards.
 Five corrupt `DROPFILES` inputs verify rejection before out-of-bounds memory

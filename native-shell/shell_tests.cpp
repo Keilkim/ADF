@@ -241,6 +241,13 @@ struct Thumbnail {
     const BYTE* At(int x, int y) const { return pixels.data() + (y * width + x) * 4; }
     bool Red(int x, int y) const { const BYTE* p = At(x, y); return p[2] > 200 && p[1] < 60 && p[0] < 60; }
     bool White(int x, int y) const { const BYTE* p = At(x, y); return p[2] > 240 && p[1] > 240 && p[0] > 240; }
+    // Pixels of the ADF mark's blue within a region.
+    int Blue(int left, int top, int right, int bottom) const {
+        int count = 0;
+        for (int y = std::max(0, top); y < std::min(height, bottom); ++y)
+            for (int x = std::max(0, left); x < std::min(width, right); ++x) { const BYTE* p = At(x, y); count += p[0] > 180 && p[2] < 110 && p[1] < 150; }
+        return count;
+    }
 };
 
 Thumbnail RenderThumbnail(IClassFactory* factory, IStream* stream, UINT size) {
@@ -301,14 +308,22 @@ void ThumbnailTests(const std::wstring& dll, const std::wstring& fixture) {
     Check(page.width == 128 && page.height == 256, "Portrait thumbnail fits the requested size and keeps the page ratio");
     Check(page.alpha == WTSAT_RGB, "Thumbnail is opaque");
     Check(page.Red(10, 128) && page.White(118, 128), "Thumbnail shows the first page, red on the left third");
+    Check(page.Blue(88, 216, 128, 256) > 60, "ADF mark sits on a badge in the bottom-right corner");
+    Check(page.Blue(0, 0, 128, 200) == 0 && page.Blue(0, 200, 80, 256) == 0, "ADF mark covers only the corner, not the page");
+    Check(page.White(126 - 40 + 3, 253 - 36 + 6), "Badge behind the mark is white");
+    Thumbnail small = FileThumbnail(factory, portrait, 48);
+    CheckHr(small.result, "Render a small thumbnail");
+    Check(small.width == 24 && small.height == 48 && small.Blue(0, 0, 24, 48) == 0, "A thumbnail too small for the mark stays plain");
     Thumbnail large = FileThumbnail(factory, portrait, 1024);
     CheckHr(large.result, "Render an extra-large thumbnail");
     Check(large.width == 512 && large.height == 1024 && large.Red(40, 512) && large.White(480, 512), "Extra-large thumbnail renders at full resolution");
+    Check(large.Blue(340, 850, 512, 1024) > 1000 && large.Blue(0, 0, 512, 800) == 0, "ADF mark scales with the thumbnail");
 
     Thumbnail turned = FileThumbnail(factory, rotated, 256);
     CheckHr(turned.result, "Render a rotated page");
     Check(turned.width == 256 && turned.height == 128, "Page rotation turns the thumbnail");
     Check(turned.Red(128, 10) && turned.White(128, 118), "Rotated page's left third is at the top");
+    Check(turned.Blue(200, 80, 256, 128) > 60, "Landscape thumbnail keeps the mark in its bottom-right corner");
 
     for (UINT size : {0U, 2561U}) Check(FAILED(FileThumbnail(factory, portrait, size).result), "Thumbnail rejects sizes Explorer never requests");
     for (const auto& path : {corrupt, empty}) Check(FAILED(FileThumbnail(factory, path, 256).result), "Corrupt or empty PDF fails without a bitmap");

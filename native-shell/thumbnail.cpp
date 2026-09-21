@@ -226,6 +226,48 @@ HRESULT RenderFirstPage(IStream* file, UINT size, HBITMAP* bitmap) {
     return Decode(image.Get(), size, bitmap);
 }
 
+// The ADF mark on a small white badge in the bottom-right corner, visible on
+// dark pages too. A thumbnail too small to show it stays plain.
+void StampLogo(HBITMAP bitmap) {
+    DIBSECTION section{};
+    if (GetObjectW(bitmap, sizeof(section), &section) != sizeof(section) || !section.dsBm.bmBits) return;
+    const int width = section.dsBm.bmWidth, height = section.dsBm.bmHeight;
+    if (std::max(width, height) < 64) return;
+    const int badge = std::min({std::max(16, static_cast<int>(std::lround(std::max(width, height) * 0.14))), width, height});
+    const int margin = std::max(2, badge / 6);
+    const int left = std::max(0, width - badge - margin), top = std::max(0, height - badge - margin);
+    auto* pixels = static_cast<BYTE*>(section.dsBm.bmBits);
+    const double radius = badge * 0.24;
+    for (int y = 0; y < badge; ++y) {
+        for (int x = 0; x < badge; ++x) {
+            // Signed distance from the rounded square's edge; negative inside.
+            const double px = x + 0.5, py = y + 0.5;
+            const double cx = std::clamp(px, radius, badge - radius), cy = std::clamp(py, radius, badge - radius);
+            const double distance = std::hypot(px - cx, py - cy) - radius;
+            const double coverage = std::clamp(0.5 - distance, 0.0, 1.0);
+            if (coverage <= 0) continue;
+            // A one-pixel light grey rim separates the badge from white pages.
+            const double shade = 255 - 38 * std::clamp(distance + 1.5, 0.0, 1.0);
+            BYTE* p = pixels + (static_cast<size_t>(top + y) * width + left + x) * 4;
+            for (int channel = 0; channel < 3; ++channel)
+                p[channel] = static_cast<BYTE>(std::lround(p[channel] + (shade - p[channel]) * coverage));
+        }
+    }
+    const int mark = badge * 3 / 4;
+    HICON icon = static_cast<HICON>(LoadImageW(g_module, MAKEINTRESOURCEW(101), IMAGE_ICON, mark, mark, LR_DEFAULTCOLOR));
+    if (!icon) return;
+    if (HDC dc = CreateCompatibleDC(nullptr)) {
+        HGDIOBJ previous = SelectObject(dc, bitmap);
+        if (previous && previous != HGDI_ERROR) {
+            DrawIconEx(dc, left + (badge - mark) / 2, top + (badge - mark) / 2, icon, mark, mark, 0, nullptr, DI_NORMAL | DI_NOMIRROR);
+            GdiFlush();
+            SelectObject(dc, previous);
+        }
+        DeleteDC(dc);
+    }
+    DestroyIcon(icon);
+}
+
 class ThumbnailProvider final : public IInitializeWithStream, public IThumbnailProvider {
     std::atomic<ULONG> references_{1};
     ComPtr<IStream> stream_;
@@ -257,7 +299,9 @@ public:
         if (!size || size > kMaxSize) return E_INVALIDARG;
         try {
             const HRESULT result = RenderFirstPage(stream_.Get(), size, bitmap);
-            if (SUCCEEDED(result)) *alpha = WTSAT_RGB;
+            if (FAILED(result)) return result;
+            StampLogo(*bitmap);
+            *alpha = WTSAT_RGB;
             return result;
         } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
           catch (...) { return E_FAIL; }
