@@ -46,7 +46,9 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: '3.12'
+          # An exact version keeps Python's files identical between releases,
+          # so update patches stay small. Raise it deliberately, like the wheels.
+          python-version: '3.12.10'
           architecture: x64
 
       - name: Install build and test dependencies
@@ -67,12 +69,18 @@ jobs:
           & .venv/Scripts/python.exe -m pytest -q --junitxml=.tools/ci/tests.xml
           if ($LASTEXITCODE -ne 0) { throw 'Source tests failed.' }
 
-      - name: Build native extension, app and unsigned installer
+      - name: Build native extension, app, unsigned installer and update patches
         id: package
+        env:
+          # Lists the published releases that update patches are built from.
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/build-windows.ps1 -SkipDependencies -NativeComponentTestsOnly
 
       - name: Verify installation, packaged app and uninstall
         run: ./scripts/test-installer.ps1 -NativeComponentTestsOnly
+
+      - name: Verify update patches over their published releases
+        run: ./scripts/test-update-patch.ps1
 
       # This remains visible even if Windows Server cannot assemble the menu.
       # A successful review build does not certify Windows 10/11 installation.
@@ -120,10 +128,12 @@ jobs:
             dist/ADF/ADFShell-*.dll
             release/ADF-Source-*.zip
             release/SHA256SUMS-*.txt
+            release/ADF-Files-*-Windows.json
             LICENSES/build-manifest.json
             release/*smoke-*.json
             release/*smoke-*.png
             .tools/verification/installer-*.log
+            .tools/verification/update-*.log
             .tools/ci/
           include-hidden-files: true
           if-no-files-found: error
@@ -137,6 +147,8 @@ jobs:
           name: ADF-Windows-installer-unsigned-${{ github.sha }}-${{ github.run_id }}
           path: |
             release/ADF-Setup-*.exe
+            release/ADF-Update-*.exe
+            release/ADF-Files-*-Windows.json
             release/ADF-Source-*.zip
             release/SHA256SUMS-*.txt
             .tools/ci/build-origin.json
@@ -161,6 +173,7 @@ jobs:
             '',
             'Source/OCR tests, native component tests and static package verification passed.',
             'Installation, payload hashes, packaged app, worker exports, standalone tools and uninstall passed on Windows Server 2022.',
+            ('Update patches verified over their published releases: ' + $(if ($patches = @(Get-ChildItem release -Filter 'ADF-Update-*.exe' | ForEach-Object Name)) { $patches -join ', ' } else { 'none; the full installer is the only update' })),
             "Windows-assembled Explorer menu check: $env:EXPLORER_CHECK",
             'Artifact contains ADF-owned signing inputs, corresponding source and verification records.',
             "Unsigned installer retained in a separate test artifact: $env:INSTALLER_RETAINED",
@@ -176,6 +189,7 @@ jobs:
           path: |
             .tools/ci/
             .tools/verification/installer-*.log
+            .tools/verification/update-*.log
             release/*smoke-*.json
             release/*smoke-*.png
             build/native-shell/*.log

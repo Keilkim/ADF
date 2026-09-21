@@ -36,11 +36,16 @@ $source = Join-Path $workspace 'native-shell'
 $windres = Join-Path (Split-Path -Parent $Compiler) 'x86_64-w64-mingw32-windres.exe'
 & $windres '-i' (Join-Path $source 'adf_shell.rc') '-o' (Join-Path $output 'adf_shell.res') '-O' 'coff'
 if ($LASTEXITCODE -ne 0) { throw 'Native shell version resource compilation failed.' }
-$common = @('-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-DUNICODE', '-D_UNICODE', '-D_WIN32_WINNT=0x0A00', '-static', '-static-libgcc', '-static-libstdc++')
+# The toolchain has no Windows.Data.Pdf header; widl generates it from the IDL.
+$widl = Join-Path (Split-Path -Parent $Compiler) 'x86_64-w64-mingw32-widl.exe'
+& $widl '-I' (Join-Path (Split-Path -Parent (Split-Path -Parent $Compiler)) 'include') '-h' '-o' (Join-Path $output 'windows.data.pdf.h') (Join-Path $source 'windows.data.pdf.idl')
+if ($LASTEXITCODE -ne 0) { throw 'Windows.Data.Pdf header generation failed.' }
+$common = @('-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-DUNICODE', '-D_UNICODE', '-D_WIN32_WINNT=0x0A00', '-static', '-static-libgcc', '-static-libstdc++', '-I', $output)
 $libraries = @('-lole32', '-lshell32', '-ladvapi32', '-luser32', '-lgdi32', '-luuid')
-& $Compiler @common '-shared' (Join-Path $source 'adf_shell.cpp') (Join-Path $source 'adf_shell.def') (Join-Path $output 'adf_shell.res') '-o' (Join-Path $output 'ADFShell.dll') @libraries
+& $Compiler @common '-shared' (Join-Path $source 'adf_shell.cpp') (Join-Path $source 'thumbnail.cpp') (Join-Path $source 'adf_shell.def') (Join-Path $output 'adf_shell.res') '-o' (Join-Path $output 'ADFShell.dll') @libraries '-lruntimeobject' '-lshcore' '-lshlwapi' '-lwindowscodecs'
 if ($LASTEXITCODE -ne 0) { throw 'Native shell DLL compilation failed.' }
-& $Compiler @common '-municode' (Join-Path $source 'shell_tests.cpp') '-o' (Join-Path $output 'shell-tests.exe') @libraries
+# The harness also compiles thumbnail.cpp, so it links the same libraries as the DLL.
+& $Compiler @common '-municode' (Join-Path $source 'shell_tests.cpp') '-o' (Join-Path $output 'shell-tests.exe') @libraries '-lruntimeobject' '-lshcore' '-lshlwapi' '-lwindowscodecs'
 if ($LASTEXITCODE -ne 0) { throw 'Native shell harness compilation failed.' }
 & $Compiler @common '-municode' '-mwindows' (Join-Path $source 'request_sink.cpp') '-o' (Join-Path $output 'request-sink.exe') @libraries
 if ($LASTEXITCODE -ne 0) { throw 'Native request fixture compilation failed.' }

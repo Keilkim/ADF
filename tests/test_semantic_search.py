@@ -96,6 +96,17 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(self.encoder.tokens('query: 계약 해지 조건  '), fixtures['query: 계약 해지 조건'])
         self.assertEqual(len(self.encoder.tokens('passage: '+'긴 문장 '*2000)), semantic_search.MAX_TOKENS)
 
+    def test_model_loads_from_a_folder_with_a_korean_name(self):
+        # An installation under a Korean Windows user name has such a path.
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)/'사용자 이름'
+            folder.mkdir()
+            (folder/semantic_search.VOCABULARY_FILE).write_bytes((semantic_search.model_folder()/semantic_search.VOCABULARY_FILE).read_bytes())
+            # The ONNX model is large; this checks the tokenizer, which could not open such a path.
+            with patch('onnxruntime.InferenceSession', return_value=self.encoder.session):
+                encoder = Encoder(folder)
+            self.assertEqual(encoder.tokens('query: 계약 해지 조건'), self.encoder.tokens('query: 계약 해지 조건'))
+
     def test_paraphrases_and_other_languages_find_the_related_passage(self):
         vectors = self.encoder.encode(PARAGRAPHS, 'passage')
         self.assertTrue(np.allclose(np.linalg.norm(vectors, axis=1), 1, atol=1e-5))

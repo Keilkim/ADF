@@ -1,4 +1,5 @@
-// Native Explorer COM handler. No registry writes and no Python/Qt in Explorer.
+// Native Explorer COM handlers: the PDF context menu here, thumbnails in
+// thumbnail.cpp. No registry writes and no Python/Qt in Explorer.
 #include <windows.h>
 #include <shlobj.h>
 #include <shellapi.h>
@@ -13,14 +14,19 @@
 #include <string>
 #include <vector>
 #include "shell_icon.h"
+#include "shell_module.h"
+
+namespace adf {
+HMODULE g_module = nullptr;
+std::atomic<long> g_objects{0};
+}
 
 namespace {
+using adf::g_module;
+using adf::g_objects;
 const CLSID kClassId = {0x8093f936, 0x820b, 0x4cdb, {0xa6, 0x4b, 0x7a, 0x39, 0xec, 0x80, 0x7a, 0x11}};
 constexpr size_t kMaxFiles = 4096;
 constexpr size_t kMaxRequestBytes = 8 * 1024 * 1024;
-HMODULE g_module = nullptr;
-std::atomic<long> g_objects{0};
-
 struct Handle {
     HANDLE value = INVALID_HANDLE_VALUE;
     explicit Handle(HANDLE handle = INVALID_HANDLE_VALUE) : value(handle) {}
@@ -318,10 +324,19 @@ public:
     }
 };
 
+HRESULT CreateMenu(REFIID iid, void** value) {
+    auto* menu = new (std::nothrow) Menu();
+    if (!menu) return E_OUTOFMEMORY;
+    HRESULT result = menu->QueryInterface(iid, value);
+    menu->Release();
+    return result;
+}
+
 class Factory final : public IClassFactory {
     std::atomic<ULONG> references_{1};
+    HRESULT (*create_)(REFIID, void**);
 public:
-    Factory() { ++g_objects; }
+    explicit Factory(HRESULT (*create)(REFIID, void**)) : create_(create) { ++g_objects; }
     ~Factory() { --g_objects; }
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** value) override {
         if (!value) return E_POINTER;
@@ -335,26 +350,25 @@ public:
         if (!value) return E_POINTER;
         *value = nullptr;
         if (outer) return CLASS_E_NOAGGREGATION;
-        auto* menu = new (std::nothrow) Menu();
-        if (!menu) return E_OUTOFMEMORY;
-        HRESULT result = menu->QueryInterface(iid, value);
-        menu->Release();
-        return result;
+        return create_(iid, value);
     }
     HRESULT STDMETHODCALLTYPE LockServer(BOOL lock) override { if (lock) ++g_objects; else --g_objects; return S_OK; }
 };
 } // namespace
 
 extern "C" BOOL WINAPI DllMain(HINSTANCE module, DWORD reason, LPVOID) {
-    if (reason == DLL_PROCESS_ATTACH) g_module = module;
+    if (reason == DLL_PROCESS_ATTACH) adf::g_module = module;
     return TRUE;
 }
-extern "C" HRESULT __stdcall DllCanUnloadNow() { return g_objects == 0 ? S_OK : S_FALSE; }
+extern "C" HRESULT __stdcall DllCanUnloadNow() { return adf::g_objects == 0 ? S_OK : S_FALSE; }
 extern "C" HRESULT __stdcall DllGetClassObject(REFCLSID clsid, REFIID iid, void** value) {
     if (!value) return E_POINTER;
     *value = nullptr;
-    if (!IsEqualCLSID(clsid, kClassId)) return CLASS_E_CLASSNOTAVAILABLE;
-    auto* factory = new (std::nothrow) Factory();
+    HRESULT (*create)(REFIID, void**) = nullptr;
+    if (IsEqualCLSID(clsid, kClassId)) create = CreateMenu;
+    else if (IsEqualCLSID(clsid, adf::kThumbnailClassId)) create = adf::CreateThumbnailProvider;
+    else return CLASS_E_CLASSNOTAVAILABLE;
+    auto* factory = new (std::nothrow) Factory(create);
     if (!factory) return E_OUTOFMEMORY;
     const HRESULT result = factory->QueryInterface(iid, value);
     factory->Release();

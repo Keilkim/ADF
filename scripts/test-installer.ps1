@@ -5,7 +5,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $pythonPath = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $releaseRoot = Join-Path $repoRoot 'release'
 $verificationRoot = Join-Path $repoRoot '.tools\verification'
-$version = '0.3.27'
+$version = '0.3.28'
 New-Item -ItemType Directory -Path $verificationRoot -Force | Out-Null
 $setupPath = Join-Path $releaseRoot "ADF-Setup-$version.exe"
 if (-not (Test-Path -LiteralPath $setupPath)) { throw 'Build the installer first.' }
@@ -34,6 +34,11 @@ New-Item -ItemType Directory -Path $testRoot | Out-Null
 $installRoot = Join-Path $testRoot 'installed'
 $smokeJson = Join-Path $testRoot 'smoke.json'
 $before = Get-ExistingStateSnapshot
+# Uninstalling ADF deletes the updates it downloaded. That folder belongs to the
+# real user, so an isolated installation must leave it out of its uninstall log;
+# the deletion itself cannot be exercised without discarding a real update.
+$realUpdates = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'ADF\ADF\updates'
+$realUpdatesExisted = Test-Path -LiteralPath $realUpdates
 $report = [ordered]@{
     installer = (Split-Path -Leaf $setupPath); isolated_registry = $true;
     test_token = $token;
@@ -120,6 +125,18 @@ try {
     if ($inproc.GetValue('') -ne $installedDll -or $inproc.GetValue('ThreadingModel') -ne 'Apartment') { throw 'Native COM server registration is incorrect.' }
     $handler = Get-Item -LiteralPath "$registryPrefix\Classes\SystemFileAssociations\.pdf\shellex\ContextMenuHandlers\ADF"
     if ($handler.GetValue('') -ne $clsid) { throw 'Native PDF handler registration is incorrect.' }
+    $thumbnailClsid = '{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}'
+    $thumbnailServer = Get-Item -LiteralPath "$registryPrefix\Classes\CLSID\$thumbnailClsid\InprocServer32"
+    if ($thumbnailServer.GetValue('') -ne $installedDll -or $thumbnailServer.GetValue('ThreadingModel') -ne 'Apartment') { throw 'Thumbnail COM server registration is incorrect.' }
+    $thumbnail = Get-Item -LiteralPath "$registryPrefix\Classes\SystemFileAssociations\.pdf\shellex\{E357FCCD-A995-4576-B01F-234630154E96}"
+    if ($thumbnail.GetValue('') -ne $thumbnailClsid) { throw 'PDF thumbnail handler registration is incorrect.' }
+    $document = Get-Item -LiteralPath "$registryPrefix\Classes\ADF.Document"
+    if ($document.GetValueNames() -notcontains 'TypeOverlay' -or $document.GetValue('TypeOverlay') -ne '') { throw 'Explorer would draw a second ADF icon over thumbnails.' }
+    $report.thumbnail_registration = $true
+    $uninstallLog = Join-Path $installRoot 'unins000.dat'
+    if (-not (Test-UninstallLogMentions $uninstallLog "Software\ADFInstallerSmoke\$token\Software\Classes")) { throw 'The uninstall log does not show the registry entries it removes.' }
+    if (Test-UninstallLogMentions $uninstallLog '\ADF\ADF\updates') { throw 'The isolated uninstaller would delete the real downloaded updates.' }
+    $report.real_updates_left_out_of_uninstall = $true
     if (Test-Path -LiteralPath "$registryPrefix\Classes\SystemFileAssociations\.pdf\shell\ADF.Split") { throw 'Legacy static split verb remains.' }
     $report.native_registration = $true
     $report.legacy_split_removed = $true
@@ -182,6 +199,8 @@ try {
     }
     $report.existing_installation_preserved = ($before -eq (Get-ExistingStateSnapshot))
     $report.association_preserved = $report.existing_installation_preserved
+    # A running ADF may add downloads meanwhile, but never removes the folder.
+    $report.real_updates_preserved = (-not $realUpdatesExisted -or (Test-Path -LiteralPath $realUpdates))
     $report.cleanup_complete = (-not (Test-Path -LiteralPath $privateRoot) -and @(Get-IsolatedUninstallKeys $installRoot).Count -eq 0 -and -not (Test-Path -LiteralPath (Join-Path $installRoot 'ADF.exe')) -and -not (Test-Path -LiteralPath $shortcutDirectory))
     $report.uninstall = ($uninstallerRan -and $report.cleanup_complete)
     $report | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $releaseRoot "installer-smoke-$version.json") -Encoding UTF8
@@ -190,5 +209,5 @@ try {
         Remove-Item -LiteralPath $resolvedTestRoot -Recurse -Force
     }
 }
-if (-not $report.existing_installation_preserved -or -not $report.cleanup_complete -or (-not $report.uninstall -and -not $SkipBlockedUninstaller)) { throw "Installer cleanup or preservation failed. See release/installer-smoke-$version.json." }
+if (-not $report.existing_installation_preserved -or -not $report.real_updates_preserved -or -not $report.cleanup_complete -or (-not $report.uninstall -and -not $SkipBlockedUninstaller)) { throw "Installer cleanup or preservation failed. See release/installer-smoke-$version.json." }
 $report | ConvertTo-Json -Depth 10

@@ -2,8 +2,8 @@
 101 ICON "assets/adf.ico"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,3,27,0
- PRODUCTVERSION 0,3,27,0
+ FILEVERSION 0,3,28,0
+ PRODUCTVERSION 0,3,28,0
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0
  FILEOS VOS_NT_WINDOWS32
@@ -16,11 +16,11 @@ BEGIN
   BEGIN
    VALUE "CompanyName", "ADF"
    VALUE "FileDescription", "ADF PDF Explorer context menu"
-   VALUE "FileVersion", "0.3.27.0"
+   VALUE "FileVersion", "0.3.28.0"
    VALUE "InternalName", "ADFShell"
-   VALUE "OriginalFilename", "ADFShell-0.3.27.dll"
+   VALUE "OriginalFilename", "ADFShell-0.3.28.dll"
    VALUE "ProductName", "ADF"
-   VALUE "ProductVersion", "0.3.27.0"
+   VALUE "ProductVersion", "0.3.28.0"
   END
  END
  BLOCK "VarFileInfo"

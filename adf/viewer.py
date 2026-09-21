@@ -1,5 +1,6 @@
 from collections import OrderedDict
 import math
+import time
 import pymupdf
 from PySide6.QtCore import Qt, QRectF, QPointF, QSize, QSizeF, QTimer, QElapsedTimer, Signal, QSignalBlocker, QEvent
 from PySide6.QtGui import QColor, QFont, QPalette, QPainter, QPixmap, QImage, QPen, QBrush, QCursor, QTransform, QTextCursor, QTextCharFormat, QTextBlockFormat, QInputDevice
@@ -7,6 +8,7 @@ from PySide6.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsItem,
     QGraphicsObject, QGraphicsProxyWidget, QListWidget, QListWidgetItem, QAbstractItemView, QToolButton, QApplication,
     QStyledItemDelegate, QStyleOptionViewItem, QStyle)
 
+from . import pinch
 from .text_groups import text_group_at
 from .page_layout import spread_groups
 from .snapping import SnapIndex
@@ -338,6 +340,14 @@ class PdfView(QGraphicsView):
         self.selection_item = None
         self.selected_page = None
         self.cursor_text_cache = OrderedDict()
+        self.page_text_cache = OrderedDict()
+        self.last_double_click = None
+        self.selection_pointer = None
+        self.selection_extending = False
+        # Dragging a selection past the window edge scrolls the document.
+        self.selection_scroll = QTimer(self)
+        self.selection_scroll.setInterval(30)
+        self.selection_scroll.timeout.connect(self.scroll_selection)
         self.highlight_data = []
         self.render_timer = QTimer(self)
         self.render_timer.setSingleShot(True)
@@ -359,6 +369,7 @@ class PdfView(QGraphicsView):
         self.clear_region_selection()
         self.snap_cache.clear()
         self.cursor_text_cache.clear()
+        self.page_text_cache.clear()
         self.placement = None
         self.text_placement = None
         self.text_page = None
@@ -500,6 +511,8 @@ class PdfView(QGraphicsView):
 
     def focusOutEvent(self, event):
         self.clear_snap_guides()
+        # Edge scrolling stops; a drag that goes on restarts it on the next move.
+        self.selection_scroll.stop()
         super().focusOutEvent(event)
 
     def drawForeground(self, painter, rect):
@@ -873,16 +886,24 @@ class PdfView(QGraphicsView):
             self.page_wheel_turned = pixels or phase != Qt.ScrollPhase.NoScrollPhase
 
     def wheelEvent(self, event):
-        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+        if pinch.zooms(event):
             self.reset_page_wheel()
-            delta = event.pixelDelta() if not event.pixelDelta().isNull() else event.angleDelta()
-            if delta.y():
-                self.set_zoom(self.transform().m11() * (1.12 if delta.y() > 0 else 1/1.12))
+            if event.angleDelta().y():
+                self.set_zoom(self.transform().m11() * pinch.wheel_zoom(event))
             event.accept()
         elif self.mode in ('single', 'spread') and self.pages:
             self.wheel_page(event)
         else:
             super().wheelEvent(event)
+
+    def viewportEvent(self, event):
+        factor = pinch.gesture_zoom(event)
+        if factor is None:
+            return super().viewportEvent(event)
+        self.reset_page_wheel()
+        self.set_zoom(self.transform().m11() * factor)
+        event.accept()
+        return True
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -923,7 +944,111 @@ class PdfView(QGraphicsView):
         if self.stamp_pixmap is not None:
             self.mousePressEvent(event)
             return
+        pos = self.mapToScene(event.position().toPoint())
+        item = self.page_at(pos)
+        if item is not None and self.selects_text(event) and self.select_text_unit(item, pos, 'word'):
+            self.last_double_click = (time.monotonic(), event.position().toPoint())
+            event.accept()
+            return
         super().mouseDoubleClickEvent(event)
+
+    def selects_text(self, event):
+        return (event.button() == Qt.MouseButton.LeftButton and not self.copy_region_mode and not self.text_mode
+                and not self.image_mode and not self.placement and self.stamp_pixmap is None
+                and self.dragMode() == QGraphicsView.DragMode.NoDrag)
+
+    def page_text(self, index):
+        from .selection_widgets import PageText
+        key = (index, self.document.revision)
+        if key not in self.page_text_cache:
+            try:
+                self.page_text_cache[key] = PageText(self.document.doc[index])
+            except Exception:
+                self.page_text_cache[key] = PageText(None)
+            while len(self.page_text_cache) > 8:
+                self.page_text_cache.popitem(last=False)
+        self.page_text_cache.move_to_end(key)
+        return self.page_text_cache[key]
+
+    def page_point(self, item, scene_pos):
+        local = item.mapFromScene(scene_pos)
+        return pymupdf.Point(local.x(), local.y()) * self.document.doc[item.index].derotation_matrix
+
+    def select_text_unit(self, item, pos, unit):
+        """Select the word (double-click) or paragraph (triple-click) under the pointer."""
+        from .selection_widgets import TextSelection
+        text = self.page_text(item.index)
+        page = self.document.doc[item.index]
+        point = self.page_point(item, pos)
+        span = text.word(point) if unit == 'word' else text.paragraph(page, point)
+        if not span:
+            return False
+        self.selectionCleared.emit()
+        self.clear_region_selection()
+        self.selected_page = item
+        self.selection_item = TextSelection(self, item, text, page, span[0])
+        self.selection_item.select(*span)
+        self.selectedText.emit(self.selection_item.finish())
+        return True
+
+    def start_selection(self, item, pos, event):
+        """Drag text in reading order like Acrobat. Alt, the capture tool, a page
+        without text, or a drag that starts on a picture away from text select an area."""
+        from .selection_widgets import RegionSelection, TextSelection
+        self.clear_region_selection()
+        self.selection_start = pos
+        self.selection_press_position = event.position().toPoint()
+        self.selection_pointer = event.position().toPoint()
+        self.selected_page = item
+        page = self.document.doc[item.index]
+        point = self.page_point(item, pos)
+        text = None
+        if not self.copy_region_mode and not event.modifiers() & Qt.KeyboardModifier.AltModifier:
+            text = self.page_text(item.index)
+            if not text.chars or (not text.near(point) and any(
+                    point in pymupdf.Rect(info['bbox']) for info in page.get_image_info())):
+                text = None
+        if text is not None:
+            self.selection_item = TextSelection(self, item, text, page, text.caret(point))
+        else:
+            self.selection_item = RegionSelection(self, item)
+            self.selection_item.set_scene_rect(QRectF(pos, pos))
+
+    def update_selection_drag(self, viewport_pos):
+        from .selection_widgets import TextSelection
+        scene = self.mapToScene(viewport_pos)
+        selection = self.selection_item
+        if isinstance(selection, TextSelection):
+            selection.select(selection.anchor, selection.page_text.caret(self.page_point(self.selected_page, scene)))
+            self.viewport().setCursor(Qt.CursorShape.IBeamCursor)
+        else:
+            selection.set_scene_rect(QRectF(self.selection_start, scene).normalized())
+            self.viewport().setCursor(Qt.CursorShape.CrossCursor)
+
+    def scroll_selection(self):
+        pointer = self.selection_pointer
+        # A release another window took (a lost grab) never reaches mouseReleaseEvent.
+        if (self.selection_start is None or pointer is None
+                or not QApplication.mouseButtons() & Qt.MouseButton.LeftButton):
+            self.selection_scroll.stop()
+            return
+        area, margin = self.viewport().rect(), 24
+
+        def overshoot(value, low, high):
+            if value < low+margin:
+                return max(-60, value-low-margin)
+            if value > high-margin:
+                return min(60, value-high+margin)
+            return 0
+        moved = False
+        for bar, amount in ((self.horizontalScrollBar(), overshoot(pointer.x(), area.left(), area.right())),
+                            (self.verticalScrollBar(), overshoot(pointer.y(), area.top(), area.bottom()))):
+            if amount:
+                before = bar.value()
+                bar.setValue(before + int(math.copysign(max(1, abs(amount)//2), amount)))
+                moved = moved or bar.value() != before
+        if moved:
+            self.update_selection_drag(pointer)
 
     def mousePressEvent(self, event):
         pos = self.mapToScene(event.position().toPoint())
@@ -950,6 +1075,27 @@ class PdfView(QGraphicsView):
             event.accept()
             return
         item = self.page_at(pos)
+        if item is not None and self.selects_text(event):
+            double = self.last_double_click
+            self.last_double_click = None
+            if (double and time.monotonic()-double[0] <= QApplication.doubleClickInterval()/1000
+                    and (event.position().toPoint()-double[1]).manhattanLength() < 2*QApplication.startDragDistance()
+                    and self.select_text_unit(item, pos, 'paragraph')):
+                event.accept()
+                return
+            from .selection_widgets import TextSelection
+            selection = self.selection_item
+            if (event.modifiers() & Qt.KeyboardModifier.ShiftModifier and isinstance(selection, TextSelection)
+                    and selection.finished and self.selected_page is item):
+                # Shift+click extends the selection from its first end, as in Acrobat.
+                selection.finished = False
+                self.selection_extending = True
+                self.selection_start = pos
+                self.selection_press_position = event.position().toPoint()
+                self.selection_pointer = event.position().toPoint()
+                self.update_selection_drag(self.selection_pointer)
+                event.accept()
+                return
         if event.button() == Qt.MouseButton.LeftButton and not self.text_mode and not self.placement:
             self.selectionCleared.emit()
         if not item and self.text_mode and event.button() == Qt.MouseButton.LeftButton:
@@ -974,13 +1120,7 @@ class PdfView(QGraphicsView):
                     event.accept()
                     return
             if self.dragMode() == QGraphicsView.DragMode.NoDrag and not self.text_mode:
-                self.clear_region_selection()
-                self.selection_start = pos
-                self.selection_press_position = event.position().toPoint()
-                self.selected_page = item
-                from .selection_widgets import RegionSelection
-                self.selection_item = RegionSelection(self, item)
-                self.selection_item.set_scene_rect(QRectF(pos, pos))
+                self.start_selection(item, pos, event)
                 event.accept()
                 return
         super().mousePressEvent(event)
@@ -991,8 +1131,10 @@ class PdfView(QGraphicsView):
             event.accept()
             return
         if self.selection_start is not None:
-            self.selection_item.set_scene_rect(QRectF(self.selection_start, self.mapToScene(event.position().toPoint())).normalized())
-            self.viewport().setCursor(Qt.CursorShape.CrossCursor if self.copy_region_mode else Qt.CursorShape.IBeamCursor)
+            self.selection_pointer = event.position().toPoint()
+            self.update_selection_drag(self.selection_pointer)
+            if not self.selection_scroll.isActive():
+                self.selection_scroll.start()
             event.accept()
             return
         super().mouseMoveEvent(event)
@@ -1044,22 +1186,33 @@ class PdfView(QGraphicsView):
             event.accept()
             return
         if self.selection_start is not None:
+            from .selection_widgets import TextSelection
+            self.selection_scroll.stop()
             item = self.selected_page
             pos = self.mapToScene(event.position().toPoint())
-            self.selection_item.set_scene_rect(QRectF(self.selection_start, pos).normalized())
-            # A click selects an image; a drag always selects text, including
-            # OCR text drawn over a scanned page image.
+            self.update_selection_drag(event.position().toPoint())
+            # A click selects an image; a drag selects text, including OCR text
+            # drawn over a scanned page image. Shift+click extends a selection.
             clicked = (event.position().toPoint() - self.selection_press_position).manhattanLength() < QApplication.startDragDistance()
-            if clicked:
+            if clicked and not self.selection_extending:
                 self.clear_region_selection()
                 if not self.copy_region_mode:
                     self.select_image_at(item, pos)
                 self.update_content_cursor(pos)
                 event.accept()
                 return
+            if isinstance(self.selection_item, TextSelection) and self.selection_item.text_path.isEmpty():
+                # Dragging across empty space selects nothing. Shift+clicking back onto the
+                # anchor empties a selection, so its text must not stay copyable either.
+                self.clear_region_selection()
+                self.selectionCleared.emit()
+                self.update_content_cursor(pos)
+                event.accept()
+                return
             text = self.selection_item.finish(self.document.doc[item.index], not self.copy_region_mode)
             self.selectedText.emit(text)
             self.selection_start = None
+            self.selection_extending = False
             if self.copy_region_mode:
                 self.regionCopied.emit()
             self.update_content_cursor(pos)
@@ -1103,7 +1256,9 @@ class PdfView(QGraphicsView):
         self.schedule_render()
 
     def clear_region_selection(self):
+        self.selection_scroll.stop()
         self.selection_start = None
+        self.selection_extending = False
         self.selected_page = None
         if self.selection_item is not None:
             self.selection_item.dispose()

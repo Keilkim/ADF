@@ -1,15 +1,17 @@
 """Wheel event sequences from notched mice and macOS trackpads."""
 import os
+import sys
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 import pymupdf
 import pytest
 from PySide6.QtCore import QPoint, QPointF, Qt, QTimer
-from PySide6.QtGui import QWheelEvent, QInputDevice, QPointingDevice
+from PySide6.QtGui import QNativeGestureEvent, QWheelEvent, QInputDevice, QPointingDevice
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
+from adf import pinch
 from adf.document import PdfDocument
 from adf.viewer import PdfView
 
@@ -191,3 +193,119 @@ def test_boundaries_and_previous_zoomed_page(view):
     wheel(view, phase=Qt.ScrollPhase.ScrollEnd)
     assert view.current == target
     assert scroll.value() == scroll.maximum()
+
+
+def pinch_wheel(view, y, timestamp, *, modifiers=Qt.KeyboardModifier.NoModifier):
+    pos = QPoint(50, 50)
+    event = QWheelEvent(QPointF(pos), QPointF(view.viewport().mapToGlobal(pos)), QPoint(), QPoint(0, y),
+                        Qt.MouseButton.NoButton, modifiers, Qt.ScrollPhase.NoScrollPhase, False,
+                        Qt.MouseEventSource.MouseEventNotSynthesized, TRACKPAD)
+    event.setTimestamp(timestamp)
+    QApplication.sendEvent(view.viewport(), event)
+
+
+def pinch_message(time, wparam):
+    from ctypes import addressof, wintypes
+    msg = wintypes.MSG()
+    msg.message, msg.wParam, msg.time = pinch.WM_MOUSEWHEEL, wparam, time
+    pinch._filter.nativeEventFilter(b'windows_generic_MSG', addressof(msg))
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows wheel messages')
+def test_windows_touchpad_pinch_zooms_in_proportion(view, monkeypatch):
+    monkeypatch.setattr(pinch, '_filter', pinch.PinchFilter())
+    view.goto(5)
+    scale = view.transform().m11()
+    # Windows marks the pinch's wheel messages with MK_CONTROL; the Ctrl key is up.
+    pinch_message(1000, (30 << 16) | pinch.MK_CONTROL)
+    pinch_wheel(view, 30, 1000)
+    assert view.transform().m11() == pytest.approx(scale * 1.12 ** .25)
+    assert view.current == 5
+    pinch_message(1001, (-30 & 0xFFFF) << 16 | pinch.MK_CONTROL)
+    pinch_wheel(view, -30, 1001)
+    assert view.transform().m11() == pytest.approx(scale)
+    # A wheel message without the flag still scrolls.
+    pinch_message(1002, (-120 & 0xFFFF) << 16)
+    target = view.navigation_target(1)
+    pinch_wheel(view, -120, 1002)
+    assert view.transform().m11() == pytest.approx(scale)
+    assert view.current == target
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows wheel messages')
+def test_windows_plain_wheel_in_the_same_tick_as_a_pinch_still_scrolls(view, monkeypatch):
+    monkeypatch.setattr(pinch, '_filter', pinch.PinchFilter())
+    view.goto(5)
+    scale = view.transform().m11()
+    pinch_message(2000, (30 << 16) | pinch.MK_CONTROL)
+    # A mouse notch in the same millisecond carries another delta, so it turns the page.
+    target = view.navigation_target(1)
+    pinch_wheel(view, -120, 2000)
+    assert view.transform().m11() == pytest.approx(scale)
+    assert view.current == target
+    pinch_wheel(view, 30, 2000)
+    assert view.transform().m11() == pytest.approx(scale * 1.12 ** .25)
+    # Each pinch message zooms once; a second event like it is plain scrolling.
+    pinch_wheel(view, 30, 2000)
+    assert view.transform().m11() == pytest.approx(scale * 1.12 ** .25)
+    assert not pinch._filter.wheels
+    # A real Ctrl+wheel uses up its flagged message too, so it cannot linger.
+    pinch_message(2001, (-120 & 0xFFFF) << 16 | pinch.MK_CONTROL)
+    pinch_wheel(view, -120, 2001, modifiers=Qt.KeyboardModifier.ControlModifier)
+    assert view.transform().m11() == pytest.approx(scale * 1.12 ** -.75)
+    assert not pinch._filter.wheels
+
+
+def test_ctrl_wheel_notch_still_zooms_twelve_percent(view):
+    scale = view.transform().m11()
+    wheel(view, 120, modifiers=Qt.KeyboardModifier.ControlModifier)
+    assert view.transform().m11() == pytest.approx(scale * 1.12)
+    wheel(view, -40, modifiers=Qt.KeyboardModifier.ControlModifier)
+    assert view.transform().m11() == pytest.approx(scale * 1.12 * 1.12 ** (-1 / 3))
+
+
+def test_macos_trackpad_pinch_gesture_zooms(view):
+    scale = view.transform().m11()
+    pos = QPointF(50, 50)
+    for value in (.1, -.05):
+        event = QNativeGestureEvent(Qt.NativeGestureType.ZoomNativeGesture, TRACKPAD, 2, pos, pos,
+                                    QPointF(view.viewport().mapToGlobal(pos.toPoint())), value, QPointF())
+        QApplication.sendEvent(view.viewport(), event)
+    assert view.transform().m11() == pytest.approx(scale * 1.1 * .95)
+
+
+def test_compare_view_turns_pinch_fractions_into_zoom_steps(app):
+    from adf.compare_widgets import CompareView
+    view = CompareView()
+    steps = []
+    view.zoomRequested.connect(steps.append)
+    for _ in range(3):
+        wheel(view, 40, modifiers=Qt.KeyboardModifier.ControlModifier)
+    assert steps == [1]
+    pos = QPointF(50, 50)
+    event = QNativeGestureEvent(Qt.NativeGestureType.ZoomNativeGesture, TRACKPAD, 2, pos, pos, pos,
+                                1 / 1.12 - 1, QPointF())
+    QApplication.sendEvent(view.viewport(), event)
+    assert steps == [1, -1]
+    view.deleteLater()
+
+
+def test_compare_view_turns_back_on_the_first_opposite_notch(app):
+    from adf.compare_widgets import CompareView
+    view = CompareView()
+    steps = []
+    view.zoomRequested.connect(steps.append)
+    ctrl = Qt.KeyboardModifier.ControlModifier
+    wheel(view, 60, modifiers=ctrl)  # half a notch in, left over
+    wheel(view, -120, modifiers=ctrl)
+    assert steps == [-1]
+    wheel(view, -60, modifiers=ctrl)
+    wheel(view, 120, modifiers=ctrl)
+    assert steps == [-1, 1]
+    pos = QPointF(50, 50)
+    for value in (1.12 ** -.5 - 1, .12):  # a half pinch out, then a full pinch in
+        event = QNativeGestureEvent(Qt.NativeGestureType.ZoomNativeGesture, TRACKPAD, 2, pos, pos, pos,
+                                    value, QPointF())
+        QApplication.sendEvent(view.viewport(), event)
+    assert steps == [-1, 1, 1]
+    view.deleteLater()

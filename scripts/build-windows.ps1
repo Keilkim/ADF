@@ -25,12 +25,15 @@ if ($LASTEXITCODE -ne 0) { throw 'Corresponding source packaging failed.' }
 & $pythonPath -m PyInstaller --noconfirm --clean ADF.spec
 if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed.' }
 # The in-process COM DLL resolves its own sibling ADF.exe. Do not put it in _internal.
-Copy-Item -LiteralPath 'build\native-shell\ADFShell.dll' -Destination 'dist\ADF\ADFShell-0.3.27.dll' -Force
+Copy-Item -LiteralPath 'build\native-shell\ADFShell.dll' -Destination 'dist\ADF\ADFShell-0.3.28.dll' -Force
 if (-not $SkipInstaller) {
     & "$PSScriptRoot\bootstrap-inno.ps1"
     $compilerPath = Join-Path $repoRoot '.tools\innosetup-6.7.3\ISCC.exe'
     & $compilerPath '/Qp' 'installer\adf.iss'
     if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }
+    # Small installers from recent releases. GH_TOKEN avoids the API rate limit.
+    & $pythonPath scripts/make-update-patches.py --iscc $compilerPath
+    if ($LASTEXITCODE -ne 0) { throw 'Update patch build failed.' }
 }
 & $pythonPath scripts/package-release.py
 if ($LASTEXITCODE -ne 0) { throw 'Release packaging failed.' }

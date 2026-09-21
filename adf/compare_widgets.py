@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 import sys
 import tempfile
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog, QGrap
     QGraphicsView, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMessageBox, QPushButton, QSplitter, QVBoxLayout, QWidget)
 
+from . import pinch
 from .document import PasswordRequired, _open_pdf, _require_permission
 
 
@@ -34,6 +36,7 @@ class CompareView(QGraphicsView):
         self.page_size = (595, 842)
         self.page_key = None
         self.overlays = []
+        self.zoom_notches = 0.0
 
     def clear_page(self):
         self.scene().clear()
@@ -41,11 +44,31 @@ class CompareView(QGraphicsView):
         self.overlays = []
 
     def wheelEvent(self, event):
-        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            self.zoomRequested.emit(1 if event.angleDelta().y() > 0 else -1)
+        if pinch.zooms(event):
+            # A pinch sends fractions of a notch; each full notch is one zoom step.
+            self.step_notches(event.angleDelta().y() / pinch.NOTCH)
             event.accept()
         else:
             super().wheelEvent(event)
+
+    def viewportEvent(self, event):
+        factor = pinch.gesture_zoom(event)
+        if factor is None:
+            return super().viewportEvent(event)
+        # About a 12% change in pinch distance matches one wheel notch.
+        self.step_notches(math.log(factor) / math.log(pinch.NOTCH_ZOOM))
+        event.accept()
+        return True
+
+    def step_notches(self, notches):
+        if notches * self.zoom_notches < 0:
+            # A turn the other way starts afresh; the leftover would swallow its first notch.
+            self.zoom_notches = 0.0
+        self.zoom_notches += notches
+        while abs(self.zoom_notches) > .999:
+            direction = 1 if self.zoom_notches > 0 else -1
+            self.zoom_notches -= direction
+            self.zoomRequested.emit(direction)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

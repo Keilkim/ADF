@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import zipfile
 
-from release_common import notice_dir, source_files, version
+from release_common import notice_dir, source_files, version, write_third_party_archive
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = version(ROOT)
@@ -25,14 +25,7 @@ def main():
     manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
     if manifest['version'] != VERSION:
         raise RuntimeError('Collect matching licenses before packaging sources')
-    with zipfile.ZipFile(third_party, 'w', compression=zipfile.ZIP_STORED) as archive:
-        archive.write(manifest_path, 'build-manifest.json')
-        for entry in manifest['source_archives']:
-            path = ROOT/'.tools/sources'/entry['filename']
-            with path.open('rb') as stream:
-                if hashlib.file_digest(stream, 'sha256').hexdigest() != entry['sha256']:
-                    raise RuntimeError('Upstream source checksum mismatch: '+entry['filename'])
-            archive.write(path, path.name)
+    write_third_party_archive(third_party, manifest, ROOT/'.tools/sources')
     hashes = []
     for path in (source, third_party):
         with path.open('rb') as stream:

@@ -62,6 +62,6 @@ Mac 배포 파일마다 서명·공증 결과와 Gatekeeper 판정을 해당 릴
 
 ## 서명 후 배포 확인
 
-서명된 앱·탐색기 확장·설치 파일을 확인하고, 새 설치 파일을 서명한 뒤 최종 SHA-256을 생성합니다. 보안 정책을 유지한 Windows에서 설치·실행·문서 저장·도장 보관·OCR 및 업데이트를 검증합니다. 검증되지 않은 항목은 릴리즈 노트에 남깁니다. 유효한 서명이 있어도 모든 SmartScreen 경고가 즉시 사라진다고 보장하지 않습니다.
+서명된 앱·탐색기 확장·설치 파일을 확인하고, 새 설치 파일을 서명한 뒤 최종 SHA-256을 생성합니다. 보안 정책을 유지한 Windows에서 설치·실행·문서 저장·도장 보관·OCR 및 업데이트를 검증합니다. 서명한 설치 파일이 스마트 앱 컨트롤을 통과하면 `adf/updates.py`의 `smart_app_control_blocks_updates`가 `False`를 돌려주도록 바꿔, 스마트 앱 컨트롤이 켜진 PC도 자동 업데이트를 받게 합니다. 검증되지 않은 항목은 릴리즈 노트에 남깁니다. 유효한 서명이 있어도 모든 SmartScreen 경고가 즉시 사라진다고 보장하지 않습니다.
 
 참고: [Microsoft의 서명·평판 설명](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation), [SignPath Foundation](https://signpath.org/terms.html).

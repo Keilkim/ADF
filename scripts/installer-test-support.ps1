@@ -22,6 +22,7 @@ function Get-ExistingStateSnapshot {
         'Software\Classes\ADF.Document', 'Software\Classes\Applications\ADF.exe',
         'Software\ADF\Capabilities', 'Software\Classes\SystemFileAssociations\.pdf',
         'Software\Classes\CLSID\{8093F936-820B-4CDB-A64B-7A39EC807A11}',
+        'Software\Classes\CLSID\{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}',
         'Software\Microsoft\Windows\CurrentVersion\Uninstall\{941DF95F-945A-4A82-BB29-ED83E65BC1B1}_is1'
     )) { $state.registry[$relative] = Get-RegistryTree $relative }
     $registered = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\RegisteredApplications')
@@ -43,6 +44,17 @@ function Get-ExistingStateSnapshot {
     $desktop = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'ADF.lnk'
     if (Test-Path -LiteralPath $desktop) { $state.files[$desktop] = (Get-FileHash -LiteralPath $desktop -Algorithm SHA256).Hash }
     return ($state | ConvertTo-Json -Depth 30 -Compress)
+}
+
+function Test-UninstallLogMentions([string]$Path, [string]$Text) {
+    # unins000.dat holds each recorded uninstall action's expanded paths as
+    # UTF-16 text, at even or odd byte offsets.
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    foreach ($offset in 0, 1) {
+        $decoded = [Text.Encoding]::Unicode.GetString($bytes, $offset, $bytes.Length - $offset)
+        if ($decoded.IndexOf($Text, [StringComparison]::OrdinalIgnoreCase) -ge 0) { return $true }
+    }
+    return $false
 }
 
 function Get-IsolatedUninstallKeys([string]$InstallDirectory) {

@@ -54,12 +54,25 @@ try {
     if (Test-Path -LiteralPath $uninstaller) { Run-Installer $uninstaller @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') }
 }
 Copy-Item -LiteralPath $setup -Destination $output
-Copy-Item -LiteralPath (Join-Path $download '.tools/ci/build-origin.json') -Destination (Join-Path $output "ADF-Build-$version-Windows.json")
-$sums = foreach ($name in @("ADF-Setup-$version.exe", "ADF-Source-$version.zip", "ADF-ThirdParty-Sources-$version.zip", "ADF-Guide-$version-Windows.html")) {
+# Update patches, and the file list the next release builds its patches from.
+$updates = @(Get-ChildItem -LiteralPath $inputRoot -Filter "ADF-Update-*-to-$version.exe" | ForEach-Object Name) + @("ADF-Files-$version-Windows.json")
+foreach ($name in $updates) {
+    $file = Join-Path $inputRoot $name
+    Check-File $file $name
+    Copy-Item -LiteralPath $file -Destination $output
+}
+$build = "ADF-Build-$version-Windows.json"
+Copy-Item -LiteralPath (Join-Path $download '.tools/ci/build-origin.json') -Destination (Join-Path $output $build)
+$uploads = @("ADF-Setup-$version.exe", "ADF-Source-$version.zip", "ADF-ThirdParty-Sources-$version.zip", "ADF-Guide-$version-Windows.html", $build) + $updates
+$sums = foreach ($name in $uploads) {
     $file = Join-Path $output $name
     (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $name
 }
-$sums | Set-Content -LiteralPath (Join-Path $output "SHA256SUMS-$version.txt") -Encoding utf8
+$sumsName = "SHA256SUMS-$version.txt"
+$sums | Set-Content -LiteralPath (Join-Path $output $sumsName) -Encoding utf8
+# Every file in the folder is uploaded below, so each one needs a checksum.
+$unlisted = @(Get-ChildItem -LiteralPath $output -File | Where-Object { $_.Name -notin $uploads -and $_.Name -ne $sumsName } | ForEach-Object Name)
+if ($unlisted.Count -gt 0) { throw "Release files missing from the checksums: $($unlisted -join ', ')" }
 foreach ($file in Get-ChildItem -LiteralPath $output -File) {
     $current = gh release view $Tag --json isDraft,assets | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0 -or -not $current.isDraft) { throw 'Release must remain a draft during upload.' }
