@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
 from PySide6.QtPrintSupport import QPrinter, QPrintDialog
 
 from .document import PdfDocument, PasswordRequired, merge_pdfs, split_pdf, compress_pdf, extract_pdf
-from . import __version__
+from . import __version__, pinch
 from .theme import apply_theme, icon
 from .viewer import PdfView, ThumbnailList, page_pixmap
 from .sidebar_widgets import PageSidebar
@@ -2703,6 +2703,10 @@ class ADFApplication(QApplication):
     """Handle Finder's file-open events as well as command-line PDF paths."""
     window = None
     pending_files = None
+
+    def __init__(self,arguments):
+        super().__init__(arguments)
+        pinch.install(self)
 
     def event(self,event):
         if event.type()==QEvent.Type.FileOpen:

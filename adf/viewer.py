@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsItem,
     QGraphicsObject, QGraphicsProxyWidget, QListWidget, QListWidgetItem, QAbstractItemView, QToolButton, QApplication,
     QStyledItemDelegate, QStyleOptionViewItem, QStyle)
 
+from . import pinch
 from .text_groups import text_group_at
 from .page_layout import spread_groups
 from .snapping import SnapIndex
@@ -883,16 +884,24 @@ class PdfView(QGraphicsView):
             self.page_wheel_turned = pixels or phase != Qt.ScrollPhase.NoScrollPhase
 
     def wheelEvent(self, event):
-        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+        if pinch.zooms(event):
             self.reset_page_wheel()
-            delta = event.pixelDelta() if not event.pixelDelta().isNull() else event.angleDelta()
-            if delta.y():
-                self.set_zoom(self.transform().m11() * (1.12 if delta.y() > 0 else 1/1.12))
+            if event.angleDelta().y():
+                self.set_zoom(self.transform().m11() * pinch.wheel_zoom(event))
             event.accept()
         elif self.mode in ('single', 'spread') and self.pages:
             self.wheel_page(event)
         else:
             super().wheelEvent(event)
+
+    def viewportEvent(self, event):
+        factor = pinch.gesture_zoom(event)
+        if factor is None:
+            return super().viewportEvent(event)
+        self.reset_page_wheel()
+        self.set_zoom(self.transform().m11() * factor)
+        event.accept()
+        return True
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
