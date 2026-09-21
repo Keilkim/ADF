@@ -1,6 +1,6 @@
 {
   "application": "ADF",
-  "version": "0.3.27",
+  "version": "0.3.28",
   "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
   "packages": {
     "PyMuPDF": "1.28.2",
@@ -356,7 +356,7 @@
     "notices": "multilingual-e5-small-NOTICE.txt"
   },
   "native_shell": {
-    "version": "0.3.27",
+    "version": "0.3.28",
     "source": "native-shell/",
     "toolchain": "LLVM-MinGW 20260826 (LLVM 23.1.0)",
     "toolchain_source": "https://github.com/mstorsjo/llvm-mingw/tree/20260826",
