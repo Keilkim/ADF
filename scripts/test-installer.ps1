@@ -125,6 +125,8 @@ try {
     if ($thumbnailServer.GetValue('') -ne $installedDll -or $thumbnailServer.GetValue('ThreadingModel') -ne 'Apartment') { throw 'Thumbnail COM server registration is incorrect.' }
     $thumbnail = Get-Item -LiteralPath "$registryPrefix\Classes\SystemFileAssociations\.pdf\shellex\{E357FCCD-A995-4576-B01F-234630154E96}"
     if ($thumbnail.GetValue('') -ne $thumbnailClsid) { throw 'PDF thumbnail handler registration is incorrect.' }
+    $document = Get-Item -LiteralPath "$registryPrefix\Classes\ADF.Document"
+    if ($document.GetValueNames() -notcontains 'TypeOverlay' -or $document.GetValue('TypeOverlay') -ne '') { throw 'Explorer would draw a second ADF icon over thumbnails.' }
     $report.thumbnail_registration = $true
     if (Test-Path -LiteralPath "$registryPrefix\Classes\SystemFileAssociations\.pdf\shell\ADF.Split") { throw 'Legacy static split verb remains.' }
     $report.native_registration = $true

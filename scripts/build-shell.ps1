@@ -42,7 +42,7 @@ $widl = Join-Path (Split-Path -Parent $Compiler) 'x86_64-w64-mingw32-widl.exe'
 if ($LASTEXITCODE -ne 0) { throw 'Windows.Data.Pdf header generation failed.' }
 $common = @('-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-DUNICODE', '-D_UNICODE', '-D_WIN32_WINNT=0x0A00', '-static', '-static-libgcc', '-static-libstdc++', '-I', $output)
 $libraries = @('-lole32', '-lshell32', '-ladvapi32', '-luser32', '-lgdi32', '-luuid')
-& $Compiler @common '-shared' (Join-Path $source 'adf_shell.cpp') (Join-Path $source 'thumbnail.cpp') (Join-Path $source 'adf_shell.def') (Join-Path $output 'adf_shell.res') '-o' (Join-Path $output 'ADFShell.dll') @libraries '-lruntimeobject' '-lshcore' '-lwindowscodecs'
+& $Compiler @common '-shared' (Join-Path $source 'adf_shell.cpp') (Join-Path $source 'thumbnail.cpp') (Join-Path $source 'adf_shell.def') (Join-Path $output 'adf_shell.res') '-o' (Join-Path $output 'ADFShell.dll') @libraries '-lruntimeobject' '-lshcore' '-lshlwapi' '-lwindowscodecs'
 if ($LASTEXITCODE -ne 0) { throw 'Native shell DLL compilation failed.' }
 & $Compiler @common '-municode' (Join-Path $source 'shell_tests.cpp') '-o' (Join-Path $output 'shell-tests.exe') @libraries '-lshlwapi'
 if ($LASTEXITCODE -ne 0) { throw 'Native shell harness compilation failed.' }

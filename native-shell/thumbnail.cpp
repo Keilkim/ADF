@@ -6,6 +6,7 @@
 #include <propsys.h>
 #include <roapi.h>
 #include <shcore.h>
+#include <shlwapi.h>
 #include <thumbcache.h>
 #include <wincodec.h>
 #include <winstring.h>
@@ -154,7 +155,7 @@ HRESULT Decode(IStream* image, UINT size, HBITMAP* bitmap) {
     ComPtr<IWICFormatConverter> converter;
     result = factory->CreateFormatConverter(&converter);
     if (FAILED(result)) return result;
-    result = converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppBGR, WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom);
+    result = converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom);
     if (FAILED(result)) return result;
     BITMAPINFO info{};
     info.bmiHeader.biSize = sizeof(info.bmiHeader);
@@ -168,6 +169,15 @@ HRESULT Decode(IStream* image, UINT size, HBITMAP* bitmap) {
     if (!created) return E_OUTOFMEMORY;
     result = converter->CopyPixels(nullptr, width * 4, width * 4 * height, static_cast<BYTE*>(bits));
     if (FAILED(result)) { DeleteObject(created); return result; }
+    // Explorer caches an opaque RGB thumbnail as JPEG, which smears small
+    // saturated shapes such as the ADF mark. An ARGB thumbnail is kept losslessly;
+    // it is made fully opaque by placing any transparency over white, the page colour.
+    auto* pixels = static_cast<BYTE*>(bits);
+    for (size_t index = 0; index < static_cast<size_t>(width) * height * 4; index += 4) {
+        const BYTE uncovered = 255 - pixels[index + 3];
+        for (int channel = 0; channel < 3; ++channel) pixels[index + channel] = static_cast<BYTE>(pixels[index + channel] + uncovered);
+        pixels[index + 3] = 255;
+    }
     *bitmap = created;
     return S_OK;
 }
@@ -227,10 +237,21 @@ HRESULT RenderFirstPage(IStream* file, UINT size, HBITMAP* bitmap) {
     return Decode(image.Get(), size, bitmap);
 }
 
-// The blue ADF mark, small, in the page's bottom-right corner of Explorer and
-// desktop thumbnails. It is scaled from the icon's 256-pixel frame, because
-// Windows would stretch the nearest small frame and soften the logo's shape.
-// The desktop's medium icons ask for 48 pixels; smaller views show icons.
+// Explorer draws the default PDF app's icon over the bottom-right corner of
+// thumbnails. The installer turns that off for ADF's own ProgID (TypeOverlay
+// ""), so the mark takes that corner when ADF opens PDFs; otherwise it goes to
+// the bottom-left, clear of the other app's icon.
+bool AdfOpensPdf() {
+    wchar_t progid[64]{};
+    DWORD length = ARRAYSIZE(progid);
+    return SUCCEEDED(AssocQueryStringW(ASSOCF_NONE, ASSOCSTR_PROGID, L".pdf", nullptr, progid, &length))
+        && _wcsicmp(progid, L"ADF.Document") == 0;
+}
+
+// The blue ADF mark, small, in a bottom corner of Explorer and desktop
+// thumbnails. It is scaled from the icon's 256-pixel frame, because Windows
+// would stretch the nearest small frame and soften the logo's shape. The
+// desktop's medium icons ask for 48 pixels; smaller views show icons.
 void StampLogo(HBITMAP bitmap) {
     DIBSECTION section{};
     if (GetObjectW(bitmap, sizeof(section), &section) != sizeof(section) || !section.dsBm.bmBits) return;
@@ -256,7 +277,8 @@ void StampLogo(HBITMAP bitmap) {
     DestroyIcon(icon);
     if (!scaled) return;
     auto* pixels = static_cast<BYTE*>(section.dsBm.bmBits);
-    const int left = std::max(0, width - mark - margin), top = std::max(0, height - mark - margin);
+    const int left = AdfOpensPdf() ? std::max(0, width - mark - margin) : std::min(margin, width - mark);
+    const int top = std::max(0, height - mark - margin);
     for (int y = 0; y < mark; ++y) {
         for (int x = 0; x < mark; ++x) {
             const BYTE* mark_pixel = &logo[(static_cast<size_t>(y) * mark + x) * 4];
@@ -300,7 +322,7 @@ public:
             const HRESULT result = RenderFirstPage(stream_.Get(), size, bitmap);
             if (FAILED(result)) return result;
             StampLogo(*bitmap);
-            *alpha = WTSAT_RGB;
+            *alpha = WTSAT_ARGB;
             return result;
         } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
           catch (...) { return E_FAIL; }

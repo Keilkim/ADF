@@ -83,6 +83,9 @@ Root: HKCU; Subkey: "{code:GetPrivateTestRoot}"; Flags: uninsdeletekey; Check: I
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\ADF.Document"; ValueType: string; ValueName: ""; ValueData: "ADF PDF 문서"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\ADF.Document\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\ADF.exe"",0"
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\ADF.Document\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\ADF.exe"" ""%1"""
+; When ADF opens PDFs, Explorer would draw ADF's icon over the thumbnail's
+; corner where the thumbnail handler already puts the mark.
+Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\ADF.Document"; ValueType: string; ValueName: "TypeOverlay"; ValueData: ""
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\.pdf\OpenWithProgids"; ValueType: none; ValueName: "ADF.Document"; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\Applications\ADF.exe"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "ADF"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\Applications\ADF.exe\SupportedTypes"; ValueType: string; ValueName: ".pdf"; ValueData: ""

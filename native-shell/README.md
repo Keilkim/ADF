@@ -61,7 +61,12 @@ first page, rotation included, to fit the requested size (at most 2560
 pixels), and WIC decodes the result into an opaque 32-bit DIB. The blue ADF
 mark sits in the bottom-right corner, about a ninth of the thumbnail's longer
 side and at least 10 pixels, so the desktop's 48-pixel thumbnails show it too;
-thumbnails under 40 pixels stay plain. WIC scales it from the icon's 256-pixel
+thumbnails under 40 pixels stay plain. Explorer draws the default PDF app's
+icon over the bottom-right corner of thumbnails; the installer sets
+`TypeOverlay` to an empty string on ADF's own `ADF.Document` ProgID, so when
+ADF opens PDFs the mark alone takes that corner. When another program opens
+PDFs (`AssocQueryString` for `.pdf`), the mark goes to the bottom-left, clear
+of that program's icon. Other programs' ProgIDs are not changed. WIC scales it from the icon's 256-pixel
 frame in premultiplied alpha, because Windows would stretch the nearest small
 frame and soften the logo's shape. Loading and
 rendering are asynchronous; the handler waits up to 20 seconds with
