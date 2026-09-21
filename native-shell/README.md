@@ -59,8 +59,8 @@ renderer's threads never call the stream Explorer handed to the calling
 thread. ADF parses no PDF here: Windows' own `Windows.Data.Pdf` renders the
 first page, rotation included, to fit the requested size (at most 2560
 pixels), and WIC decodes the result into an opaque 32-bit DIB. The blue ADF
-mark sits in the bottom-right corner, about a ninth of the thumbnail's longer
-side and at least 10 pixels, so the desktop's 48-pixel thumbnails show it too;
+mark sits in the bottom-right corner, about 15% of the thumbnail's longer
+side and at least 12 pixels, so the desktop's 48-pixel thumbnails show it too;
 thumbnails under 40 pixels stay plain. Explorer draws the default PDF app's
 icon over the bottom-right corner of thumbnails; the installer sets
 `TypeOverlay` to an empty string on ADF's own `ADF.Document` ProgID, so when

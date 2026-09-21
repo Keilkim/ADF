@@ -289,7 +289,7 @@ void StampLogo(HBITMAP bitmap) noexcept {
     if (GetObjectW(bitmap, sizeof(section), &section) != sizeof(section) || !section.dsBm.bmBits) return;
     const int width = section.dsBm.bmWidth, height = section.dsBm.bmHeight;
     if (std::max(width, height) < 40) return;
-    const int mark = std::min({std::max(10, static_cast<int>(std::lround(std::max(width, height) * 0.11))), width, height});
+    const int mark = std::min({std::max(12, static_cast<int>(std::lround(std::max(width, height) * 0.15))), width, height});
     const int margin = std::max(1, mark / 4);
     const size_t bytes = static_cast<size_t>(mark) * mark * 4;
     // Allocated before the icon, so that nothing between loading and destroying it can fail.
