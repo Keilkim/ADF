@@ -1,6 +1,6 @@
 #define AppName "ADF"
 #ifndef AppVersion
-  #define AppVersion "0.3.27"
+  #define AppVersion "0.3.28"
 #endif
 #define RepoRoot AddBackslash(SourcePath) + ".."
 #ifndef AppBuildDir
