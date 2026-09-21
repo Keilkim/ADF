@@ -310,9 +310,13 @@ void ThumbnailTests(const std::wstring& dll, const std::wstring& fixture) {
     Check(page.Red(10, 128) && page.White(118, 128), "Thumbnail shows the first page, red on the left third");
     Check(page.Blue(88, 216, 128, 256) > 60, "ADF mark sits in the bottom-right corner");
     Check(page.Blue(0, 0, 128, 200) == 0 && page.Blue(0, 200, 80, 256) == 0, "ADF mark covers only the corner, not the page");
-    Thumbnail small = FileThumbnail(factory, portrait, 48);
-    CheckHr(small.result, "Render a small thumbnail");
-    Check(small.width == 24 && small.height == 48 && small.Blue(0, 0, 24, 48) == 0, "A thumbnail too small for the mark stays plain");
+    Thumbnail desktop = FileThumbnail(factory, portrait, 48);
+    CheckHr(desktop.result, "Render a desktop-size thumbnail");
+    Check(desktop.width == 24 && desktop.height == 48 && desktop.Blue(12, 34, 24, 48) > 4 && desktop.Blue(0, 0, 24, 32) == 0,
+          "Desktop-size thumbnail shows a small mark in its corner");
+    Thumbnail tiny = FileThumbnail(factory, portrait, 32);
+    CheckHr(tiny.result, "Render a tiny thumbnail");
+    Check(tiny.width == 16 && tiny.height == 32 && tiny.Blue(0, 0, 16, 32) == 0, "A thumbnail too small for the mark stays plain");
     Thumbnail large = FileThumbnail(factory, portrait, 1024);
     CheckHr(large.result, "Render an extra-large thumbnail");
     Check(large.width == 512 && large.height == 1024 && large.Red(40, 512) && large.White(480, 512), "Extra-large thumbnail renders at full resolution");

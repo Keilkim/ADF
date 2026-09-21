@@ -19,6 +19,7 @@
 #include <atomic>
 #include <cmath>
 #include <new>
+#include <vector>
 #include "shell_module.h"
 
 using Microsoft::WRL::ComPtr;
@@ -226,27 +227,44 @@ HRESULT RenderFirstPage(IStream* file, UINT size, HBITMAP* bitmap) {
     return Decode(image.Get(), size, bitmap);
 }
 
-// The ADF mark, small, in the page's bottom-right corner of Explorer and
-// desktop thumbnails. A thumbnail too small to show it stays plain.
+// The blue ADF mark, small, in the page's bottom-right corner of Explorer and
+// desktop thumbnails. It is scaled from the icon's 256-pixel frame, because
+// Windows would stretch the nearest small frame and soften the logo's shape.
+// The desktop's medium icons ask for 48 pixels; smaller views show icons.
 void StampLogo(HBITMAP bitmap) {
-    BITMAP info{};
-    if (GetObjectW(bitmap, sizeof(info), &info) != sizeof(info)) return;
-    const int width = info.bmWidth, height = info.bmHeight;
-    if (std::max(width, height) < 64) return;
-    const int mark = std::min({std::max(14, static_cast<int>(std::lround(std::max(width, height) * 0.11))), width, height});
-    const int margin = std::max(2, mark / 4);
-    HICON icon = static_cast<HICON>(LoadImageW(g_module, MAKEINTRESOURCEW(101), IMAGE_ICON, mark, mark, LR_DEFAULTCOLOR));
+    DIBSECTION section{};
+    if (GetObjectW(bitmap, sizeof(section), &section) != sizeof(section) || !section.dsBm.bmBits) return;
+    const int width = section.dsBm.bmWidth, height = section.dsBm.bmHeight;
+    if (std::max(width, height) < 40) return;
+    const int mark = std::min({std::max(10, static_cast<int>(std::lround(std::max(width, height) * 0.11))), width, height});
+    const int margin = std::max(1, mark / 4);
+    HICON icon = static_cast<HICON>(LoadImageW(g_module, MAKEINTRESOURCEW(101), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR));
     if (!icon) return;
-    if (HDC dc = CreateCompatibleDC(nullptr)) {
-        HGDIOBJ previous = SelectObject(dc, bitmap);
-        if (previous && previous != HGDI_ERROR) {
-            DrawIconEx(dc, std::max(0, width - mark - margin), std::max(0, height - mark - margin), icon, mark, mark, 0, nullptr, DI_NORMAL | DI_NOMIRROR);
-            GdiFlush();
-            SelectObject(dc, previous);
-        }
-        DeleteDC(dc);
-    }
+    std::vector<BYTE> logo(static_cast<size_t>(mark) * mark * 4);
+    ComPtr<IWICImagingFactory> factory;
+    ComPtr<IWICBitmap> source;
+    ComPtr<IWICFormatConverter> premultiplied;
+    ComPtr<IWICBitmapScaler> scaler;
+    // Scaling premultiplied pixels keeps the antialiased edge free of dark fringes.
+    const bool scaled = SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory)))
+        && SUCCEEDED(factory->CreateBitmapFromHICON(icon, &source))
+        && SUCCEEDED(factory->CreateFormatConverter(&premultiplied))
+        && SUCCEEDED(premultiplied->Initialize(source.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom))
+        && SUCCEEDED(factory->CreateBitmapScaler(&scaler))
+        && SUCCEEDED(scaler->Initialize(premultiplied.Get(), mark, mark, WICBitmapInterpolationModeFant))
+        && SUCCEEDED(scaler->CopyPixels(nullptr, mark * 4, static_cast<UINT>(logo.size()), logo.data()));
     DestroyIcon(icon);
+    if (!scaled) return;
+    auto* pixels = static_cast<BYTE*>(section.dsBm.bmBits);
+    const int left = std::max(0, width - mark - margin), top = std::max(0, height - mark - margin);
+    for (int y = 0; y < mark; ++y) {
+        for (int x = 0; x < mark; ++x) {
+            const BYTE* mark_pixel = &logo[(static_cast<size_t>(y) * mark + x) * 4];
+            BYTE* page = pixels + (static_cast<size_t>(top + y) * width + left + x) * 4;
+            for (int channel = 0; channel < 3; ++channel)
+                page[channel] = static_cast<BYTE>(mark_pixel[channel] + page[channel] * (255 - mark_pixel[3]) / 255);
+        }
+    }
 }
 
 class ThumbnailProvider final : public IInitializeWithStream, public IThumbnailProvider {
