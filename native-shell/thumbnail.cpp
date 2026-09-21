@@ -19,8 +19,8 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <memory>
 #include <new>
-#include <vector>
 #include "shell_module.h"
 
 using Microsoft::WRL::ComPtr;
@@ -34,6 +34,12 @@ namespace {
 constexpr UINT kMaxSize = 2560;
 constexpr ULONGLONG kMaxPdfBytes = 1ull << 30;
 constexpr DWORD kTimeoutMs = 20000;
+// Windows.Data.Pdf keeps rendering after Cancel, so an operation abandoned by
+// a timed-out wait still costs a thread and memory until it ends. While more
+// than kMaxAbandoned are running, new thumbnails fail at once and Explorer
+// shows the icon, instead of piling up more renders.
+constexpr long kMaxAbandoned = 2;
+std::atomic<long> g_abandoned{0};
 
 template <size_t N>
 HRESULT Activate(const wchar_t (&name)[N], REFIID iid, void** value) {
@@ -56,12 +62,22 @@ HRESULT Factory(const wchar_t (&name)[N], REFIID iid, void** value) {
 
 // Signals an event when an asynchronous operation ends. The handler is agile,
 // so the operation calls it on its own thread instead of this blocked one.
+// The operation may call or release it long after a wait gave up, so it keeps
+// the DLL loaded like any other object.
 template <typename Handler, typename Operation>
 class Completion final : public Handler, public IAgileObject {
+    enum State { kWaiting, kFinished, kAbandoned };
     std::atomic<ULONG> references_{1};
+    std::atomic<int> state_{kWaiting};
 public:
     const HANDLE event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    ~Completion() { if (event) CloseHandle(event); }
+    Completion() { ++g_objects; }
+    ~Completion() {
+        // An abandoned operation that is released without ever finishing.
+        if (state_ == kAbandoned) --g_abandoned;
+        if (event) CloseHandle(event);
+        --g_objects;
+    }
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** value) override {
         if (!value) return E_POINTER;
         *value = nullptr;
@@ -73,31 +89,43 @@ public:
     }
     ULONG STDMETHODCALLTYPE AddRef() override { return ++references_; }
     ULONG STDMETHODCALLTYPE Release() override { const ULONG remaining = --references_; if (!remaining) delete this; return remaining; }
-    HRESULT STDMETHODCALLTYPE Invoke(Operation*, AsyncStatus) override { SetEvent(event); return S_OK; }
+    HRESULT STDMETHODCALLTYPE Invoke(Operation*, AsyncStatus) override {
+        if (state_.exchange(kFinished) == kAbandoned) --g_abandoned;
+        SetEvent(event);
+        return S_OK;
+    }
+    // Counts the operation in g_abandoned until it finishes or releases this
+    // handler. Counting first keeps a racing Invoke from taking it below zero.
+    void Abandon() {
+        ++g_abandoned;
+        int waiting = kWaiting;
+        if (!state_.compare_exchange_strong(waiting, kAbandoned)) --g_abandoned;
+    }
 };
 
-// Waits for an operation and returns its error, if any. A timed-out
-// operation is cancelled; the handler keeps its event alive until it runs.
+// Waits for an operation and returns its error, if any. An operation that is
+// not waited for to the end is cancelled; the handler keeps its event alive
+// until the operation lets go of it.
 template <typename Handler, typename Operation>
-HRESULT Await(Operation* operation) {
+HRESULT Await(Operation* operation, DWORD timeout = kTimeoutMs) {
+    ComPtr<IAsyncInfo> info;
+    HRESULT result = operation->QueryInterface(IID_PPV_ARGS(&info));
+    if (FAILED(result)) return result;
     ComPtr<Completion<Handler, Operation>> completion;
     completion.Attach(new (std::nothrow) Completion<Handler, Operation>());
-    if (!completion || !completion->event) return E_OUTOFMEMORY;
-    HRESULT result = operation->put_Completed(completion.Get());
-    if (FAILED(result)) return result;
+    if (!completion || !completion->event) { info->Cancel(); return E_OUTOFMEMORY; }
+    result = operation->put_Completed(completion.Get());
+    if (FAILED(result)) { info->Cancel(); return result; }
     HANDLE event = completion->event;
     DWORD index = 0;
-    result = CoWaitForMultipleHandles(COWAIT_DISPATCH_CALLS, kTimeoutMs, 1, &event, &index);
+    result = CoWaitForMultipleHandles(COWAIT_DISPATCH_CALLS, timeout, 1, &event, &index);
     if (result == CO_E_NOTINITIALIZED)
-        result = WaitForSingleObject(event, kTimeoutMs) == WAIT_OBJECT_0 ? S_OK : RPC_S_CALLPENDING;
-    ComPtr<IAsyncInfo> info;
-    const HRESULT query = operation->QueryInterface(IID_PPV_ARGS(&info));
-    if (FAILED(query)) return query;
-    if (result == RPC_S_CALLPENDING) {
+        result = WaitForSingleObject(event, timeout) == WAIT_OBJECT_0 ? S_OK : RPC_S_CALLPENDING;
+    if (FAILED(result)) {
+        completion->Abandon();
         info->Cancel();
-        return HRESULT_FROM_WIN32(ERROR_TIMEOUT);
+        return result == RPC_S_CALLPENDING ? HRESULT_FROM_WIN32(ERROR_TIMEOUT) : result;
     }
-    if (FAILED(result)) return result;
     AsyncStatus status = Started;
     result = info->get_Status(&status);
     if (FAILED(result) || status == Completed) return result;
@@ -107,8 +135,10 @@ HRESULT Await(Operation* operation) {
 }
 
 // Copies the file into memory, so that the renderer's threads never call the
-// stream that Explorer handed to this thread.
-HRESULT ReadFile(IStream* source, IStream** copy) {
+// stream that Explorer handed to this thread. A slow stream, such as a file on
+// a network share, gets the same time limit as loading and rendering.
+HRESULT ReadFile(IStream* source, IStream** copy, DWORD timeout = kTimeoutMs) {
+    const ULONGLONG deadline = GetTickCount64() + timeout;
     STATSTG stat{};
     HRESULT result = source->Stat(&stat, STATFLAG_NONAME);
     if (FAILED(result)) return result;
@@ -122,6 +152,7 @@ HRESULT ReadFile(IStream* source, IStream** copy) {
     auto* bytes = static_cast<BYTE*>(GlobalLock(memory));
     ULONG total = 0;
     while (bytes && total < size) {
+        if (GetTickCount64() >= deadline) { result = HRESULT_FROM_WIN32(ERROR_TIMEOUT); break; }
         ULONG read = 0;
         result = source->Read(bytes + total, std::min<ULONG>(size - total, 1 << 20), &read);
         if (FAILED(result) || !read) break;
@@ -251,17 +282,21 @@ bool AdfOpensPdf() {
 // The blue ADF mark, small, in a bottom corner of Explorer and desktop
 // thumbnails. It is scaled from the icon's 256-pixel frame, because Windows
 // would stretch the nearest small frame and soften the logo's shape. The
-// desktop's medium icons ask for 48 pixels; smaller views show icons.
-void StampLogo(HBITMAP bitmap) {
+// desktop's medium icons ask for 48 pixels; smaller views show icons. The mark
+// is best-effort: without memory or the icon the page is shown unmarked.
+void StampLogo(HBITMAP bitmap) noexcept {
     DIBSECTION section{};
     if (GetObjectW(bitmap, sizeof(section), &section) != sizeof(section) || !section.dsBm.bmBits) return;
     const int width = section.dsBm.bmWidth, height = section.dsBm.bmHeight;
     if (std::max(width, height) < 40) return;
     const int mark = std::min({std::max(10, static_cast<int>(std::lround(std::max(width, height) * 0.11))), width, height});
     const int margin = std::max(1, mark / 4);
+    const size_t bytes = static_cast<size_t>(mark) * mark * 4;
+    // Allocated before the icon, so that nothing between loading and destroying it can fail.
+    const std::unique_ptr<BYTE[]> logo(new (std::nothrow) BYTE[bytes]);
+    if (!logo) return;
     HICON icon = static_cast<HICON>(LoadImageW(g_module, MAKEINTRESOURCEW(101), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR));
     if (!icon) return;
-    std::vector<BYTE> logo(static_cast<size_t>(mark) * mark * 4);
     ComPtr<IWICImagingFactory> factory;
     ComPtr<IWICBitmap> source;
     ComPtr<IWICFormatConverter> premultiplied;
@@ -273,7 +308,7 @@ void StampLogo(HBITMAP bitmap) {
         && SUCCEEDED(premultiplied->Initialize(source.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom))
         && SUCCEEDED(factory->CreateBitmapScaler(&scaler))
         && SUCCEEDED(scaler->Initialize(premultiplied.Get(), mark, mark, WICBitmapInterpolationModeFant))
-        && SUCCEEDED(scaler->CopyPixels(nullptr, mark * 4, static_cast<UINT>(logo.size()), logo.data()));
+        && SUCCEEDED(scaler->CopyPixels(nullptr, mark * 4, static_cast<UINT>(bytes), logo.get()));
     DestroyIcon(icon);
     if (!scaled) return;
     auto* pixels = static_cast<BYTE*>(section.dsBm.bmBits);
@@ -281,7 +316,7 @@ void StampLogo(HBITMAP bitmap) {
     const int top = std::max(0, height - mark - margin);
     for (int y = 0; y < mark; ++y) {
         for (int x = 0; x < mark; ++x) {
-            const BYTE* mark_pixel = &logo[(static_cast<size_t>(y) * mark + x) * 4];
+            const BYTE* mark_pixel = logo.get() + (static_cast<size_t>(y) * mark + x) * 4;
             BYTE* page = pixels + (static_cast<size_t>(top + y) * width + left + x) * 4;
             for (int channel = 0; channel < 3; ++channel)
                 page[channel] = static_cast<BYTE>(mark_pixel[channel] + page[channel] * (255 - mark_pixel[3]) / 255);
@@ -318,14 +353,18 @@ public:
         *alpha = WTSAT_UNKNOWN;
         if (!stream_) return E_UNEXPECTED;
         if (!size || size > kMaxSize) return E_INVALIDARG;
-        try {
-            const HRESULT result = RenderFirstPage(stream_.Get(), size, bitmap);
-            if (FAILED(result)) return result;
-            StampLogo(*bitmap);
-            *alpha = WTSAT_ARGB;
-            return result;
-        } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
-          catch (...) { return E_FAIL; }
+        if (g_abandoned > kMaxAbandoned) return HRESULT_FROM_WIN32(ERROR_BUSY);
+        // Explorer takes the bitmap only on success, so a failure must not leave one.
+        HBITMAP rendered = nullptr;
+        HRESULT result = E_FAIL;
+        try { result = RenderFirstPage(stream_.Get(), size, &rendered); }
+        catch (const std::bad_alloc&) { result = E_OUTOFMEMORY; }
+        catch (...) { result = E_FAIL; }
+        if (FAILED(result)) { if (rendered) DeleteObject(rendered); return result; }
+        StampLogo(rendered);
+        *bitmap = rendered;
+        *alpha = WTSAT_ARGB;
+        return S_OK;
     }
 };
 } // namespace

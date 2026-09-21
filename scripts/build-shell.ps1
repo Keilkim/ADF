@@ -44,7 +44,8 @@ $common = @('-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-DUNICODE', '-D
 $libraries = @('-lole32', '-lshell32', '-ladvapi32', '-luser32', '-lgdi32', '-luuid')
 & $Compiler @common '-shared' (Join-Path $source 'adf_shell.cpp') (Join-Path $source 'thumbnail.cpp') (Join-Path $source 'adf_shell.def') (Join-Path $output 'adf_shell.res') '-o' (Join-Path $output 'ADFShell.dll') @libraries '-lruntimeobject' '-lshcore' '-lshlwapi' '-lwindowscodecs'
 if ($LASTEXITCODE -ne 0) { throw 'Native shell DLL compilation failed.' }
-& $Compiler @common '-municode' (Join-Path $source 'shell_tests.cpp') '-o' (Join-Path $output 'shell-tests.exe') @libraries '-lshlwapi'
+# The harness also compiles thumbnail.cpp, so it links the same libraries as the DLL.
+& $Compiler @common '-municode' (Join-Path $source 'shell_tests.cpp') '-o' (Join-Path $output 'shell-tests.exe') @libraries '-lruntimeobject' '-lshcore' '-lshlwapi' '-lwindowscodecs'
 if ($LASTEXITCODE -ne 0) { throw 'Native shell harness compilation failed.' }
 & $Compiler @common '-municode' '-mwindows' (Join-Path $source 'request_sink.cpp') '-o' (Join-Path $output 'request-sink.exe') @libraries
 if ($LASTEXITCODE -ne 0) { throw 'Native request fixture compilation failed.' }

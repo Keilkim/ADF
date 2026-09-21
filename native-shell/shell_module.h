@@ -5,7 +5,8 @@
 
 namespace adf {
 extern HMODULE g_module;
-// Live objects and server locks; DllCanUnloadNow keeps the DLL while any remain.
+// Live objects, including completion handlers that WinRT operations still hold,
+// and server locks; DllCanUnloadNow keeps the DLL while any remain.
 extern std::atomic<long> g_objects;
 
 // {A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}: the PDF thumbnail handler.

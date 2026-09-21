@@ -68,11 +68,23 @@ ADF opens PDFs the mark alone takes that corner. When another program opens
 PDFs (`AssocQueryString` for `.pdf`), the mark goes to the bottom-left, clear
 of that program's icon. Other programs' ProgIDs are not changed. WIC scales it from the icon's 256-pixel
 frame in premultiplied alpha, because Windows would stretch the nearest small
-frame and soften the logo's shape. Loading and
-rendering are asynchronous; the handler waits up to 20 seconds with
-`CoWaitForMultipleHandles`, and its completion handlers are agile so they never
-need the waiting apartment. A timed-out operation is cancelled. Encrypted,
-damaged or empty files return an error, and Explorer shows the icon.
+frame and soften the logo's shape. The mark is best-effort: without memory
+for it or the icon resource, the page is shown unmarked. A failed thumbnail
+never hands Explorer a bitmap.
+
+Loading and rendering are asynchronous; the handler waits up to 20 seconds
+with `CoWaitForMultipleHandles`, and its completion handlers are agile so they
+never need the waiting apartment. Copying the stream has the same 20-second
+limit, checked before each 1 MiB read, so a slow network file cannot hold the
+thread longer. An operation the handler stops waiting for, whether the wait
+timed out or failed, is cancelled. `Windows.Data.Pdf` keeps rendering after
+`Cancel` and calls the handler only when it stops, often many seconds later.
+Each completion handler therefore counts as a live object, so
+`DllCanUnloadNow` keeps the DLL loaded until the operation lets go of it.
+While more than two abandoned operations are still running, new thumbnails
+fail at once with `ERROR_BUSY` and Explorer shows the icon, instead of piling
+up more renders. Encrypted, damaged or empty files return an error, and
+Explorer shows the icon.
 
 LLVM-MinGW has no header for `Windows.Data.Pdf`. `windows.data.pdf.idl`
 declares the interfaces with the IDs and method order of `Windows.Data.winmd`,
@@ -125,9 +137,23 @@ the bottom-right corner at 48, 256, 1024 and landscape sizes, and not at all
 on a 32-pixel thumbnail. Sizes Explorer never requests,
 repeated or missing initialization, a damaged PDF, an empty file and non-PDF
 bytes must fail without a bitmap, and the DLL must be unloadable afterwards.
+Repeated thumbnails must leave the process's USER and GDI object counts
+unchanged, so the logo icon is never leaked.
 Five corrupt `DROPFILES` inputs verify rejection before out-of-bounds memory
 access. The production parser validates the global allocation, header, offset,
 alignment, string bounds and the final double NUL before accepting paths.
+
+The harness also compiles `thumbnail.cpp` itself, with no logo resource, and
+drives its waits with test operations that end only when told to. An operation
+that has already ended reports its outcome without a cancel. A timed-out wait,
+on the COM thread or another thread, must cancel the operation, and its
+completion handler must keep the object count above zero until the operation
+finishes late or releases it. An operation that refuses the handler is
+cancelled too. With three renders abandoned, a new thumbnail must fail at
+once. When one of them ends, the page must render again, unmarked because the
+icon is missing. A stream that trickles data must stop copying at its time
+limit. `build-shell.ps1` therefore links the harness with the same libraries
+as the DLL.
 
 The harness also asks Windows `SHCreateDefaultContextMenu` to assemble a menu
 using a real filesystem shell folder and selected PIDLs. It supplies the

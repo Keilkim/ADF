@@ -8,9 +8,19 @@
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 #include "shell_icon.h"
 #include "shell_module.h"
+
+// The harness also compiles the thumbnail handler's source, to drive its waits
+// with operations that end only when a test says so. That copy counts its
+// objects here, not in the loaded DLL, and has no logo resource.
+namespace adf {
+HMODULE g_module = nullptr;
+std::atomic<long> g_objects{0};
+}
+#include "thumbnail.cpp"
 
 namespace {
 const CLSID kClassId = {0x8093f936, 0x820b, 0x4cdb, {0xa6, 0x4b, 0x7a, 0x39, 0xec, 0x80, 0x7a, 0x11}};
@@ -259,9 +269,8 @@ bool AdfOpensPdf() {
         && _wcsicmp(progid, L"ADF.Document") == 0;
 }
 
-Thumbnail RenderThumbnail(IClassFactory* factory, IStream* stream, UINT size) {
-    IInitializeWithStream* init = nullptr;
-    CheckHr(factory->CreateInstance(nullptr, IID_IInitializeWithStream, reinterpret_cast<void**>(&init)), "Thumbnail handler construction");
+// Takes over the handler's reference.
+Thumbnail RenderThumbnail(IInitializeWithStream* init, IStream* stream, UINT size) {
     IThumbnailProvider* provider = nullptr;
     CheckHr(init->QueryInterface(IID_PPV_ARGS(&provider)), "Thumbnail handler IThumbnailProvider interface");
     HBITMAP bitmap = nullptr;
@@ -287,12 +296,203 @@ Thumbnail RenderThumbnail(IClassFactory* factory, IStream* stream, UINT size) {
     return thumbnail;
 }
 
+Thumbnail RenderThumbnail(IClassFactory* factory, IStream* stream, UINT size) {
+    IInitializeWithStream* init = nullptr;
+    CheckHr(factory->CreateInstance(nullptr, IID_IInitializeWithStream, reinterpret_cast<void**>(&init)), "Thumbnail handler construction");
+    return RenderThumbnail(init, stream, size);
+}
+
 Thumbnail FileThumbnail(IClassFactory* factory, const std::wstring& path, UINT size) {
     IStream* stream = nullptr;
     CheckHr(SHCreateStreamOnFileEx(path.c_str(), STGM_READ | STGM_SHARE_DENY_WRITE, FILE_ATTRIBUTE_NORMAL, FALSE, nullptr, &stream), "Open thumbnail fixture stream");
     Thumbnail thumbnail = RenderThumbnail(factory, stream, size);
     stream->Release();
     return thumbnail;
+}
+
+// An action that ends only when the test calls Finish, like a slow render by
+// Windows.Data.Pdf that goes on after the handler stopped waiting for it.
+class TestAction final : public Foundation::IAsyncAction, public IAsyncInfo {
+    ULONG references_ = 1;
+    Foundation::IAsyncActionCompletedHandler* handler_ = nullptr;
+    AsyncStatus status_ = Started;
+public:
+    HRESULT attach = S_OK;       // put_Completed's result
+    bool endsOnCancel = false;   // Cancel calls the handler before it returns
+    int cancels = 0;
+    ~TestAction() { if (handler_) handler_->Release(); }
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** value) override {
+        if (!value) return E_POINTER;
+        *value = nullptr;
+        if (iid == IID_IUnknown || iid == __uuidof(IInspectable) || iid == __uuidof(Foundation::IAsyncAction)) *value = static_cast<Foundation::IAsyncAction*>(this);
+        else if (iid == __uuidof(IAsyncInfo)) *value = static_cast<IAsyncInfo*>(this);
+        else return E_NOINTERFACE;
+        AddRef();
+        return S_OK;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++references_; }
+    ULONG STDMETHODCALLTYPE Release() override { ULONG remaining = --references_; if (!remaining) delete this; return remaining; }
+    HRESULT STDMETHODCALLTYPE GetIids(ULONG*, IID**) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE GetRuntimeClassName(HSTRING*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE GetTrustLevel(TrustLevel*) override { return E_NOTIMPL; }
+    // An action that has already ended calls its handler at once.
+    HRESULT STDMETHODCALLTYPE put_Completed(Foundation::IAsyncActionCompletedHandler* handler) override {
+        if (FAILED(attach)) return attach;
+        handler_ = handler;
+        handler_->AddRef();
+        if (status_ != Started) Finish(status_);
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE get_Completed(Foundation::IAsyncActionCompletedHandler**) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE GetResults() override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_Id(UINT32* id) override { *id = 1; return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_Status(AsyncStatus* status) override { *status = status_; return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_ErrorCode(HRESULT* error) override { *error = status_ == Error ? E_ACCESSDENIED : S_OK; return S_OK; }
+    HRESULT STDMETHODCALLTYPE Cancel() override { ++cancels; if (endsOnCancel) Finish(Canceled); return S_OK; }
+    HRESULT STDMETHODCALLTYPE Close() override { return S_OK; }
+    void End(AsyncStatus status) { status_ = status; }
+    // Calls the handler, then lets go of it, as a finished operation does.
+    void Finish(AsyncStatus status) {
+        status_ = status;
+        if (auto* handler = std::exchange(handler_, nullptr)) { handler->Invoke(this, status); handler->Release(); }
+    }
+};
+
+HRESULT AwaitAction(TestAction* action, DWORD timeout) {
+    return adf::Await<Foundation::IAsyncActionCompletedHandler>(static_cast<Foundation::IAsyncAction*>(action), timeout);
+}
+
+// Hands out at most 64 KiB per read after a pause, like a file on a slow share.
+class SlowStream final : public IStream {
+    ULONG references_ = 1;
+    IStream* inner_;
+public:
+    explicit SlowStream(IStream* inner) : inner_(inner) {}
+    ~SlowStream() { inner_->Release(); }
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** value) override {
+        if (!value) return E_POINTER;
+        *value = nullptr;
+        if (iid != IID_IUnknown && iid != IID_ISequentialStream && iid != IID_IStream) return E_NOINTERFACE;
+        *value = static_cast<IStream*>(this); AddRef(); return S_OK;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++references_; }
+    ULONG STDMETHODCALLTYPE Release() override { ULONG remaining = --references_; if (!remaining) delete this; return remaining; }
+    HRESULT STDMETHODCALLTYPE Read(void* data, ULONG size, ULONG* read) override { Sleep(10); return inner_->Read(data, std::min<ULONG>(size, 1 << 16), read); }
+    HRESULT STDMETHODCALLTYPE Write(const void* data, ULONG size, ULONG* written) override { return inner_->Write(data, size, written); }
+    HRESULT STDMETHODCALLTYPE Seek(LARGE_INTEGER move, DWORD origin, ULARGE_INTEGER* position) override { return inner_->Seek(move, origin, position); }
+    HRESULT STDMETHODCALLTYPE SetSize(ULARGE_INTEGER size) override { return inner_->SetSize(size); }
+    HRESULT STDMETHODCALLTYPE CopyTo(IStream* target, ULARGE_INTEGER size, ULARGE_INTEGER* read, ULARGE_INTEGER* written) override { return inner_->CopyTo(target, size, read, written); }
+    HRESULT STDMETHODCALLTYPE Commit(DWORD flags) override { return inner_->Commit(flags); }
+    HRESULT STDMETHODCALLTYPE Revert() override { return inner_->Revert(); }
+    HRESULT STDMETHODCALLTYPE LockRegion(ULARGE_INTEGER offset, ULARGE_INTEGER size, DWORD type) override { return inner_->LockRegion(offset, size, type); }
+    HRESULT STDMETHODCALLTYPE UnlockRegion(ULARGE_INTEGER offset, ULARGE_INTEGER size, DWORD type) override { return inner_->UnlockRegion(offset, size, type); }
+    HRESULT STDMETHODCALLTYPE Stat(STATSTG* stat, DWORD flags) override { return inner_->Stat(stat, flags); }
+    HRESULT STDMETHODCALLTYPE Clone(IStream**) override { return E_NOTIMPL; }
+};
+
+Thumbnail SourceThumbnail(IStream* stream, UINT size) {
+    IInitializeWithStream* init = nullptr;
+    CheckHr(adf::CreateThumbnailProvider(IID_IInitializeWithStream, reinterpret_cast<void**>(&init)), "Thumbnail handler construction from source");
+    return RenderThumbnail(init, stream, size);
+}
+
+// Waits, cancellation and file copying of the handler's own source, compiled
+// into the harness: g_objects is what DllCanUnloadNow reads.
+void HandlerSourceTests() {
+    const HRESULT timeout = HRESULT_FROM_WIN32(ERROR_TIMEOUT);
+    Check(adf::g_objects == 0 && adf::g_abandoned == 0, "Handler source starts without live objects");
+    const struct { AsyncStatus status; HRESULT result; } outcomes[] = {{Completed, S_OK}, {Error, E_ACCESSDENIED}, {Canceled, E_ABORT}};
+    for (const auto& outcome : outcomes) {
+        auto* action = new TestAction();
+        action->End(outcome.status);
+        Check(AwaitAction(action, 1000) == outcome.result && !action->cancels, "A finished operation reports its outcome and is not cancelled");
+        action->Release();
+    }
+    Check(adf::g_objects == 0 && adf::g_abandoned == 0, "Finished operations leave no handler behind");
+
+    auto* late = new TestAction();
+    Check(AwaitAction(late, 50) == timeout && late->cancels == 1, "A timed-out wait cancels its operation");
+    Check(adf::g_objects == 1, "The handler the operation still holds keeps the DLL loaded after the wait");
+    Check(adf::g_abandoned == 1, "The timed-out operation counts as abandoned");
+    late->Finish(Canceled);
+    Check(adf::g_abandoned == 0 && adf::g_objects == 0, "A late completion ends the count and frees the handler");
+    late->Release();
+
+    auto* dropped = new TestAction();
+    Check(AwaitAction(dropped, 50) == timeout && adf::g_abandoned == 1, "A second timed-out operation counts as abandoned");
+    dropped->Release();
+    Check(adf::g_abandoned == 0 && adf::g_objects == 0, "An abandoned operation released without finishing ends the count");
+
+    // An operation may end between the wait giving up and the handler being told.
+    auto* raced = new adf::Completion<Foundation::IAsyncActionCompletedHandler, Foundation::IAsyncAction>();
+    raced->Invoke(nullptr, Completed);
+    raced->Abandon();
+    Check(adf::g_abandoned == 0 && adf::g_objects == 1, "An operation that ends as its wait gives up is not counted as abandoned");
+    raced->Release();
+    Check(adf::g_abandoned == 0 && adf::g_objects == 0, "Its handler is freed without touching the count");
+
+    auto* prompt = new TestAction();
+    prompt->endsOnCancel = true;
+    Check(AwaitAction(prompt, 50) == timeout && prompt->cancels == 1, "An operation that ends inside Cancel still reports the timeout");
+    Check(adf::g_abandoned == 0 && adf::g_objects == 0, "An operation that ends inside Cancel is not left counted");
+    prompt->Release();
+
+    auto* refused = new TestAction();
+    refused->attach = HRESULT_FROM_WIN32(ERROR_INVALID_STATE);
+    Check(AwaitAction(refused, 50) == HRESULT_FROM_WIN32(ERROR_INVALID_STATE) && refused->cancels == 1, "An operation that refuses the handler is cancelled");
+    Check(adf::g_abandoned == 0 && adf::g_objects == 0, "A refused handler is freed at once");
+    refused->Release();
+
+    struct Wait { TestAction* action; HRESULT result; } wait{new TestAction(), E_FAIL};
+    HANDLE thread = CreateThread(nullptr, 0, [](void* data) -> DWORD {
+        auto* state = static_cast<Wait*>(data);
+        state->result = AwaitAction(state->action, 50);
+        return 0;
+    }, &wait, 0, nullptr);
+    Check(thread && WaitForSingleObject(thread, 5000) == WAIT_OBJECT_0, "Wait on a thread without a COM apartment");
+    CloseHandle(thread);
+    Check(wait.result == timeout && wait.action->cancels == 1 && adf::g_abandoned == 1, "A timed-out wait off the COM thread also cancels");
+    wait.action->Finish(Canceled);
+    wait.action->Release();
+    Check(adf::g_abandoned == 0 && adf::g_objects == 0, "The worker's late completion ends the count");
+
+    const std::string pdf = PdfFixture(300, 600, 0, 1);
+    IStream* file = SHCreateMemStream(reinterpret_cast<const BYTE*>(pdf.data()), static_cast<UINT>(pdf.size()));
+    Check(file != nullptr, "Create in-memory PDF stream");
+    std::vector<TestAction*> stuck;
+    for (long count = 0; count <= adf::kMaxAbandoned; ++count) {
+        stuck.push_back(new TestAction());
+        Check(AwaitAction(stuck.back(), 20) == timeout, "Leave a render running after its wait");
+    }
+    Check(adf::g_abandoned == adf::kMaxAbandoned + 1, "Every abandoned render is counted");
+    ULONGLONG start = GetTickCount64();
+    const Thumbnail busy = SourceThumbnail(file, 256);
+    Check(busy.result == HRESULT_FROM_WIN32(ERROR_BUSY) && GetTickCount64() - start < 1000,
+          "While abandoned renders pile up, a new thumbnail fails at once and Explorer shows the icon");
+    stuck.back()->Finish(Canceled);
+    const Thumbnail plain = SourceThumbnail(file, 256);
+    CheckHr(plain.result, "Thumbnails render again once an abandoned render ends");
+    Check(plain.width == 128 && plain.height == 256 && plain.Red(10, 128) && plain.Blue(0, 0, 128, 256) == 0,
+          "Without the logo the page is shown unmarked instead of failing");
+    for (auto* action : stuck) { action->Finish(Canceled); action->Release(); }
+    Check(adf::g_abandoned == 0 && adf::g_objects == 0, "All renders ended; no handler objects remain");
+
+    // Four MiB at 64 KiB per pause takes about a second; the limit is 200 ms.
+    const std::string large(4 << 20, '%');
+    IStream* memory = SHCreateMemStream(reinterpret_cast<const BYTE*>(large.data()), static_cast<UINT>(large.size()));
+    Check(memory != nullptr, "Create a large in-memory stream");
+    auto* slow = new SlowStream(memory);
+    IStream* copy = nullptr;
+    start = GetTickCount64();
+    Check(adf::ReadFile(slow, &copy, 200) == timeout && !copy, "Copying a slow stream stops at the time limit");
+    Check(GetTickCount64() - start < 800, "The copy gives up soon after the time limit");
+    slow->Release();
+    CheckHr(adf::ReadFile(file, &copy), "A local file is copied well within the time limit");
+    STATSTG stat{};
+    CheckHr(copy->Stat(&stat, STATFLAG_NONAME), "Stat the copied file");
+    Check(stat.cbSize.QuadPart == pdf.size(), "The copy holds exactly the file");
+    copy->Release();
+    file->Release();
 }
 
 void ThumbnailTests(const std::wstring& dll, const std::wstring& fixture) {
@@ -338,6 +538,11 @@ void ThumbnailTests(const std::wstring& dll, const std::wstring& fixture) {
     Check(large.width == 512 && large.height == 1024 && large.Red(40, 512) && large.White(480, 512), "Extra-large thumbnail renders at full resolution");
     Check((right ? large.Blue(340, 850, 512, 1024) : large.Blue(0, 850, 170, 1024)) > 1000 && large.Blue(0, 0, 512, 800) == 0,
           "ADF mark scales with the thumbnail");
+    // Each mark loads and destroys the logo icon; the harness deletes each bitmap.
+    const DWORD users = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS), graphics = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
+    for (int repeat = 0; repeat < 8; ++repeat) CheckHr(FileThumbnail(factory, portrait, 256).result, "Render the same thumbnail again");
+    Check(GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS) == users && GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) == graphics,
+          "Repeated thumbnails leak neither the logo icon nor bitmaps");
 
     Thumbnail turned = FileThumbnail(factory, rotated, 256);
     CheckHr(turned.result, "Render a rotated page");
@@ -532,6 +737,7 @@ int wmain(int argc, wchar_t** argv) {
             ShellAssembledMenu(testDll, fixture, {one.substr(fixture.size() + 1), text.substr(fixture.size() + 1)}, nullptr);
         }
         ThumbnailTests(testDll, fixture);
+        HandlerSourceTests();
         {
             Library library(testDll);
             {
