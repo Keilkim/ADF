@@ -11,9 +11,10 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 import pymupdf
 from PIL import Image
-from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+from PySide6.QtGui import QFocusEvent
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
 
 from adf.app import MainWindow
 from adf.selection_widgets import PageText, RegionSelection, TextSelection
@@ -149,6 +150,31 @@ class SelectionWorkflowTests(unittest.TestCase):
                          self.point(last.x1-1, last.y0+5))
         self.assertEqual(self.window.clip_text, 'second line continues here\nthird line ends')
 
+    def test_shift_click_back_on_the_anchor_leaves_nothing_to_copy(self):
+        first = self.word('second')
+        anchor = (first.x0+1, first.y0+5)
+        self.drag(anchor, (first.x1-1, first.y0+5))
+        self.assertEqual(self.window.clip_text, 'second')
+        QTest.mouseClick(self.view.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ShiftModifier,
+                         self.point(*anchor))
+        self.assertIsNone(self.view.selection_item)
+        self.assertEqual(self.window.clip_text, '')
+        QApplication.clipboard().setText('earlier')
+        self.window.copy_text()
+        self.assertEqual(QApplication.clipboard().text(), 'earlier')  # nothing highlighted, nothing copied
+        QApplication.clipboard().clear()
+
+    def test_highlight_is_rebuilt_only_when_a_caret_moves(self):
+        first = self.word('second')
+        self.drag((first.x0+1, first.y0+5), (first.x1-1, first.y0+5))
+        selection = self.view.selection_item
+        path = selection.text_path
+        selection.select(selection.anchor, selection.focus)
+        self.assertIs(selection.text_path, path)
+        selection.select(selection.anchor, selection.focus+1)
+        self.assertIsNot(selection.text_path, path)
+        self.assertEqual(selection.text(), 'second ')
+
     def test_alt_drag_and_drags_from_pictures_select_an_area(self):
         start, end = self.word('line'), self.word('ends')
         self.drag((start.x0+1, start.y0+5), (end.x1-1, end.y0+5), Qt.KeyboardModifier.AltModifier)
@@ -187,6 +213,41 @@ class SelectionWorkflowTests(unittest.TestCase):
             self.view.scroll_selection()
         self.assertGreater(bar.value(), before)
         self.assertGreater(len(self.view.selection_item.text()), len(text))
+        QTest.mouseRelease(viewport, Qt.MouseButton.LeftButton, pos=bottom)
+        self.assertFalse(self.view.selection_scroll.isActive())
+
+    def test_edge_scrolling_stops_when_the_drag_is_lost(self):
+        self.open(lines=[(40+14*row, f'Row {row} of a long page') for row in range(30)])
+        self.view.set_zoom(3)
+        self.app.processEvents()
+        bar = self.view.verticalScrollBar()
+        bar.setValue(bar.minimum())
+        viewport = self.view.viewport()
+        bottom = QPoint(viewport.width()//2, viewport.height()-2)
+        QTest.mousePress(viewport, Qt.MouseButton.LeftButton, pos=self.point(self.word('Row').x0+1, self.word('Row').y0+5))
+        QTest.mouseMove(viewport, bottom)
+        self.assertTrue(self.view.selection_scroll.isActive())
+        # The button comes up over another window, so the view never sees the release.
+        other = QWidget()
+        other.resize(60, 60)
+        other.show()
+        self.addCleanup(other.close)
+        QTest.mouseRelease(other, Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
+        self.assertIsNotNone(self.view.selection_start)
+        before = bar.value()
+        self.view.scroll_selection()
+        self.assertFalse(self.view.selection_scroll.isActive())
+        self.assertEqual(bar.value(), before)
+        # Losing focus mid-drag stops it as well; moving on starts it again. The next row,
+        # so the press cannot pair with the first one as a double-click.
+        bar.setValue(bar.minimum())
+        QTest.mousePress(viewport, Qt.MouseButton.LeftButton, pos=self.point(self.word('1').x0+1, self.word('1').y0+5))
+        QTest.mouseMove(viewport, bottom)
+        self.assertTrue(self.view.selection_scroll.isActive())
+        QApplication.sendEvent(self.view, QFocusEvent(QEvent.Type.FocusOut, Qt.FocusReason.ActiveWindowFocusReason))
+        self.assertFalse(self.view.selection_scroll.isActive())
+        QTest.mouseMove(viewport, bottom - QPoint(0, 1))
+        self.assertTrue(self.view.selection_scroll.isActive())
         QTest.mouseRelease(viewport, Qt.MouseButton.LeftButton, pos=bottom)
         self.assertFalse(self.view.selection_scroll.isActive())
 

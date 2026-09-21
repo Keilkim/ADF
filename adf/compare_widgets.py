@@ -46,8 +46,7 @@ class CompareView(QGraphicsView):
     def wheelEvent(self, event):
         if pinch.zooms(event):
             # A pinch sends fractions of a notch; each full notch is one zoom step.
-            self.zoom_notches += event.angleDelta().y() / pinch.NOTCH
-            self.step_notches()
+            self.step_notches(event.angleDelta().y() / pinch.NOTCH)
             event.accept()
         else:
             super().wheelEvent(event)
@@ -57,12 +56,15 @@ class CompareView(QGraphicsView):
         if factor is None:
             return super().viewportEvent(event)
         # About a 12% change in pinch distance matches one wheel notch.
-        self.zoom_notches += math.log(factor) / math.log(pinch.NOTCH_ZOOM)
-        self.step_notches()
+        self.step_notches(math.log(factor) / math.log(pinch.NOTCH_ZOOM))
         event.accept()
         return True
 
-    def step_notches(self):
+    def step_notches(self, notches):
+        if notches * self.zoom_notches < 0:
+            # A turn the other way starts afresh; the leftover would swallow its first notch.
+            self.zoom_notches = 0.0
+        self.zoom_notches += notches
         while abs(self.zoom_notches) > .999:
             direction = 1 if self.zoom_notches > 0 else -1
             self.zoom_notches -= direction

@@ -3,8 +3,8 @@
 Windows turns a precision touchpad pinch into Ctrl+wheel messages. The Ctrl is
 only a flag in the message (MK_CONTROL); the keyboard state that Qt reads for
 wheel modifiers stays up, so a pinch arrived as plain scrolling. A native event
-filter remembers the time of such messages, which Qt gives to the wheel event.
-macOS sends a zoom gesture instead.
+filter remembers the time and delta of such messages, which Qt gives to the
+wheel event. macOS sends a zoom gesture instead.
 """
 from collections import deque
 import sys
@@ -21,15 +21,26 @@ NOTCH_ZOOM = 1.12
 class PinchFilter(QAbstractNativeEventFilter):
     def __init__(self):
         super().__init__()
-        self.times = deque(maxlen=64)
+        # (time, delta) of each flagged message. The time alone is only a
+        # millisecond tick, which a plain wheel message can share.
+        self.wheels = deque(maxlen=64)
 
     def nativeEventFilter(self, event_type, message):
         if bytes(event_type) == b'windows_generic_MSG':
             from ctypes import wintypes
             msg = wintypes.MSG.from_address(int(message))
             if msg.message == WM_MOUSEWHEEL and msg.wParam & MK_CONTROL:
-                self.times.append(msg.time)
+                delta = (msg.wParam >> 16) & 0xFFFF  # HIWORD, a signed short
+                self.wheels.append((msg.time, delta - 0x10000 if delta & 0x8000 else delta))
         return False, 0
+
+    def take(self, event):
+        """Whether a wheel event came from a flagged message; each message zooms once."""
+        key = (event.timestamp(), event.angleDelta().y())
+        if key in self.wheels:
+            self.wheels.remove(key)
+            return True
+        return False
 
 
 _filter = None
@@ -45,8 +56,8 @@ def install(app):
 
 def zooms(event):
     """Whether a wheel event asks to zoom: Ctrl+wheel or a touchpad pinch."""
-    return bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier
-                or (_filter is not None and event.timestamp() in _filter.times))
+    pinched = _filter is not None and _filter.take(event)
+    return bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier or pinched)
 
 
 def wheel_zoom(event):

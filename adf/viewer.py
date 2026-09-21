@@ -511,6 +511,8 @@ class PdfView(QGraphicsView):
 
     def focusOutEvent(self, event):
         self.clear_snap_guides()
+        # Edge scrolling stops; a drag that goes on restarts it on the next move.
+        self.selection_scroll.stop()
         super().focusOutEvent(event)
 
     def drawForeground(self, painter, rect):
@@ -1025,7 +1027,9 @@ class PdfView(QGraphicsView):
 
     def scroll_selection(self):
         pointer = self.selection_pointer
-        if self.selection_start is None or pointer is None:
+        # A release another window took (a lost grab) never reaches mouseReleaseEvent.
+        if (self.selection_start is None or pointer is None
+                or not QApplication.mouseButtons() & Qt.MouseButton.LeftButton):
             self.selection_scroll.stop()
             return
         area, margin = self.viewport().rect(), 24
@@ -1198,8 +1202,10 @@ class PdfView(QGraphicsView):
                 event.accept()
                 return
             if isinstance(self.selection_item, TextSelection) and self.selection_item.text_path.isEmpty():
-                # Dragging across empty space selects nothing.
+                # Dragging across empty space selects nothing. Shift+clicking back onto the
+                # anchor empties a selection, so its text must not stay copyable either.
                 self.clear_region_selection()
+                self.selectionCleared.emit()
                 self.update_content_cursor(pos)
                 event.accept()
                 return

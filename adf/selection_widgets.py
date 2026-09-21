@@ -164,6 +164,8 @@ class TextSelection(QGraphicsObject):
         return min(self.anchor, self.focus), max(self.anchor, self.focus)
 
     def select(self, anchor, focus):
+        if (anchor, focus) == (self.anchor, self.focus):
+            return  # Most drag moves stay within a character; a dense page is slow to rebuild.
         self.prepareGeometryChange()
         self.anchor, self.focus = anchor, focus
         self.text_path = QPainterPath()

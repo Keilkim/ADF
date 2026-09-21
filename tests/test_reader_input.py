@@ -204,32 +204,56 @@ def pinch_wheel(view, y, timestamp, *, modifiers=Qt.KeyboardModifier.NoModifier)
     QApplication.sendEvent(view.viewport(), event)
 
 
+def pinch_message(time, wparam):
+    from ctypes import addressof, wintypes
+    msg = wintypes.MSG()
+    msg.message, msg.wParam, msg.time = pinch.WM_MOUSEWHEEL, wparam, time
+    pinch._filter.nativeEventFilter(b'windows_generic_MSG', addressof(msg))
+
+
 @pytest.mark.skipif(sys.platform != 'win32', reason='Windows wheel messages')
 def test_windows_touchpad_pinch_zooms_in_proportion(view, monkeypatch):
-    from ctypes import addressof, wintypes
     monkeypatch.setattr(pinch, '_filter', pinch.PinchFilter())
-
-    def message(time, wparam):
-        msg = wintypes.MSG()
-        msg.message, msg.wParam, msg.time = pinch.WM_MOUSEWHEEL, wparam, time
-        pinch._filter.nativeEventFilter(b'windows_generic_MSG', addressof(msg))
-
     view.goto(5)
     scale = view.transform().m11()
     # Windows marks the pinch's wheel messages with MK_CONTROL; the Ctrl key is up.
-    message(1000, (30 << 16) | pinch.MK_CONTROL)
+    pinch_message(1000, (30 << 16) | pinch.MK_CONTROL)
     pinch_wheel(view, 30, 1000)
     assert view.transform().m11() == pytest.approx(scale * 1.12 ** .25)
     assert view.current == 5
-    message(1001, (-30 & 0xFFFF) << 16 | pinch.MK_CONTROL)
+    pinch_message(1001, (-30 & 0xFFFF) << 16 | pinch.MK_CONTROL)
     pinch_wheel(view, -30, 1001)
     assert view.transform().m11() == pytest.approx(scale)
     # A wheel message without the flag still scrolls.
-    message(1002, (-120 & 0xFFFF) << 16)
+    pinch_message(1002, (-120 & 0xFFFF) << 16)
     target = view.navigation_target(1)
     pinch_wheel(view, -120, 1002)
     assert view.transform().m11() == pytest.approx(scale)
     assert view.current == target
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows wheel messages')
+def test_windows_plain_wheel_in_the_same_tick_as_a_pinch_still_scrolls(view, monkeypatch):
+    monkeypatch.setattr(pinch, '_filter', pinch.PinchFilter())
+    view.goto(5)
+    scale = view.transform().m11()
+    pinch_message(2000, (30 << 16) | pinch.MK_CONTROL)
+    # A mouse notch in the same millisecond carries another delta, so it turns the page.
+    target = view.navigation_target(1)
+    pinch_wheel(view, -120, 2000)
+    assert view.transform().m11() == pytest.approx(scale)
+    assert view.current == target
+    pinch_wheel(view, 30, 2000)
+    assert view.transform().m11() == pytest.approx(scale * 1.12 ** .25)
+    # Each pinch message zooms once; a second event like it is plain scrolling.
+    pinch_wheel(view, 30, 2000)
+    assert view.transform().m11() == pytest.approx(scale * 1.12 ** .25)
+    assert not pinch._filter.wheels
+    # A real Ctrl+wheel uses up its flagged message too, so it cannot linger.
+    pinch_message(2001, (-120 & 0xFFFF) << 16 | pinch.MK_CONTROL)
+    pinch_wheel(view, -120, 2001, modifiers=Qt.KeyboardModifier.ControlModifier)
+    assert view.transform().m11() == pytest.approx(scale * 1.12 ** -.75)
+    assert not pinch._filter.wheels
 
 
 def test_ctrl_wheel_notch_still_zooms_twelve_percent(view):
@@ -263,4 +287,25 @@ def test_compare_view_turns_pinch_fractions_into_zoom_steps(app):
                                 1 / 1.12 - 1, QPointF())
     QApplication.sendEvent(view.viewport(), event)
     assert steps == [1, -1]
+    view.deleteLater()
+
+
+def test_compare_view_turns_back_on_the_first_opposite_notch(app):
+    from adf.compare_widgets import CompareView
+    view = CompareView()
+    steps = []
+    view.zoomRequested.connect(steps.append)
+    ctrl = Qt.KeyboardModifier.ControlModifier
+    wheel(view, 60, modifiers=ctrl)  # half a notch in, left over
+    wheel(view, -120, modifiers=ctrl)
+    assert steps == [-1]
+    wheel(view, -60, modifiers=ctrl)
+    wheel(view, 120, modifiers=ctrl)
+    assert steps == [-1, 1]
+    pos = QPointF(50, 50)
+    for value in (1.12 ** -.5 - 1, .12):  # a half pinch out, then a full pinch in
+        event = QNativeGestureEvent(Qt.NativeGestureType.ZoomNativeGesture, TRACKPAD, 2, pos, pos, pos,
+                                    value, QPointF())
+        QApplication.sendEvent(view.viewport(), event)
+    assert steps == [-1, 1, 1]
     view.deleteLater()
