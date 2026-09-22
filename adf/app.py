@@ -327,20 +327,32 @@ class MainWindow(QMainWindow):
         self.build_editor()
         from .fullscreen import FullscreenReader
         self.fullscreen = FullscreenReader(self)
-        self.status_label = QLabel('모든 문서는 이 컴퓨터에서 처리됩니다')
-        self.status_label.setObjectName('muted')
-        self.statusBar().addPermanentWidget(self.status_label)
-        # Bottom right, below the document: it never covers pages or notices.
+        from .notice import MenuCorner, Notice
+        # There is no status bar: notices float above the page navigation, and
+        # the save state and update button end the menu bar, so the pages get
+        # the height. A native (macOS) menu bar cannot hold widgets; there they
+        # end the page navigation instead.
+        self.notice = Notice(self, self.page_nav)
+        self.document_state = MenuCorner()
+        state_row = QHBoxLayout(self.document_state)
+        state_row.setContentsMargins(0, 0, 6, 0)
+        state_row.setSpacing(0)
+        self.save_state = QLabel()
+        self.save_state.setObjectName('saveState')
+        state_row.addWidget(self.save_state)
         self.update_button = QPushButton()
         self.update_button.setObjectName('updateButton')
         self.update_button.clicked.connect(self.update_clicked)
         self.update_button.hide()
-        self.statusBar().addPermanentWidget(self.update_button)
+        state_row.addWidget(self.update_button)
+        if self.menuBar().isNativeMenuBar():
+            self.page_nav.layout().addWidget(self.document_state)
+        else:
+            self.menuBar().setCornerWidget(self.document_state, Qt.Corner.TopRightCorner)
         self.updates = None
         self.update_notifier = None
         self.installing_update = False
         self.closed_document = None
-        self.statusBar().showMessage('준비됨')
         self.refresh_actions()
         if not smoke:
             geometry = self.settings.value('geometry')
@@ -493,85 +505,7 @@ class MainWindow(QMainWindow):
         outer = QVBoxLayout(editor)
         outer.setContentsMargins(0,0,0,0)
         outer.setSpacing(0)
-        self.docbar = QFrame()
-        self.docbar.setObjectName('pagebar')
-        row = QHBoxLayout(self.docbar)
-        row.setContentsMargins(20,9,18,9)
-        self.filename = QLabel()
-        self.filename.setStyleSheet('font-weight: 600;')
-        row.addWidget(self.filename)
-        self.dirty_badge = QLabel('저장된 문서')
-        self.dirty_badge.setObjectName('badge')
-        row.addWidget(self.dirty_badge)
-        row.addStretch()
-        previous = QToolButton()
-        previous.setIcon(icon('left'))
-        previous.setToolTip('이전 페이지 (PgUp)')
-        previous.clicked.connect(lambda: self.view.navigate(-1))
-        self.page_spin = QSpinBox()
-        self.page_spin.setMinimum(1)
-        self.page_spin.setMinimumWidth(76)
-        self.page_spin.setAccessibleName('현재 페이지')
-        self.page_spin.setKeyboardTracking(False)
-        self.page_spin.valueChanged.connect(lambda i: self.view.goto(i-1))
-        self.nav_total = QLabel()
-        following = QToolButton()
-        following.setIcon(icon('right'))
-        following.setToolTip('다음 페이지 (PgDn)')
-        following.clicked.connect(lambda: self.view.navigate(1))
-        self.view_buttons = {}
-        self.view_button_group = QButtonGroup(self)
-        def view_separator():
-            separator = QFrame()
-            separator.setObjectName('viewGroupSeparator')
-            separator.setFixedSize(1, 20)
-            row.addWidget(separator)
-
-        for label, mode in [('한 쪽씩 보기','single'),('한 쪽 연속 보기','continuous'),
-                            ('두 쪽씩 보기','spread'),('두 쪽 연속 보기','spread_continuous'),('전체 보기','grid')]:
-            if mode in ('spread', 'grid'):
-                view_separator()
-            button = QToolButton()
-            button.setIcon(icon(mode))
-            button.setToolTip(label)
-            button.setAccessibleName(label)
-            button.setCheckable(True)
-            self.view_button_group.addButton(button)
-            button.setChecked(mode == 'continuous')
-            button.clicked.connect(lambda checked=False, value=mode: self.set_view_mode(value))
-            row.addWidget(button)
-            self.view_buttons[mode] = button
-        view_separator()
-        self.fullscreen_button = QToolButton()
-        self.fullscreen_button.setDefaultAction(self.actions['fullscreen'])
-        self.fullscreen_button.setAccessibleName('전체 화면')
-        self.fullscreen_button.setToolTip('전체 화면 (F11)')
-        row.addWidget(self.fullscreen_button)
-        view_separator()
-        self.direction_buttons = {}
-        for label, start_right in [('첫 페이지를 왼쪽에 놓기', False), ('첫 페이지를 오른쪽에 놓기', True)]:
-            button = QToolButton()
-            name = 'start_right' if start_right else 'start_left'
-            button_icon = icon(name)
-            muted = icon(name, '#c4cbd5').pixmap(24, 24)
-            for state in (QIcon.State.Off, QIcon.State.On):
-                button_icon.addPixmap(muted, QIcon.Mode.Disabled, state)
-            button.setIcon(button_icon)
-            button.setToolTip(label)
-            button.setAccessibleName(label)
-            button.setCheckable(True)
-            button.clicked.connect(lambda checked=False, value=start_right: self.set_start_side(value))
-            row.addWidget(button)
-            self.direction_buttons[start_right] = button
-        self.zoom = QComboBox()
-        self.zoom.setEditable(True)
-        self.zoom.addItems(['폭 맞춤','페이지 맞춤','50%','75%','100%','125%','150%','200%'])
-        self.zoom.setFixedWidth(118)
-        self.zoom.setAccessibleName('확대 배율')
-        self.zoom.activated.connect(self.zoom_selected)
-        self.zoom.lineEdit().returnPressed.connect(self.zoom_selected)
-        row.addWidget(self.zoom)
-        outer.addWidget(self.docbar)
+        self.page_nav = self.build_page_nav()
         self.textbar = QFrame()
         self.textbar.setObjectName('contextToolbar')
         text_layout = QVBoxLayout(self.textbar)
@@ -679,7 +613,7 @@ class MainWindow(QMainWindow):
         self.thumbnails.insertionRequested.connect(self.show_page_add_menu)
         self.thumbnails.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.thumbnails.customContextMenuRequested.connect(self.page_context_menu)
-        self.thumbnails.renderError.connect(lambda e: self.statusBar().showMessage('미리보기를 만들 수 없습니다: '+e,10000))
+        self.thumbnails.renderError.connect(lambda e: self.notice.showMessage('미리보기를 만들 수 없습니다: '+e,10000))
         sl.addWidget(self.thumbnails)
         side_tools = QHBoxLayout()
         side_tools.setContentsMargins(12,0,12,0)
@@ -705,12 +639,12 @@ class MainWindow(QMainWindow):
         self.view.textRequested.connect(self.edit_text)
         self.view.textFinished.connect(self.finish_text_selection)
         self.view.textGeometryChanged.connect(self.text_geometry_changed)
-        self.view.textPreviewError.connect(lambda e: self.statusBar().showMessage('텍스트 미리보기: ' + e, 6000))
+        self.view.textPreviewError.connect(lambda e: self.notice.showMessage('텍스트 미리보기: ' + e, 6000))
         self.view.imageSelected.connect(self.select_image)
         self.view.filesDropped.connect(self.drop_files)
         self.view.selectedText.connect(self.set_selected_text)
         self.view.selectionCleared.connect(self.clear_content_selection)
-        self.view.renderError.connect(lambda e: self.statusBar().showMessage('페이지를 표시할 수 없습니다: '+e,10000))
+        self.view.renderError.connect(lambda e: self.notice.showMessage('페이지를 표시할 수 없습니다: '+e,10000))
         self.view.pen.strokeReady.connect(self.apply_ink)
         self.view.pen.eraseReady.connect(self.apply_eraser)
         self.view.pen.failed.connect(self.error)
@@ -718,7 +652,6 @@ class MainWindow(QMainWindow):
         self.view.pen.canceled.connect(lambda: self.change_pointer('select_tool'))
         self.view.inkTransformed.connect(self.transform_ink)
         reader_pane = QWidget()
-        reader_pane.setMinimumWidth(320)
         reader_layout = QVBoxLayout(reader_pane)
         reader_layout.setContentsMargins(0,0,0,0)
         reader_layout.setSpacing(0)
@@ -727,16 +660,109 @@ class MainWindow(QMainWindow):
         self.reader_splitter = self.page_sidebar.splitter
         self.page_sidebar.expandedChanged.connect(lambda expanded: self.thumbnails.timer.start(0) if expanded else None)
         outer.addWidget(self.page_sidebar,1)
-        nav = QWidget()
-        self.page_nav = nav
-        nr = QHBoxLayout(nav)
-        nr.setContentsMargins(16,6,16,6)
-        nr.addStretch()
-        for widget in (previous, self.page_spin, self.nav_total, following):
-            nr.addWidget(widget)
-        nr.addStretch()
-        reader_layout.addWidget(nav)
+        reader_layout.addWidget(self.page_nav)
+        # No fixed minimum width: the page navigation, which carries every view
+        # option, sets it, and it grows with the page count label.
         self.stack.addWidget(editor)
+
+    def build_page_nav(self):
+        """The bar below the pages: view options on both sides of the page navigation."""
+        nav = QWidget()
+        row = QHBoxLayout(nav)
+        row.setContentsMargins(12, 5, 12, 5)
+        row.setSpacing(2)
+
+        def separator():
+            line = QFrame()
+            line.setObjectName('viewGroupSeparator')
+            line.setFixedSize(1, 20)
+            row.addSpacing(5)
+            row.addWidget(line)
+            row.addSpacing(5)
+
+        def view_button(label, mode):
+            button = QToolButton()
+            button.setIcon(icon(mode))
+            button.setToolTip(label)
+            button.setAccessibleName(label)
+            button.setCheckable(True)
+            self.view_button_group.addButton(button)
+            button.setChecked(mode == 'continuous')
+            button.clicked.connect(lambda checked=False, value=mode: self.set_view_mode(value))
+            row.addWidget(button)
+            self.view_buttons[mode] = button
+
+        self.view_buttons = {}
+        self.view_button_group = QButtonGroup(self)
+        row.addStretch()
+        view_button('한 쪽씩 보기', 'single')
+        view_button('한 쪽 연속 보기', 'continuous')
+        separator()
+        view_button('두 쪽씩 보기', 'spread')
+        view_button('두 쪽 연속 보기', 'spread_continuous')
+        self.direction_buttons = {}
+        for label, start_right in [('첫 페이지를 왼쪽에 놓기', False), ('첫 페이지를 오른쪽에 놓기', True)]:
+            button = QToolButton()
+            name = 'start_right' if start_right else 'start_left'
+            button_icon = icon(name)
+            muted = icon(name, '#c4cbd5').pixmap(24, 24)
+            for state in (QIcon.State.Off, QIcon.State.On):
+                button_icon.addPixmap(muted, QIcon.Mode.Disabled, state)
+            button.setIcon(button_icon)
+            button.setToolTip(label)
+            button.setAccessibleName(label)
+            button.setCheckable(True)
+            button.clicked.connect(lambda checked=False, value=start_right: self.set_start_side(value))
+            row.addWidget(button)
+            self.direction_buttons[start_right] = button
+        separator()
+        previous = QToolButton()
+        previous.setIcon(icon('left'))
+        previous.setToolTip('이전 페이지 (PgUp)')
+        previous.clicked.connect(lambda: self.view.navigate(-1))
+        row.addWidget(previous)
+        self.page_spin = QSpinBox()
+        self.page_spin.setMinimum(1)
+        self.page_spin.setMinimumWidth(76)
+        self.page_spin.setAccessibleName('현재 페이지')
+        self.page_spin.setKeyboardTracking(False)
+        self.page_spin.valueChanged.connect(lambda i: self.view.goto(i-1))
+        row.addWidget(self.page_spin)
+        self.nav_total = QLabel()
+        row.addWidget(self.nav_total)
+        following = QToolButton()
+        following.setIcon(icon('right'))
+        following.setToolTip('다음 페이지 (PgDn)')
+        following.clicked.connect(lambda: self.view.navigate(1))
+        row.addWidget(following)
+        separator()
+        view_button('전체 보기', 'grid')
+        self.fit_button = QToolButton()
+        self.fit_button.setIcon(icon('fit_page'))
+        self.fit_button.setToolTip('페이지 맞춤')
+        self.fit_button.setAccessibleName('페이지 맞춤')
+        self.fit_button.clicked.connect(lambda: self.view.fit('page'))
+        row.addWidget(self.fit_button)
+        self.zoom = QComboBox()
+        self.zoom.setEditable(True)
+        self.zoom.addItems(['폭 맞춤','페이지 맞춤','50%','75%','100%','125%','150%','200%'])
+        self.zoom.setFixedWidth(104)
+        self.zoom.setAccessibleName('확대 배율')
+        self.zoom.activated.connect(self.zoom_selected)
+        self.zoom.lineEdit().returnPressed.connect(self.zoom_selected)
+        row.addSpacing(4)
+        row.addWidget(self.zoom)
+        separator()
+        # Follows the action: '전체 화면', and '전체 화면 해제' while full screen.
+        self.fullscreen_button = QToolButton()
+        self.fullscreen_button.setDefaultAction(self.actions['fullscreen'])
+        self.fullscreen_button.setAccessibleName('전체 화면')
+        row.addWidget(self.fullscreen_button)
+        row.addStretch()
+        return nav
+
+    def document_name(self):
+        return Path(self.document.path).name if self.document.path else '새 문서.pdf'
 
     def error(self, error):
         # Keep the failing operation's traceback, without PDF contents, so a
@@ -758,11 +784,14 @@ class MainWindow(QMainWindow):
     def toggle_snap(self, enabled):
         self.view.set_snap_enabled(enabled)
         self.settings.setValue('object_snap', enabled)
-        self.statusBar().showMessage('오브젝트 스냅 켜짐 · Alt를 누르면 잠시 해제됩니다' if enabled else '오브젝트 스냅 꺼짐', 3500)
+        self.notice.showMessage('오브젝트 스냅 켜짐 · Alt를 누르면 잠시 해제됩니다' if enabled else '오브젝트 스냅 꺼짐', 3500)
 
     def refresh_selection_status(self):
+        # A notice over the pages on every thumbnail click would be noise; only
+        # a multi-page selection needs the hint.
         count = len(self.thumbnails.selectedItems())
-        self.statusBar().showMessage(f'{count}개 페이지 선택 · 끌어서 순서를 바꿀 수 있습니다' if count else '페이지를 선택하세요')
+        if count > 1:
+            self.notice.showMessage(f'{count}개 페이지 선택 · 끌어서 순서를 바꿀 수 있습니다')
 
     def refresh_actions(self):
         loaded = bool(self.document.page_count)
@@ -788,14 +817,19 @@ class MainWindow(QMainWindow):
         self.actions['undo'].setEnabled(loaded and self.document.can_undo)
         self.actions['redo'].setEnabled(loaded and self.document.can_redo)
         if loaded:
-            self.filename.setText(Path(self.document.path).name if self.document.path else '새 문서.pdf')
-            self.filename.setToolTip(str(self.document.path or ''))
-            self.dirty_badge.setText('저장하지 않은 변경' if self.document.dirty else ('저장된 문서' if editable else '읽기 전용'))
-            self.setWindowTitle(f'{"● " if self.document.dirty else ""}{self.filename.text()} — ADF')
+            name = self.document_name()
+            self.save_state.setText('저장 안 됨' if self.document.dirty else ('저장됨' if editable else '읽기 전용'))
+            self.save_state.setToolTip(str(self.document.path or name))
+            if self.save_state.property('unsaved') != self.document.dirty:
+                self.save_state.setProperty('unsaved', self.document.dirty)
+                self.save_state.style().unpolish(self.save_state)
+                self.save_state.style().polish(self.save_state)
+            self.setWindowTitle(f'{"● " if self.document.dirty else ""}{name} — ADF')
             self.page_total.setText(f'{self.document.page_count}쪽')
             self.nav_total.setText(f'/ {self.document.page_count}')
             self.page_spin.setMaximum(self.document.page_count)
         else:
+            self.save_state.setText('')
             self.setWindowTitle('ADF — 문서 작업, 가볍게')
 
     def maybe_save(self):
@@ -843,7 +877,7 @@ class MainWindow(QMainWindow):
                 try:
                     candidate = load_pdf(path, password, self)
                     if candidate is None:
-                        self.statusBar().showMessage('문서 열기를 취소했습니다', 5000)
+                        self.notice.showMessage('문서 열기를 취소했습니다', 5000)
                         return False
                     break
                 except PasswordRequired:
@@ -869,7 +903,7 @@ class MainWindow(QMainWindow):
                 recent = self.settings.value('recent',[],type=list)
                 absolute = str(Path(path).resolve())
                 self.settings.setValue('recent',([absolute]+[p for p in recent if p!=absolute])[:8])
-            self.statusBar().showMessage('문서를 열었습니다 · Ctrl+S 저장 · Ctrl+Shift+S 다른 이름 저장',6000)
+            self.notice.showMessage('문서를 열었습니다 · Ctrl+S 저장 · Ctrl+Shift+S 다른 이름 저장',6000)
             return True
         except Exception as e:
             if candidate is not None:
@@ -903,7 +937,7 @@ class MainWindow(QMainWindow):
         try:
             callback()
             self.refresh_document()
-            self.statusBar().showMessage('변경했습니다 · Ctrl+Z로 실행 취소할 수 있습니다',4000)
+            self.notice.showMessage('변경했습니다 · Ctrl+Z로 실행 취소할 수 있습니다',4000)
             return True
         except Exception as e:
             self.error(e)
@@ -930,7 +964,7 @@ class MainWindow(QMainWindow):
         try:
             self.document.save(self.document.path)
             self.refresh_actions()
-            self.statusBar().showMessage(f'저장 완료 · {self.document.path}', 6000)
+            self.notice.showMessage(f'저장 완료 · {self.document.path}', 6000)
             return True
         except Exception as error:
             self.error(error)
@@ -948,7 +982,7 @@ class MainWindow(QMainWindow):
         try:
             self.document.save(path)
             self.refresh_actions()
-            self.statusBar().showMessage(f'저장 완료 · {path}',10000)
+            self.notice.showMessage(f'저장 완료 · {path}',10000)
             return True
         except Exception as e:
             self.error(e)
@@ -958,7 +992,7 @@ class MainWindow(QMainWindow):
         if self.worker or not self.maybe_save():
             return
         self.show_empty_workspace()
-        self.statusBar().showMessage('PDF 파일을 열어주세요')
+        self.notice.clearMessage()
 
     def show_empty_workspace(self):
         self.fullscreen.exit()
@@ -1047,9 +1081,9 @@ class MainWindow(QMainWindow):
             page,xref = self.selected_image
             self.edit(lambda: self.document.remove_image(page,xref))
         elif self.clip_text or self.view.selection_item is not None:
-            self.statusBar().showMessage('선택한 글을 수정하려면 상단 텍스트 수정을 사용하세요', 5000)
+            self.notice.showMessage('선택한 글을 수정하려면 상단 텍스트 수정을 사용하세요', 5000)
         elif self.view.hasFocus():
-            self.statusBar().showMessage('페이지를 삭제하려면 왼쪽 페이지 목록에서 선택하세요', 5000)
+            self.notice.showMessage('페이지를 삭제하려면 왼쪽 페이지 목록에서 선택하세요', 5000)
         else:
             self.edit(lambda: self.document.delete(self.selected_pages()))
 
@@ -1089,7 +1123,7 @@ class MainWindow(QMainWindow):
                 return
         image = clipboard.image()
         if image.isNull():
-            self.statusBar().showMessage('복사한 이미지나 PDF · PNG · JPG 파일이 없습니다', 6000)
+            self.notice.showMessage('복사한 이미지나 PDF · PNG · JPG 파일이 없습니다', 6000)
             return
         data = QByteArray()
         buffer = QBuffer(data)
@@ -1234,7 +1268,7 @@ class MainWindow(QMainWindow):
             message = f'페이지 번호 {len(removed):,}개를 지웠습니다 · Ctrl+Z로 되돌릴 수 있습니다'
             if kept:
                 message += f' · 번호 주변이 바뀐 {len(kept):,}쪽은 그대로 두었습니다'
-            self.statusBar().showMessage(message, 8000)
+            self.notice.showMessage(message, 8000)
 
     def compress(self):
         from .dialogs import CompressionDialog
@@ -1356,7 +1390,7 @@ class MainWindow(QMainWindow):
         self.worker_temp.cleanup()
         self.worker_temp = None
         if canceled:
-            self.statusBar().showMessage('작업을 취소했습니다 · 저장된 파일이 없습니다',5000)
+            self.notice.showMessage('작업을 취소했습니다 · 저장된 파일이 없습니다',5000)
             return
         if exit_code != 0 or 'error' in result:
             self.error(result.get('error','작업을 완료하지 못했습니다.'))
@@ -1372,9 +1406,9 @@ class MainWindow(QMainWindow):
         elif task['operation']=='split':
             QMessageBox.information(self,'분리 완료',f'{len(result["result"])}개 PDF를 저장했습니다.\n{task["output_dir"]}')
         elif task['operation']=='extract':
-            self.statusBar().showMessage(f'페이지 추출 완료 · {task["output"]}', 12000)
+            self.notice.showMessage(f'페이지 추출 완료 · {task["output"]}', 12000)
         else:
-            self.statusBar().showMessage(f'병합 완료 · {task["output"]}',12000)
+            self.notice.showMessage(f'병합 완료 · {task["output"]}',12000)
             self.open_path(task['output'])
 
     def compare_versions(self):
@@ -1398,9 +1432,9 @@ class MainWindow(QMainWindow):
             dialog.deleteLater()
             result = export_markdown(self, options)
             if result is None:
-                self.statusBar().showMessage('Markdown 내보내기를 취소했습니다 · 결과 파일은 저장하지 않았습니다', 8000)
+                self.notice.showMessage('Markdown 내보내기를 취소했습니다 · 결과 파일은 저장하지 않았습니다', 8000)
                 return
-            self.statusBar().showMessage(f'Markdown 내보내기 완료 · {options["output"]}', 15000)
+            self.notice.showMessage(f'Markdown 내보내기 완료 · {options["output"]}', 15000)
             message = f'{result["pages"]}페이지 · 표 {result["tables"]}개 · 그림 {result["figures"]}개\n\n{options["output"]}'
             if result['warnings']:
                 message += f'\n\n확인이 필요한 항목 {len(result["warnings"])}개가 있습니다. conversion.json과 원본을 비교하세요.'
@@ -1465,7 +1499,7 @@ class MainWindow(QMainWindow):
             self.active_stamp_id = identifier
             self.view.start_stamp(pm, stamp.width_mm)
             self.stamp_dock.set_active(identifier)
-            self.statusBar().showMessage(f'{stamp.name} · PDF를 클릭해서 찍으세요 · Esc로 종료')
+            self.notice.showMessage(f'{stamp.name} · PDF를 클릭해서 찍으세요 · Esc로 종료')
         except Exception as error:
             self.stop_stamp()
             self.error(error)
@@ -1494,7 +1528,7 @@ class MainWindow(QMainWindow):
             self.view.invalidate_page(page_index)
             self.thumbnails.invalidate_page(page_index)
             self.refresh_actions()
-            self.statusBar().showMessage(f'{stamp.name} · 계속 클릭해서 찍을 수 있습니다 · Ctrl+Z 취소 · Esc 종료')
+            self.notice.showMessage(f'{stamp.name} · 계속 클릭해서 찍을 수 있습니다 · Ctrl+Z 취소 · Esc 종료')
         except Exception as error:
             self.stop_stamp()
             self.error(error)
@@ -1510,7 +1544,7 @@ class MainWindow(QMainWindow):
     def paste_image(self):
         image = QApplication.clipboard().image()
         if image.isNull():
-            self.statusBar().showMessage('클립보드에 이미지가 없습니다',5000)
+            self.notice.showMessage('클립보드에 이미지가 없습니다',5000)
             return
         data = QByteArray()
         buffer = QBuffer(data)
@@ -1563,11 +1597,11 @@ class MainWindow(QMainWindow):
         self.textbar.setVisible(checked and self.text_selection is not None)
         if checked:
             self.view.setDragMode(PdfView.DragMode.NoDrag)
-            self.statusBar().clearMessage()
+            self.notice.clearMessage()
         else:
             self.clear_text_selection()
             self.view.setDragMode(PdfView.DragMode.NoDrag if self.pointer_mode == 'select_tool' else PdfView.DragMode.ScrollHandDrag)
-            self.statusBar().showMessage('텍스트 수정 내용은 문서에 반영되었습니다 · 저장할 때 한 번에 기록됩니다')
+            self.notice.showMessage('텍스트 수정 내용은 문서에 반영되었습니다 · 저장할 때 한 번에 기록됩니다')
 
     def toggle_image_select(self,checked):
         self.stop_pen()
@@ -1582,18 +1616,18 @@ class MainWindow(QMainWindow):
         self.clear_text_selection()
         self.clear_content_selection()
         self.view.setDragMode(PdfView.DragMode.NoDrag if checked or self.pointer_mode == 'select_tool' else PdfView.DragMode.ScrollHandDrag)
-        self.statusBar().showMessage('기존 이미지를 클릭한 뒤 Delete를 누르면 삭제됩니다' if checked else '이미지 선택을 해제했습니다')
+        self.notice.showMessage('기존 이미지를 클릭한 뒤 Delete를 누르면 삭제됩니다' if checked else '이미지 선택을 해제했습니다')
 
     def select_image(self,page,xref):
         self.clip_text = ''
         self.selected_image = (page,xref)
-        self.statusBar().showMessage('이미지 선택됨 · Ctrl+C로 복사 · Delete로 삭제 · Esc로 선택 해제')
+        self.notice.showMessage('이미지 선택됨 · Ctrl+C로 복사 · Delete로 삭제 · Esc로 선택 해제')
 
     def edit_text(self,page,span):
         if self.text_selection_dirty and not self.apply_text():
             return
         if span.get('wmode', 0) or tuple(span.get('dir', (1, 0))) != (1, 0):
-            self.statusBar().showMessage('세로쓰기나 기울어진 텍스트는 아직 문단 편집을 지원하지 않습니다', 6000)
+            self.notice.showMessage('세로쓰기나 기울어진 텍스트는 아직 문단 편집을 지원하지 않습니다', 6000)
             return
         self.clear_text_selection()
         source = original_font(self.document.doc[page], span.get('font', ''), span.get('text', ''))
@@ -1783,7 +1817,7 @@ class MainWindow(QMainWindow):
                                        fontbuffer=self.edit_font.data, fit=True, target_rect=target_rect,
                                        source_rects=selection.get('source_rects'), lineheight=selection.get('lineheight'))
             self.refresh_document()
-            self.statusBar().showMessage('텍스트를 문서에 반영했습니다 · 마지막에 저장하면 모든 변경이 함께 기록됩니다', 6000)
+            self.notice.showMessage('텍스트를 문서에 반영했습니다 · 마지막에 저장하면 모든 변경이 함께 기록됩니다', 6000)
             return True
         except Exception as exc:
             self.error(exc)
@@ -1821,7 +1855,7 @@ class MainWindow(QMainWindow):
         self.actions['select_image'].setChecked(False)
         self.view.update_content_cursor()
         if mode == 'region_tool':
-            self.statusBar().showMessage('복사할 영역을 드래그하세요 · 표·그래프·글을 함께 이미지로 복사 · Esc 종료', 6000)
+            self.notice.showMessage('복사할 영역을 드래그하세요 · 표·그래프·글을 함께 이미지로 복사 · Esc 종료', 6000)
         return True
 
     def activate_pen(self):
@@ -1864,7 +1898,7 @@ class MainWindow(QMainWindow):
                 self.view.render_visible()
                 self.thumbnails.invalidate_page(page_index)
                 self.refresh_actions()
-                self.statusBar().showMessage('필기를 지웠습니다 · Ctrl+Z 취소 · Ctrl+S 저장', 4000)
+                self.notice.showMessage('필기를 지웠습니다 · Ctrl+Z 취소 · Ctrl+S 저장', 4000)
         except Exception as error:
             self.error(error)
 
@@ -1876,7 +1910,7 @@ class MainWindow(QMainWindow):
             self.view.invalidate_page(page_index)
             self.thumbnails.invalidate_page(page_index)
             self.refresh_actions()
-            self.statusBar().showMessage('필기 완료 · Esc 후 필기를 클릭하면 객체 조절 · Ctrl+Z 취소 · Ctrl+S 저장', 6000)
+            self.notice.showMessage('필기 완료 · Esc 후 필기를 클릭하면 객체 조절 · Ctrl+Z 취소 · Ctrl+S 저장', 6000)
         except Exception as error:
             self.error(error)
 
@@ -1891,7 +1925,7 @@ class MainWindow(QMainWindow):
             self.thumbnails.invalidate_page(index)
             self.view.select_ink(index, updated)
             self.refresh_actions()
-            self.statusBar().showMessage('필기를 조절했습니다 · Ctrl+Z 취소 · Ctrl+S 저장', 4000)
+            self.notice.showMessage('필기를 조절했습니다 · Ctrl+Z 취소 · Ctrl+S 저장', 4000)
         except Exception as error:
             self.view.clear_ink_selection()
             self.error(error)
@@ -1907,11 +1941,11 @@ class MainWindow(QMainWindow):
     def set_selected_text(self,text):
         if getattr(self.document.doc,'_adf_owner_authenticated',False) or self.document.doc.permissions & pymupdf.PDF_PERM_COPY:
             self.clip_text = text
-            self.statusBar().showMessage('Ctrl+C 텍스트 복사 · Ctrl+Shift+C 영역을 이미지로 복사' if text else
+            self.notice.showMessage('Ctrl+C 텍스트 복사 · Ctrl+Shift+C 영역을 이미지로 복사' if text else
                                         'Ctrl+C 또는 Ctrl+Shift+C로 선택 영역을 이미지로 복사',5000)
         else:
             self.clip_text = ''
-            self.statusBar().showMessage('이 PDF는 텍스트 복사를 허용하지 않습니다',5000)
+            self.notice.showMessage('이 PDF는 텍스트 복사를 허용하지 않습니다',5000)
 
     def copy_text(self):
         if not self.copy_allowed():
@@ -1922,7 +1956,7 @@ class MainWindow(QMainWindow):
         if self.selected_image:
             doc = self.document.doc
             if not (getattr(doc, '_adf_owner_authenticated', False) or doc.permissions & pymupdf.PDF_PERM_COPY):
-                self.statusBar().showMessage('이 PDF는 이미지 복사를 허용하지 않습니다', 5000)
+                self.notice.showMessage('이 PDF는 이미지 복사를 허용하지 않습니다', 5000)
                 return
             try:
                 _, xref = self.selected_image
@@ -1950,7 +1984,7 @@ class MainWindow(QMainWindow):
         if doc is None:
             return False
         if not (getattr(doc, '_adf_owner_authenticated', False) or doc.permissions & pymupdf.PDF_PERM_COPY):
-            self.statusBar().showMessage('이 PDF는 복사를 허용하지 않습니다', 5000)
+            self.notice.showMessage('이 PDF는 복사를 허용하지 않습니다', 5000)
             return False
         return True
 
@@ -1976,7 +2010,7 @@ class MainWindow(QMainWindow):
         if not hasattr(self, 'copy_notice'):
             self.copy_notice = CopyNotice(self.view.viewport())
         self.copy_notice.announce(message)
-        self.statusBar().showMessage(message+' · 클립보드 · Ctrl+V로 붙여넣기', 4000)
+        self.notice.showMessage(message+' · 클립보드 · Ctrl+V로 붙여넣기', 4000)
 
     def toggle_fullscreen(self):
         if self.fullscreen.active:
@@ -2003,7 +2037,7 @@ class MainWindow(QMainWindow):
             self.change_pointer('select_tool')
         elif self.active_stamp_id:
             self.stop_stamp()
-            self.statusBar().showMessage('스탬프 모드를 종료했습니다', 3000)
+            self.notice.showMessage('스탬프 모드를 종료했습니다', 3000)
         elif self.view.placement:
             self.cancel_image()
         elif self.text_selection:
@@ -2053,7 +2087,7 @@ class MainWindow(QMainWindow):
             self.search_timer.start(0)
         except Exception as e:
             self.search_count.setText('검색 실패')
-            self.statusBar().showMessage(str(e),7000)
+            self.notice.showMessage(str(e),7000)
 
     def next_match(self,direction=1):
         if self.search_matches and self.document.page_count:
@@ -2112,7 +2146,7 @@ class MainWindow(QMainWindow):
             self.start_semantic_job()
         else:
             self.search_count.setText('찾을 글자가 없습니다')
-            self.statusBar().showMessage('글자가 없는 페이지는 뜻으로 찾을 수 없습니다 · 스캔 문서는 OCR · MD로 내보내 확인하세요', 8000)
+            self.notice.showMessage('글자가 없는 페이지는 뜻으로 찾을 수 없습니다 · 스캔 문서는 OCR · MD로 내보내 확인하세요', 8000)
 
     def start_semantic_job(self):
         from .semantic_search import SearchJob
@@ -2137,7 +2171,7 @@ class MainWindow(QMainWindow):
         self.semantic_job = None
         if job.error is not None:
             self.search_count.setText('검색 실패')
-            self.statusBar().showMessage(str(job.error), 7000)
+            self.notice.showMessage(str(job.error), 7000)
             return
         self.semantic_encoder = job.encoder
         index = self.semantic_index
@@ -2156,7 +2190,7 @@ class MainWindow(QMainWindow):
         self.view.set_highlights(self.search_matches)
         self.next_match()
         page, _, text = index['passages'][job.order[0]]
-        self.statusBar().showMessage(f'뜻이 가까운 순서로 {len(self.search_matches)}곳을 표시합니다 · 1위 {page+1}쪽: {text[:40]}', 8000)
+        self.notice.showMessage(f'뜻이 가까운 순서로 {len(self.search_matches)}곳을 표시합니다 · 1위 {page+1}쪽: {text[:40]}', 8000)
 
     def cancel_semantic_search(self, forget=False):
         self.semantic_delay.stop()
@@ -2187,7 +2221,7 @@ class MainWindow(QMainWindow):
             return
         pages = options.pages
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
-        printer.setDocName(self.filename.text())
+        printer.setDocName(self.document_name())
         printer.setFullPage(False)
         dialog = QPrintDialog(printer,self)
         # The range above supports disjoint pages on every platform. This
@@ -2256,7 +2290,7 @@ class MainWindow(QMainWindow):
     def default_app(self):
         if sys.platform=='win32':
             QDesktopServices.openUrl(QUrl('ms-settings:defaultapps?registeredAppUser=ADF'))
-            self.statusBar().showMessage('Windows 설정에서 ADF를 선택하고 .pdf의 기본 앱으로 지정하세요',15000)
+            self.notice.showMessage('Windows 설정에서 ADF를 선택하고 .pdf의 기본 앱으로 지정하세요',15000)
         else:
             QMessageBox.information(self,'기본 PDF 앱 설정','Finder에서 PDF를 선택 → 정보 가져오기 → 다음으로 열기에서 ADF 선택 → 모두 변경을 사용하세요.')
 
@@ -2428,12 +2462,12 @@ class MainWindow(QMainWindow):
         service.pause()
         self.installing_update = True
         self.show_update_state()
-        self.statusBar().showMessage('받은 업데이트 파일을 확인하는 중입니다…')
+        self.notice.showMessage('받은 업데이트 파일을 확인하는 중입니다…')
         service.verify_staged(package, lambda valid: self.verified_update(package, valid))
 
     def verified_update(self, package, valid):
         service = self.updates
-        self.statusBar().clearMessage()
+        self.notice.clearMessage()
         if not valid:
             self.stop_update_install()
             QMessageBox.warning(self, 'ADF 업데이트', '받은 업데이트 파일이 손상되어 다시 받습니다. 준비되면 다시 알려 드립니다.')
@@ -2456,19 +2490,19 @@ class MainWindow(QMainWindow):
         close_windows(windows)
         self.update_waiting = set(windows)
         self.update_deadline = time.monotonic()+120
-        self.statusBar().showMessage('다른 ADF 창을 닫는 중입니다. 저장 여부를 묻는 창이 뜨면 답해 주세요.')
+        self.notice.showMessage('다른 ADF 창을 닫는 중입니다. 저장 여부를 묻는 창이 뜨면 답해 주세요.')
         QTimer.singleShot(300, lambda: self.wait_for_other_windows(package))
 
     def wait_for_other_windows(self, package):
         from .updates import running
         self.update_waiting = running(self.update_waiting)
         if not self.update_waiting:
-            self.statusBar().clearMessage()
+            self.notice.clearMessage()
             self.finish_update_install(package)
         elif time.monotonic() < self.update_deadline:
             QTimer.singleShot(300, lambda: self.wait_for_other_windows(package))
         else:
-            self.statusBar().clearMessage()
+            self.notice.clearMessage()
             self.stop_update_install()
             QMessageBox.information(self, 'ADF 업데이트', '다른 ADF 창이 아직 열려 있어 업데이트를 멈췄습니다.\n'
                                     '그 창의 작업을 마치고 닫은 뒤 다시 눌러 주세요.')
@@ -2553,7 +2587,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         if self.worker:
-            self.statusBar().showMessage('진행 중인 작업을 완료하거나 취소한 뒤 닫아주세요',5000)
+            self.notice.showMessage('진행 중인 작업을 완료하거나 취소한 뒤 닫아주세요',5000)
             event.ignore()
             return
         if not self.maybe_save():
