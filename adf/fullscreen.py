@@ -122,7 +122,7 @@ class FullscreenReader(QObject):
         self.background = view.backgroundBrush()
         self.scrollbars = (view.horizontalScrollBarPolicy(), view.verticalScrollBarPolicy())
         self.chrome = [(widget, widget.isVisible()) for widget in
-                       (window.menuBar(), window.statusBar(), window.stamp_dock) if widget is not None]
+                       (window.menuBar(), window.stamp_dock) if widget is not None]
         window.stop_stamp()
         window.clear_content_selection()
         self.moved = []
@@ -137,7 +137,7 @@ class FullscreenReader(QObject):
         for action in window.menuBar().actions():
             menu.addAction(action)
         self.panels['top'].layout().addWidget(menu)
-        for widget in (window.toolbar, window.docbar, window.textbar, window.searchbar, window.imagebar):
+        for widget in (window.toolbar, window.textbar, window.searchbar, window.imagebar):
             self.move_widget(widget, self.panels['top'])
         self.move_widget(window.sidebar, self.panels['left'])
         window.sidebar.show()

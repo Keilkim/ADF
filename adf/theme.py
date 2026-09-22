@@ -54,6 +54,7 @@ def icon(name, color='#525b6a'):
         'minus': [(5,12,19,12)],
         'fullscreen': [(9,4,4,4),(4,4,4,9),(15,4,20,4),(20,4,20,9),(4,15,4,20),(4,20,9,20),(20,15,20,20),(20,20,15,20)],
         'fullscreen_exit': [(4,9,9,9),(9,9,9,4),(20,9,15,9),(15,9,15,4),(9,20,9,15),(9,15,4,15),(15,20,15,15),(15,15,20,15)],
+        'fit_page': [(7,3,17,3),(17,3,17,21),(17,21,7,21),(7,21,7,3),(12,7,12,17),(10,9,12,7),(12,7,14,9),(10,15,12,17),(12,17,14,15)],
         'undo': [(8,5,3,10),(3,10,8,15),(3,10,15,10),(15,10,20,13),(20,13,20,19)],
         'redo': [(16,5,21,10),(21,10,16,15),(21,10,9,10),(9,10,4,13),(4,13,4,19)],
         'number': [(9,3,7,21),(17,3,15,21),(4,9,21,9),(3,16,20,16)],
@@ -153,11 +154,13 @@ QScrollBar:horizontal { background: transparent; height: 11px; margin: 2px; }
 QScrollBar::handle:horizontal { background: #bdc4cf; border-radius: 4px; min-width: 35px; }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
-QStatusBar { background: #f6f7f9; color: #707988; padding: 3px 12px; border: none; }
 QPushButton#updateButton { background: #39393d; color: white; border: none; border-radius: 9px; padding: 2px 12px; margin-left: 8px; font-size: 9pt; font-weight: 600; min-height: 16px; }
 QPushButton#updateButton:hover { background: #4a4a50; }
 QPushButton#updateButton:disabled { background: transparent; color: #707988; font-weight: 400; }
 QLabel#muted { color: #77808e; }
+QLabel#notice { background: rgba(40, 40, 44, 0.92); color: white; border-radius: 8px; padding: 7px 14px; font-size: 9pt; }
+QLabel#saveState { color: #77808e; font-size: 9pt; padding: 0 6px; }
+QLabel#saveState[unsaved="true"] { color: #d93025; font-weight: 600; }
 QWidget#emptyWorkspace { background: #e8ebef; }
 QLabel#emptyTitle { font-size: 13pt; font-weight: 600; color: #667180; }
 QLabel#title { font-size: 27pt; font-weight: 650; color: #222c3b; }
@@ -175,10 +178,8 @@ QToolButton#pageSidebarToggle {
 }
 QToolButton#pageSidebarToggle:hover { background: #dddddf; }
 QToolButton#pageSidebarToggle:pressed { background: #e0e1e4; }
-QFrame#pagebar { background: #f8f9fb; border: none; }
 QWidget#fullscreenStage { background: #e8ebef; }
 QFrame#fullscreenPanel { background: #f8f9fb; border: none; }
-QLabel#badge { background: #eeeeef; color: #62656b; border-radius: 5px; padding: 4px 9px; font-size: 9pt; }
 QGroupBox { border: 1px solid #dfe3ea; border-radius: 8px; margin-top: 14px; padding: 15px; }
 QGroupBox::title { subcontrol-origin: margin; left: 13px; padding: 0 5px; }
 QCheckBox { spacing: 8px; padding: 5px 0; }

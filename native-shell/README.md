@@ -5,12 +5,12 @@
 (`IInitializeWithStream`, `IThumbnailProvider`). Explorer only loads this small
 native component. The PDF application remains a separate process.
 
-The installer copies it as `ADFShell-0.3.28.dll` beside `ADF.exe` and registers
+The installer copies it as `ADFShell-0.3.29.dll` beside `ADF.exe` and registers
 these values under `HKCU\Software\Classes`:
 
 ```text
 CLSID\{8093F936-820B-4CDB-A64B-7A39EC807A11}\InprocServer32
-  (Default) = <install directory>\ADFShell-0.3.28.dll
+  (Default) = <install directory>\ADFShell-0.3.29.dll
   ThreadingModel = Apartment
 SystemFileAssociations\.pdf\shellex\ContextMenuHandlers\ADF
   (Default) = {8093F936-820B-4CDB-A64B-7A39EC807A11}
@@ -20,7 +20,7 @@ The thumbnail handler is registered beside it:
 
 ```text
 CLSID\{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}\InprocServer32
-  (Default) = <install directory>\ADFShell-0.3.28.dll
+  (Default) = <install directory>\ADFShell-0.3.29.dll
   ThreadingModel = Apartment
 SystemFileAssociations\.pdf\shellex\{E357FCCD-A995-4576-B01F-234630154E96}
   (Default) = {A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}

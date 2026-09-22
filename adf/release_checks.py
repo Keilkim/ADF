@@ -349,7 +349,7 @@ def check_fullscreen(window, folder, output):
     assert window.isFullScreen() and full.active
     assert view.viewport().size() == window.size()
     assert not any(widget.isVisible() for widget in
-                   (window.toolbar, window.sidebar, window.page_nav, window.menuBar(), window.statusBar()))
+                   (window.toolbar, window.sidebar, window.page_nav, window.menuBar()))
     window.grab().save(str(output.with_name(output.stem+'-fullscreen.png')))
     size, scale = view.size(), view.transform().m11()
     edges = {'top': QPoint(view.width()//2, 1), 'left': QPoint(1, view.height()//2),

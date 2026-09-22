@@ -74,7 +74,7 @@ class FullscreenTests(unittest.TestCase):
 
     def test_button_enters_document_only_screen_and_escape_restores(self):
         window = self.window
-        row = window.docbar.layout()
+        row = window.page_nav.layout()
         self.assertGreater(row.indexOf(window.fullscreen_button), row.indexOf(window.view_buttons['grid']))
         window.view.goto(3)
         before = window.geometry()
@@ -86,8 +86,8 @@ class FullscreenTests(unittest.TestCase):
         self.assertEqual(window.geometry().size(), window.screen().geometry().size())
         self.assertEqual(window.view.size(), window.size())
         self.assertEqual(window.view.viewport().size(), window.size())
-        for widget in (window.menuBar(), window.toolbar, window.sidebar, window.docbar,
-                       window.page_nav, window.statusBar(), window.page_sidebar.toggle):
+        for widget in (window.menuBar(), window.toolbar, window.sidebar,
+                       window.page_nav, window.page_sidebar.toggle):
             self.assertFalse(widget.isVisible(), widget.objectName())
         QTest.keyClick(window.view.viewport(), Qt.Key.Key_Escape)
         QTest.qWait(60)

@@ -316,7 +316,7 @@ class DesktopWorkflowTests(unittest.TestCase):
         QApplication.clipboard().setText('keep clipboard')
         self.window.copy_text()
         self.assertEqual(QApplication.clipboard().text(), 'keep clipboard')
-        self.assertIn('허용하지 않습니다', self.window.statusBar().currentMessage())
+        self.assertIn('허용하지 않습니다', self.window.notice.currentMessage())
         self.window.copy_region()
         self.assertEqual(QApplication.clipboard().text(), 'keep clipboard')
         self.assertFalse(self.window.actions['region_tool'].isEnabled())
@@ -779,7 +779,7 @@ class DesktopWorkflowTests(unittest.TestCase):
             text = self.window.document.doc[index].get_text()
             self.assertNotIn(f'p.{index + 1}', text.split())
             self.assertIn(f'needle page {index + 1}', text)
-        self.assertIn('페이지 번호 6개를 지웠습니다', self.window.statusBar().currentMessage())
+        self.assertIn('페이지 번호 6개를 지웠습니다', self.window.notice.currentMessage())
         self.window.undo()
         self.assertEqual(self.window.document.numbered_pages(), list(range(6)))
         self.assert_source_unchanged()
@@ -1075,6 +1075,50 @@ class DesktopWorkflowTests(unittest.TestCase):
             QTest.mouseClick(continuous, Qt.MouseButton.LeftButton)
         self.assertEqual(self.window.view.mode, 'single')
         self.assertEqual([mode for mode, button in self.window.view_buttons.items() if button.isChecked()], ['single'])
+
+    def test_page_bar_holds_view_options_and_there_is_no_status_bar(self):
+        from PySide6.QtWidgets import QStatusBar
+        window = self.window
+        self.assertIsNone(window.findChild(QStatusBar))
+        row = window.page_nav.layout()
+        order = [window.view_buttons['single'], window.view_buttons['continuous'],
+                 window.view_buttons['spread'], window.view_buttons['spread_continuous'],
+                 window.direction_buttons[False], window.direction_buttons[True], window.page_spin,
+                 window.view_buttons['grid'], window.fit_button, window.zoom, window.fullscreen_button]
+        positions = [row.indexOf(widget) for widget in order]
+        self.assertNotIn(-1, positions)
+        self.assertEqual(positions, sorted(positions))
+        window.view.set_zoom(2)
+        QTest.mouseClick(window.fit_button, Qt.MouseButton.LeftButton)
+        self.assertEqual(window.view.fit_mode, 'page')
+
+    def test_save_state_ends_the_menu_bar_and_turns_red_when_unsaved(self):
+        window = self.window
+        corner = window.document_state
+        self.assertIs(window.menuBar().cornerWidget(Qt.Corner.TopRightCorner), corner)
+        self.assertEqual(window.save_state.text(), '저장됨')
+        self.assertFalse(window.save_state.property('unsaved'))
+        window.actions['rotate'].trigger()
+        self.app.processEvents()
+        self.assertEqual(window.save_state.text(), '저장 안 됨')
+        self.assertTrue(window.save_state.property('unsaved'))
+        self.assertTrue(window.windowTitle().startswith('● source.pdf'))
+        self.assertGreaterEqual(corner.width(), corner.sizeHint().width(), 'The save state must not be clipped')
+        window.update_button.setText('업데이트 설치 · 9.9.9')
+        window.update_button.show()
+        self.app.processEvents()
+        self.assertGreaterEqual(corner.width(), corner.sizeHint().width(), 'The update button must not be clipped')
+
+    def test_notices_float_above_the_page_bar_and_expire(self):
+        window = self.window
+        nav_top = window.page_nav.mapTo(window, QPoint(0, 0)).y()
+        with patch('adf.notice.DEFAULT_TIMEOUT', 50):
+            window.notice.showMessage('안내 문구')
+            self.assertTrue(window.notice.isVisible())
+            self.assertEqual(window.notice.currentMessage(), '안내 문구')
+            self.assertLessEqual(window.notice.geometry().bottom(), nav_top)
+            self.wait_until(lambda: not window.notice.isVisible(), 2)
+        self.assertEqual(window.notice.currentMessage(), '')
 
     def test_tool_button_focus_does_not_look_like_an_active_tool(self):
         self.window.activateWindow()

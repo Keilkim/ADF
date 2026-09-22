@@ -94,7 +94,7 @@ QT_QPA_PLATFORM=offscreen dist/ADF.app/Contents/MacOS/ADF \
 
 ## Mac에서 우선 확인할 부분
 
-1. **화면 안내의 Ctrl 표기:** 단축키는 Qt가 Mac에서 ⌘로 바꾸지만 기능 둘러보기, 복사 알림, 상태 표시줄, 대화상자와 사용안내의 "Ctrl+…" 문구는 그대로 표시됩니다(`adf/intro_widgets.py`, `adf/notice_widgets.py`, `adf/app.py`, `adf/dialogs.py`, `docs/사용안내.html`).
+1. **화면 안내의 Ctrl 표기:** 단축키는 Qt가 Mac에서 ⌘로 바꾸지만 기능 둘러보기, 복사 알림, 화면 알림, 대화상자와 사용안내의 "Ctrl+…" 문구는 그대로 표시됩니다(`adf/intro_widgets.py`, `adf/notice_widgets.py`, `adf/app.py`, `adf/dialogs.py`, `docs/사용안내.html`).
 2. **Finder에서 PDF 열기:** `ADF.spec`의 PDF 문서 유형 선언과 `adf/app.py`의 `FileOpen` 처리가 있습니다. 앱이 꺼진 상태와 열린 상태에서 PDF 더블클릭·여러 파일 열기·끌어 놓기를 설치한 앱으로 확인합니다.
 3. **화면과 입력:** Retina 배율, 트랙패드 스크롤·확대, 한글 입력, 실제 인쇄 대화상자를 확인합니다. 스모크 검사는 offscreen이라 이 부분을 대신하지 않습니다.
 4. **PDF 글꼴:** Apple SD Gothic Neo처럼 CID-keyed CFF로 내장된 글꼴은 `adf/fonts.py`가 원본 글꼴로 재사용하지 않아(의도된 제한) 편집할 때 대체 글꼴 확인 창이 나타납니다. 그래서 시작 안내 PDF는 Mac에서 TrueType인 AppleGothic을 넣습니다. 또 MuPDF가 텍스트의 글꼴 이름을 구분 접두어를 포함해 31바이트로 잘라(`WVUWMG+Apple SD Gothic Neo Regu`) 긴 이름의 글꼴은 같은 PC 글꼴이 있어도 찾지 못합니다. Windows에서도 이름이 긴 글꼴이면 같은 확인 창이 나타납니다.
