@@ -2,7 +2,7 @@
 
 [공식 사이트·다운로드](https://adf-desktop.vercel.app) · [소스코드](https://github.com/Keilkim/ADF) · [최신 릴리즈](https://github.com/Keilkim/ADF/releases/tag/v0.3.30) · [기여 안내](CONTRIBUTING.md) · [코드 서명 현황](CODE_SIGNING.md)
 
-**현재 배포 상태:** Windows용 0.3.30과 macOS용 0.3.27을 제공합니다. Mac용 0.3.30은 서명·공증을 마친 뒤 같은 릴리즈에 추가합니다. Mac용은 Developer ID 서명·Apple 공증을 완료했습니다. Windows용은 미서명이며 스마트 앱 컨트롤이나 SmartScreen이 실행을 차단하거나 경고할 수 있습니다. Windows Server 2022에서 설치·앱 실행·문서 처리·제거를 확인했으며, Windows 10/11의 실제 탐색기 통합과 입력 장치는 추가 확인이 필요합니다. 대응 소스와 검증 기록은 릴리즈에 있습니다.
+**현재 배포 상태:** Windows와 macOS 모두 0.3.30을 제공합니다. Mac용 앱과 DMG는 Developer ID 서명·Apple 공증을 완료했습니다. [Mac 검증 기록](docs/검증-0.3.30-macOS.md)을 참고하세요. Windows용은 미서명이며 스마트 앱 컨트롤이나 SmartScreen이 실행을 차단하거나 경고할 수 있습니다. Windows Server 2022에서 설치·앱 실행·문서 처리·제거를 확인했으며, Windows 10/11의 실제 탐색기 통합과 입력 장치는 추가 확인이 필요합니다. 대응 소스와 검증 기록은 릴리즈에 있습니다.
 
 ADF 자체 코드는 **AGPL-3.0-or-later**로 공개합니다. 웹사이트는 소개·다운로드·도움말을 담당하며, PDF 작업과 도장 보관은 데스크톱 앱의 로컬 처리로 유지합니다. 도장 이미지·이름·크기는 사용자 PC의 `stamps.sqlite3`에 저장됩니다.
 
@@ -144,7 +144,7 @@ Windows 글꼴은 등록된 표시 이름과 별개로 파일 내부의 한글·
 
 ## 사내 배포 담당자
 
-직원에게는 **`ADF-Setup-0.3.30.exe` 하나를 전달하면 됩니다.** Mac 사용자에게는 Mac용 0.3.30이 추가되기 전까지 `ADF-0.3.27-macOS.dmg`를 전달합니다. 설치 파일 안에 실행에 필요한 구성 요소, 사용안내, 라이선스 원문, 해당 버전의 ADF 및 외부 라이브러리 소스 ZIP과 OCR 모델 5개와 뜻 검색 모델이 포함됩니다. 소스는 설치 후에도 인터넷 없이 복사할 수 있습니다. `release`의 별도 소스 ZIP과 안내 HTML은 설치 전 열람과 배포 담당자의 보관을 위한 동일 내용의 사본입니다.
+직원에게는 **`ADF-Setup-0.3.30.exe` 하나를 전달하면 됩니다.** Mac 사용자에게는 `ADF-0.3.30-macOS.dmg`를 전달합니다. 설치 파일 안에 실행에 필요한 구성 요소, 사용안내, 라이선스 원문, 해당 버전의 ADF 및 외부 라이브러리 소스 ZIP과 OCR 모델 5개와 뜻 검색 모델이 포함됩니다. 소스는 설치 후에도 인터넷 없이 복사할 수 있습니다. `release`의 별도 소스 ZIP과 안내 HTML은 설치 전 열람과 배포 담당자의 보관을 위한 동일 내용의 사본입니다.
 
 | 파일 | 용도 |
 | --- | --- |
@@ -155,9 +155,10 @@ Windows 글꼴은 등록된 표시 이름과 별개로 파일 내부의 한글·
 | `ADF-Update-0.3.28-to-0.3.30.exe` · `ADF-Update-0.3.29-to-0.3.30.exe` | 0.3.28·0.3.29에서 바뀐 파일만 담은 업데이트 패치. 설치한 ADF의 자동 업데이트가 받습니다 |
 | `ADF-Files-0.3.30-Windows.json` | 설치되는 파일 목록. 다음 릴리즈가 이 버전용 업데이트 패치를 만들 때 씁니다 |
 | `ADF-Build-0.3.30-Windows.json` | 설치 파일을 만든 GitHub Actions 빌드의 커밋·실행 기록 |
-| `ADF-Guide-0.3.30-Windows.html` · `ADF-Guide-0.3.27-macOS.html` | 브라우저에서 여는 플랫폼별 오프라인 사용안내 |
-| `ADF-0.3.27-macOS.dmg` | 사용안내·라이선스·소스까지 포함한 Apple Silicon Mac(macOS 15 이상)용 앱 |
-| `ADF-Source-0.3.27-macOS.zip` · `ADF-ThirdParty-Sources-0.3.27-macOS.zip` · `SHA256SUMS-0.3.27-macOS.txt` | Mac 빌드의 대응 소스·외부 라이브러리 소스·해시. 플랫폼마다 외부 라이브러리가 달라 Windows 파일과 이름을 구분합니다 |
+| `ADF-Guide-0.3.30-Windows.html` · `ADF-Guide-0.3.30-macOS.html` | 브라우저에서 여는 플랫폼별 오프라인 사용안내 |
+| `ADF-0.3.30-macOS.dmg` | 사용안내·라이선스·소스까지 포함한 Apple Silicon Mac(macOS 15 이상)용 앱 |
+| `ADF-Source-0.3.30-macOS.zip` · `ADF-ThirdParty-Sources-0.3.30-macOS.zip` · `SHA256SUMS-0.3.30-macOS.txt` | Mac 빌드의 대응 소스·외부 라이브러리 소스·해시. 플랫폼마다 외부 라이브러리가 달라 Windows 파일과 이름을 구분합니다 |
+| `ADF-Verification-0.3.30-macOS.json` · `ADF-Release-Status-0.3.30-macOS.md` | Mac 빌드 커밋·자동 검사·서명·공증 및 검증 범위 |
 
 배포 담당자가 아래 배포 조건을 확인한 뒤 명시적으로 확인하는 무인 설치 명령은 `ADF-Setup-0.3.30.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /ADFACKNOTICE=0.3.30`입니다. 해당 명령도 실행한 사용자에게 설치됩니다. 관리자 계정에서 실행하면 그 관리자에게 설치되므로 일반 사용자 배포는 사용자 문맥에서 실행하세요. 제거는 Windows 설정 → 앱 → 설치된 앱 → ADF에서 합니다. 설치·제거는 다른 PDF 프로그램의 기본 연결을 강제로 바꾸지 않습니다. 개인 PDF 파일은 제거 대상이 아닙니다. 제거하면 자동 업데이트가 받아 둔 설치 파일과 로그(`%LOCALAPPDATA%\ADF\ADF\updates`)도 지웁니다. 도장 보관함과 앱 설정은 남깁니다.
 
