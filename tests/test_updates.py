@@ -534,6 +534,30 @@ class UpdateWindowTests(unittest.TestCase):
         self.assertEqual(self.window.update_button.text(), '업데이트 받는 중 · 42%')
         self.assertFalse(self.window.update_button.isEnabled())
 
+    def test_opening_adf_with_a_downloaded_update_asks_once_to_install_it(self):
+        self.window.show()
+        self.ready()
+        with patch.object(self.window, 'ask_to_update', return_value=True) as ask, \
+             patch.object(self.window, 'install_update') as install:
+            self.window.offer_update()
+            self.window.offer_update()
+        ask.assert_called_once_with('0.3.28', False)
+        install.assert_called_once_with()
+
+    def test_a_download_during_work_waits_for_the_next_document_and_later_keeps_the_button(self):
+        self.window.show()
+        with patch.object(self.window, 'ask_to_update', return_value=False) as ask, \
+             patch.object(self.window, 'install_update') as install:
+            self.ready()
+            QTest.qWait(50)
+            ask.assert_not_called()
+            self.assertTrue(self.window.open_path(self.pdf()))
+            wait_until(lambda: ask.called)
+        ask.assert_called_once_with('0.3.28', False)
+        install.assert_not_called()
+        self.assertFalse(self.window.update_button.isHidden())
+        self.assertEqual(self.window.update_button.text(), '업데이트 설치 · 0.3.28')
+
     def pdf(self, name='열린 문서.pdf'):
         path = self.root/name
         with pymupdf.open() as doc:
