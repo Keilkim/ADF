@@ -351,6 +351,7 @@ class MainWindow(QMainWindow):
             self.menuBar().setCornerWidget(self.document_state, Qt.Corner.TopRightCorner)
         self.updates = None
         self.update_notifier = None
+        self.update_offered = None
         self.installing_update = False
         self.closed_document = None
         self.refresh_actions()
@@ -904,6 +905,7 @@ class MainWindow(QMainWindow):
                 absolute = str(Path(path).resolve())
                 self.settings.setValue('recent',([absolute]+[p for p in recent if p!=absolute])[:8])
             self.notice.showMessage('문서를 열었습니다 · Ctrl+S 저장 · Ctrl+Shift+S 다른 이름 저장',6000)
+            QTimer.singleShot(300, self.offer_update)
             return True
         except Exception as e:
             if candidate is not None:
@@ -2368,6 +2370,8 @@ class MainWindow(QMainWindow):
         self.update_notifier = UpdateNotifier(self.windowIcon(), self)
         self.update_notifier.clicked.connect(self.update_clicked)
         service.start()
+        # An update downloaded in an earlier session is offered once ADF is on screen.
+        QTimer.singleShot(1500, self.offer_update)
 
     def toggle_auto_update(self, checked):
         self.settings.setValue('updates/auto', checked)
@@ -2432,6 +2436,43 @@ class MainWindow(QMainWindow):
         elif service.state == 'manual':
             title, reason = self.manual_update_reason()
             self.update_notifier.show(title, reason+' 이 알림을 누르면 다운로드 페이지를 엽니다.', '다운로드 페이지 열기')
+
+    def offer_update(self):
+        """Ask to install a downloaded update when ADF or a document opens.
+
+        Asked once per version and session. A download that finishes during work
+        only shows the notification and the menu bar button: a dialog appearing
+        while the user types could take an Enter meant for the document.
+        """
+        service = self.updates
+        if (service is None or service.state != 'ready' or service.package is None or self.installing_update
+                or self.update_offered == service.package.version or not self.isVisible()
+                or self.worker is not None or self.loading_dialog is not None
+                or QApplication.activeModalWidget() is not None):
+            return
+        self.update_offered = service.package.version
+        if self.ask_to_update(service.package.version, service.platform == 'darwin'):
+            self.install_update()
+
+    def ask_to_update(self, version, mac):
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle('ADF 업데이트')
+        box.setText(f'새 버전({version})을 설치할 준비가 되었습니다.')
+        if mac:
+            detail = '지금 업데이트하면 설치 화면을 열고 ADF를 닫습니다. ADF를 응용 프로그램 폴더로 끌어 놓아 바꾸세요.'
+        elif self.document.page_count:
+            detail = ('지금 업데이트하면 ADF를 잠시 닫았다가 보던 문서를 다시 엽니다.\n'
+                      '저장하지 않은 변경이 있으면 먼저 저장 여부를 묻습니다.')
+        else:
+            detail = '지금 업데이트하면 ADF를 잠시 닫았다가 다시 엽니다.'
+        box.setInformativeText(detail)
+        proceed = box.addButton('업데이트 진행하기', QMessageBox.ButtonRole.AcceptRole)
+        later = box.addButton('나중에', QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(proceed)
+        box.setEscapeButton(later)
+        box.exec()
+        return box.clickedButton() is proceed
 
     def update_clicked(self):
         service = self.updates
