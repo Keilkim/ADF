@@ -54,6 +54,8 @@ bash scripts/build-macos.sh
 
 의존성 설치, OpenCV 빌드, 아이콘·OCR 모델·고지·대응 소스 준비, PyInstaller 앱 번들, DMG, 해시와 패키지 정적 검사까지 실행해 `dist/ADF.app`과 `release/ADF-<버전>-macOS.dmg`를 만듭니다. 함께 배포할 대응 소스·외부 라이브러리 소스·해시는 `release/ADF-Source-<버전>-macOS.zip`처럼 `-macOS`가 붙은 이름으로 만들어 Windows 파일과 구분합니다. `python3.12`가 없으면 `PYTHON=/경로/python3.12`로 가상 환경을 만들 Python을 지정합니다. 버전은 `adf/__init__.py`에서 읽습니다.
 
+앱에 들어가는 파일명은 서명 전에 NFD 형식으로 맞춥니다. APFS의 Git 체크아웃에는 조합형(NFC) 한글 파일명이 남을 수 있지만 Finder는 설치 복사 중 분해형(NFD)으로 바꿉니다. 조합형 이름으로 서명하면 빌드 폴더의 서명 검사와 Apple 공증은 통과해도 설치 후 문서 파일이 추가·누락된 것으로 판정되어 앱이 차단됩니다. `scripts/test-macos-copy.py`가 공증 전에 별도 복사본에 Finder와 같은 파일명 변환을 적용한 뒤 서명을 검사하며, 최종 정적 검사에서도 모든 번들 파일명이 NFD인지 확인합니다. 공개 전에는 실제 Finder로 응용 프로그램 폴더에 복사한 앱의 서명·실행도 확인합니다.
+
 ### 서명과 공증
 
 환경 변수가 없으면 ad-hoc 서명 빌드입니다. 빌드한 Mac에서는 실행되지만 다른 Mac에서는 Gatekeeper가 막으므로 배포하지 않습니다. 배포용은 Developer ID Application 인증서로 서명하고 Apple 공증을 받습니다.

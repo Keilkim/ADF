@@ -6,7 +6,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, co
 
 root = Path(SPECPATH)
 sys.path.insert(0, str(root / 'scripts'))
-from release_common import notice_dir, version
+from release_common import macos_bundle_entries, notice_dir, version
 notices = notice_dir(root)
 if not (notices / 'build-manifest.json').is_file():
     raise RuntimeError('Run scripts/collect-licenses.py before building the application.')
@@ -72,6 +72,9 @@ def needed_qt_entry(entry):
     return needed_qt_path(dest) and (typecode != 'SYMLINK' or needed_qt_path(source))
 a.binaries = [entry for entry in a.binaries if needed_qt_entry(entry)]
 a.datas = [entry for entry in a.datas if needed_qt_entry(entry)]
+if sys.platform == 'darwin':
+    a.binaries = macos_bundle_entries(a.binaries)
+    a.datas = macos_bundle_entries(a.datas)
 pyz = PYZ(a.pure)
 # macOS signs every bundled binary with the hardened runtime when a Developer ID is given, ad hoc otherwise.
 codesign_identity = (os.environ.get('ADF_CODESIGN_IDENTITY') or None) if sys.platform == 'darwin' else None

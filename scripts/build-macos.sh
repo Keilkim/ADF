@@ -33,6 +33,7 @@ ADF_CODESIGN_IDENTITY="$identity" "$python" -m PyInstaller --noconfirm --clean A
 version="$("$python" -c 'import sys; sys.path.insert(0, "scripts"); from pathlib import Path; from release_common import version; print(version(Path.cwd()))')"
 dmg="release/ADF-$version-macOS.dmg"
 mkdir -p release .tools/verification
+"$python" scripts/test-macos-copy.py dist/ADF.app --report ".tools/verification/copy-macos-$version.json"
 
 notarize() {
   local log=".tools/verification/notarization-$2-$version.json"

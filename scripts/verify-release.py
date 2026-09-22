@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 import types
+import unicodedata
 import zipfile
 
 from PyInstaller.archive.readers import CArchiveReader
@@ -109,11 +110,14 @@ def verify():
     assert not [path for path in bundle.rglob('*') if path.is_symlink() and not path.exists()], 'Broken links in the application'
     platform = {}
     if sys.platform == 'darwin':
+        assert all(path.name == unicodedata.normalize('NFD', path.name) for path in bundle.rglob('*')), \
+            'Bundle filenames would change during Finder installation; rebuild with NFD destinations before signing'
         declared = plistlib.loads((bundle/'Contents/Info.plist').read_bytes())['LSMinimumSystemVersion']
         required = required_macos(bundle)
         assert required <= tuple(map(int, declared.split('.'))), \
             f'Bundled binaries need macOS {".".join(map(str, required))}; Info.plist declares {declared}'
         platform['minimum_macos'] = declared
+        platform['finder_stable_filenames'] = True
     with zipfile.ZipFile(release/f'ADF-ThirdParty-Sources-{version}{suffix}.zip') as archive:
         assert archive.testzip() is None, 'Third-party archive CRC failure'
         assert archive.read('build-manifest.json') == third_party_manifest(manifest)

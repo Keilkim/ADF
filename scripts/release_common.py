@@ -4,12 +4,27 @@ import json
 import re
 import shutil
 import sys
+import unicodedata
 import zipfile
 
 SOURCE_ITEMS = ['main.py', 'adf', 'assets', 'docs', 'tests', 'scripts', 'installer',
                 'native-shell', 'ADF.spec', 'README.md', 'LICENSE', 'LICENSES', 'spec.md',
                 '.github', '.gitattributes', 'CODE_SIGNING.md', 'CONTRIBUTING.md', 'SECURITY.md',
                 'requirements.txt', 'requirements-ocr-lock.txt', 'requirements-build.txt', 'requirements-dev.txt', '.gitignore']
+
+
+def macos_bundle_entries(entries):
+    """Seal the decomposed filenames that Finder writes when installing an app.
+
+    APFS preserves composed names from a Git checkout, but Finder copies Korean
+    resource names in NFD form. Signing the composed spelling passes local
+    checks and notarization, then fails with added/missing resources after copy.
+    Only bundle destinations and relative symlink targets change; input files
+    and the corresponding source archives retain their original names.
+    """
+    return [(unicodedata.normalize('NFD', dest),
+             unicodedata.normalize('NFD', source) if kind == 'SYMLINK' else source, kind)
+            for dest, source, kind in entries]
 
 
 def ocr_packages(root):
