@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPointF, Qt
 from pathlib import Path
 import sys
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
@@ -42,6 +42,7 @@ def icon(name, color='#525b6a'):
                    (8,9,16,17),(7,22,21,22)],
         'options_arrow': [(6,6,18,18),(10,18,18,18),(18,10,18,18)],
         'magnet': [],
+        'hand': [],
         'ocr': [(8,3,8,1),(8,1,19,1),(19,1,22,4),(22,4,22,17),
                 (4,11,4,5),(4,5,14,5),(14,5,18,9),(18,9,18,11),(14,5,14,9),(14,9,18,9)],
         'pen': [(4,16,15,5),(15,5,19,9),(19,9,8,20),(8,20,3,21),(3,21,4,16),(4,16,8,20),(14,6,18,10),(16,4,18,2),(18,2,22,6),(22,6,20,8)],
@@ -105,6 +106,22 @@ def icon(name, color='#525b6a'):
         path.lineTo(9, 3); path.closeSubpath()
         p.drawPath(path)
         p.drawLine(5, 7, 9, 7); p.drawLine(15, 7, 19, 7)
+    if name == 'hand':
+        # An open palm: four rounded fingers, then the thumb folding back in.
+        path = QPainterPath()
+        path.moveTo(6.5, 15)
+        for left, top in ((6.5, 6), (9.5, 4), (12.5, 5), (15.5, 7)):
+            path.arcTo(left, top, 3, 3, 180, -180)
+        path.lineTo(18.5, 15)
+        path.cubicTo(18.5, 19, 16, 21.5, 12.5, 21.5)
+        path.lineTo(11, 21.5)
+        path.cubicTo(9, 21.5, 8, 20.8, 7, 19.7)
+        path.lineTo(3.4, 15.6)
+        path.cubicTo(2.5, 14.5, 3.9, 12.8, 5.1, 13.8)
+        path.lineTo(6.5, 15)
+        p.drawPath(path)
+        for x, top in ((9.5, 7.5), (12.5, 5.5), (15.5, 6.5)):
+            p.drawLine(QPointF(x, top), QPointF(x, 12))
     if name == 'ocr':
         eye = QPainterPath()
         eye.moveTo(2, 17)

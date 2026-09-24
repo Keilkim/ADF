@@ -269,6 +269,46 @@ class PenTests(unittest.TestCase):
         self.assertFalse(self.window.view.pen.enabled)
         self.assertEqual(len(list(self.window.document.doc[0].annots())), 1)
 
+    def test_hand_toggle_and_temporary_pan_restore_previous_tool(self):
+        window, view = self.window, self.window.view
+        view.set_zoom(3)
+        self.app.processEvents()
+        hand = window.actions['hand_tool']
+        self.assertIs(window.hand_button.defaultAction(), hand)
+        scroll = view.verticalScrollBar()
+        start = QPointF(view.viewport().rect().center())
+        for press, release in [
+                (lambda: QTest.keyPress(view, Qt.Key.Key_Space), lambda: QTest.keyRelease(view, Qt.Key.Key_Space)),
+                (lambda: QTest.mousePress(view.viewport(), Qt.MouseButton.MiddleButton, pos=start.toPoint()),
+                 lambda: QTest.mouseRelease(view.viewport(), Qt.MouseButton.MiddleButton, pos=start.toPoint()))]:
+            view.setFocus()
+            scroll.setValue(scroll.maximum() // 2)
+            before = scroll.value()
+            press()
+            self.assertTrue(hand.isChecked())
+            self.assertEqual(view.viewport().cursor().shape() in
+                             (Qt.CursorShape.OpenHandCursor, Qt.CursorShape.ClosedHandCursor), True)
+            QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start.toPoint())
+            QTest.mouseMove(view.viewport(), (start + QPointF(0, 60)).toPoint())
+            QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=(start + QPointF(0, 60)).toPoint())
+            self.assertLess(scroll.value(), before)
+            release()
+            self.assertFalse(view.pan.active)
+            self.assertTrue(window.actions['pen'].isChecked())
+            self.assertTrue(view.pen.enabled)
+            self.assertEqual(window.pointer_mode, 'pen')
+        # Nothing was drawn while panning.
+        self.assertEqual(len(list(window.document.doc[0].annots())), 0)
+        hand.trigger()
+        self.assertEqual(window.pointer_mode, 'hand_tool')
+        self.assertEqual(view.dragMode(), view.DragMode.ScrollHandDrag)
+        hand.trigger()
+        self.assertEqual(window.pointer_mode, 'pen')
+        hand.trigger()
+        window.escape()
+        self.assertEqual(window.pointer_mode, 'pen')
+        self.assertEqual(view.dragMode(), view.DragMode.NoDrag)
+
     def test_save_failure_keeps_original_and_unsaved_state(self):
         self.draw()
         with patch.object(self.window.document, 'save', side_effect=OSError('write failed')):

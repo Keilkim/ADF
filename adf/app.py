@@ -426,12 +426,13 @@ class MainWindow(QMainWindow):
         auto_update.setToolTip('인터넷에 연결되면 새 버전을 확인하고 뒤에서 받아 둡니다. 문서는 보내지 않습니다.')
         self.pointer_actions = QActionGroup(self)
         self.pointer_mode = 'select_tool'
-        for key, label in [('select_tool', '선택 도구'), ('hand_tool', '손 도구')]:
-            action = a(key, label, lambda checked=False, mode=key: self.change_pointer(mode), checkable=True)
-            self.pointer_actions.addAction(action)
+        self.pointer_actions.addAction(a('select_tool', '선택 도구', lambda: self.change_pointer('select_tool'), checkable=True))
+        self.pointer_actions.addAction(a('hand_tool', '손 도구', self.toggle_hand_tool, None, 'hand', checkable=True))
+        self.hand_return = None
         self.actions['select_tool'].setChecked(True)
         self.actions['select_tool'].setToolTip('텍스트를 드래그하거나 이미지를 클릭해서 선택합니다.')
-        self.actions['hand_tool'].setToolTip('문서를 끌어서 이동합니다.')
+        self.actions['hand_tool'].setToolTip('손 도구 · 문서를 끌어서 이동 · Esc로 해제\n'
+                                             'Space나 휠 버튼을 누르고 있는 동안에도 끌어서 이동합니다')
         self.pointer_actions.addAction(a('pen', '펜', self.activate_pen, None, 'pen', checkable=True))
         self.actions['pen'].setToolTip('펜 켜기 / 끄기 · 작은 화살표로 옵션 열기')
         self.pointer_actions.addAction(a('eraser', '지우개', lambda: self.toggle_drawing_tool('eraser'),
@@ -651,6 +652,7 @@ class MainWindow(QMainWindow):
         self.view.pen.failed.connect(self.error)
         self.view.regionCopied.connect(self.copy_region)
         self.view.pen.canceled.connect(lambda: self.change_pointer('select_tool'))
+        self.view.pan.changed.connect(self.show_temporary_pan)
         self.view.inkTransformed.connect(self.transform_ink)
         reader_pane = QWidget()
         reader_layout = QVBoxLayout(reader_pane)
@@ -696,6 +698,11 @@ class MainWindow(QMainWindow):
         self.view_buttons = {}
         self.view_button_group = QButtonGroup(self)
         row.addStretch()
+        self.hand_button = QToolButton()
+        self.hand_button.setDefaultAction(self.actions['hand_tool'])
+        self.hand_button.setAccessibleName('손 도구')
+        row.addWidget(self.hand_button)
+        separator()
         view_button('한 쪽씩 보기', 'single')
         view_button('한 쪽 연속 보기', 'continuous')
         separator()
@@ -1860,6 +1867,26 @@ class MainWindow(QMainWindow):
             self.notice.showMessage('복사할 영역을 드래그하세요 · 표·그래프·글을 함께 이미지로 복사 · Esc 종료', 6000)
         return True
 
+    def toggle_hand_tool(self):
+        """The hand stays on until clicked again or Esc, then the previous tool returns."""
+        if self.pointer_mode != 'hand_tool':
+            previous = (self.pointer_mode, self.actions['text'].isChecked(), self.actions['select_image'].isChecked())
+            if self.change_pointer('hand_tool'):
+                self.hand_return = previous
+            return
+        mode, text, image = self.hand_return or ('select_tool', False, False)
+        self.hand_return = None
+        if not self.change_pointer(mode):
+            return
+        for key, restore in (('text', self.toggle_text), ('select_image', self.toggle_image_select)):
+            if (text if key == 'text' else image) and self.actions[key].isEnabled():
+                self.actions[key].setChecked(True)
+                restore(True)
+
+    def show_temporary_pan(self, active):
+        # Space or the wheel button shows the hand pressed only while held.
+        self.actions['hand_tool' if active else self.pointer_mode].setChecked(True)
+
     def activate_pen(self):
         self.toggle_drawing_tool('pen')
 
@@ -2037,6 +2064,8 @@ class MainWindow(QMainWindow):
             self.change_pointer('select_tool')
         elif self.view.copy_region_mode:
             self.change_pointer('select_tool')
+        elif self.pointer_mode == 'hand_tool':
+            self.toggle_hand_tool()
         elif self.active_stamp_id:
             self.stop_stamp()
             self.notice.showMessage('스탬프 모드를 종료했습니다', 3000)
