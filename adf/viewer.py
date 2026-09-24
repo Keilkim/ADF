@@ -360,6 +360,9 @@ class PdfView(QGraphicsView):
         self.viewport().setMouseTracking(True)
         from .pen import PenInput
         self.pen = PenInput(self)
+        # Installed after the pen, so its filter sees mouse events first.
+        from .pan import TemporaryPan
+        self.pan = TemporaryPan(self)
 
     def load(self, document, current=0):
         self.reset_page_wheel()
@@ -495,7 +498,17 @@ class PdfView(QGraphicsView):
             item is not None and item.dragging and item._geometry_active
             for item in (self.placement, self.text_placement))
 
+    def holds_space(self, event):
+        # Space types in the text editor; everywhere else it holds the hand tool.
+        return (event.key() == Qt.Key.Key_Space and not event.modifiers()
+                and self.scene().focusItem() is None)
+
     def keyPressEvent(self, event):
+        if self.holds_space(event):
+            if not event.isAutoRepeat():
+                self.pan.begin('space')
+            event.accept()
+            return
         if event.key() == Qt.Key.Key_Alt and self.has_snap_interaction():
             self.refresh_snap_interaction(event.modifiers() | Qt.KeyboardModifier.AltModifier)
             event.accept()
@@ -503,6 +516,11 @@ class PdfView(QGraphicsView):
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
+        if event.key() == Qt.Key.Key_Space and 'space' in self.pan.sources:
+            if not event.isAutoRepeat():
+                self.pan.end('space')
+            event.accept()
+            return
         if event.key() == Qt.Key.Key_Alt and self.has_snap_interaction():
             self.refresh_snap_interaction(event.modifiers() & ~Qt.KeyboardModifier.AltModifier)
             event.accept()
@@ -510,6 +528,8 @@ class PdfView(QGraphicsView):
         super().keyReleaseEvent(event)
 
     def focusOutEvent(self, event):
+        # A key released in another window never arrives here.
+        self.pan.end('space')
         self.clear_snap_guides()
         # Edge scrolling stops; a drag that goes on restarts it on the next move.
         self.selection_scroll.stop()
@@ -1141,6 +1161,8 @@ class PdfView(QGraphicsView):
         self.update_content_cursor(self.mapToScene(event.position().toPoint()))
 
     def update_content_cursor(self, scene_pos=None):
+        if self.pan.active:
+            return
         if self.pen.enabled:
             self.pen.update_cursor()
             return
