@@ -7,6 +7,9 @@ class TemporaryPan(QObject):
 
     It filters the viewport ahead of the pen and the scene, so a drag moves the
     pages without drawing, selecting or moving whatever is under the pointer.
+    While Space is held the pages also follow the pointer without a click:
+    laptop touchpads ignore taps while a key is down, so tap-and-drag never
+    reaches ADF, but moving the finger still moves the pointer.
     """
     changed = Signal(bool)
 
@@ -15,6 +18,7 @@ class TemporaryPan(QObject):
         self.view = view
         self.sources = set()
         self.last = None
+        self.hover = None
         view.viewport().installEventFilter(self)
 
     @property
@@ -24,6 +28,8 @@ class TemporaryPan(QObject):
     def begin(self, source):
         started = not self.sources
         self.sources.add(source)
+        if source == 'space':
+            self.hover = None
         if started:
             self.view.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
             self.changed.emit(True)
@@ -34,6 +40,8 @@ class TemporaryPan(QObject):
         self.sources.discard(source)
         if source == 'middle':
             self.last = None
+        if source == 'space':
+            self.hover = None
         if self.sources:
             if self.last is None:
                 self.view.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
@@ -56,6 +64,11 @@ class TemporaryPan(QObject):
         else:
             view.update_content_cursor()
 
+    def scroll(self, delta):
+        horizontal, vertical = self.view.horizontalScrollBar(), self.view.verticalScrollBar()
+        horizontal.setValue(horizontal.value() - round(delta.x()))
+        vertical.setValue(vertical.value() - round(delta.y()))
+
     def grab(self, event):
         self.last = event.position()
         self.view.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
@@ -74,17 +87,19 @@ class TemporaryPan(QObject):
             return True
         if kind == QEvent.Type.MouseMove and self.active:
             if self.last is not None:
-                delta = event.position() - self.last
+                self.scroll(event.position() - self.last)
                 self.last = event.position()
-                horizontal, vertical = self.view.horizontalScrollBar(), self.view.verticalScrollBar()
-                horizontal.setValue(horizontal.value() - round(delta.x()))
-                vertical.setValue(vertical.value() - round(delta.y()))
+            elif 'space' in self.sources:
+                if self.hover is not None:
+                    self.scroll(event.position() - self.hover)
+                self.hover = event.position()
             return True
         if kind == QEvent.Type.MouseButtonRelease and self.active:
             if event.button() == Qt.MouseButton.MiddleButton:
                 self.end('middle')
             elif event.button() == Qt.MouseButton.LeftButton and 'middle' not in self.sources:
                 self.last = None
+                self.hover = event.position()
                 self.view.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
             return True
         if kind == QEvent.Type.ContextMenu and self.active:

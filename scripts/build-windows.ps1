@@ -25,7 +25,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Corresponding source packaging failed.' }
 & $pythonPath -m PyInstaller --noconfirm --clean ADF.spec
 if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed.' }
 # The in-process COM DLL resolves its own sibling ADF.exe. Do not put it in _internal.
-Copy-Item -LiteralPath 'build\native-shell\ADFShell.dll' -Destination 'dist\ADF\ADFShell-0.3.31.dll' -Force
+Copy-Item -LiteralPath 'build\native-shell\ADFShell.dll' -Destination 'dist\ADF\ADFShell-0.3.32.dll' -Force
 if (-not $SkipInstaller) {
     & "$PSScriptRoot\bootstrap-inno.ps1"
     $compilerPath = Join-Path $repoRoot '.tools\innosetup-6.7.3\ISCC.exe'
