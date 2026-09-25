@@ -9,7 +9,7 @@
 - 호스팅: Vercel, 프로젝트 루트 `site`, Framework Preset `Other`, 빌드·설치 명령 없음
 - 도장 보관: 데스크톱 앱의 로컬 SQLite에만 저장
 
-Windows와 macOS의 다운로드 버튼을 각각 표시하며 두 플랫폼 모두 0.3.30에 연결합니다. macOS는 Apple 공증을 받은 DMG, Windows는 미서명 EXE를 제공하며 Windows 버튼 옆에 실행 차단·경고 가능성과 서명 심사 상태를 안내합니다. 2026년 9월 12일 유지관리자가 미서명 Windows 버전의 홈페이지 공개를 승인했습니다. 각 버튼은 해당 플랫폼의 설치 파일에 연결합니다.
+Windows와 macOS의 다운로드 버튼을 각각 표시합니다. Windows는 0.3.31, macOS는 0.3.30에 연결합니다. Mac용 0.3.31을 게시하면 macOS 버튼도 갱신합니다. macOS는 Apple 공증을 받은 DMG, Windows는 미서명 EXE를 제공하며 Windows 버튼 옆에 실행 차단·경고 가능성과 서명 심사 상태를 안내합니다. 2026년 9월 12일 유지관리자가 미서명 Windows 버전의 홈페이지 공개를 승인했습니다. 각 버튼은 해당 플랫폼의 설치 파일에 연결합니다.
 
 이 Mac처럼 연결 정보(`site/.vercel`)가 없는 곳에서는 먼저 `vercel link --cwd site --project adf-desktop --yes`로 기존 프로젝트에 연결합니다. 연결 없이 배포하면 새 프로젝트가 만들어질 수 있습니다.
 
