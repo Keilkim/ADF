@@ -352,6 +352,8 @@ class MainWindow(QMainWindow):
         self.updates = None
         self.update_notifier = None
         self.update_offered = None
+        self.update_checked = False
+        self.update_when_ready = None     # the progress dialog of an update the user started
         self.installing_update = False
         self.closed_document = None
         self.refresh_actions()
@@ -2404,7 +2406,10 @@ class MainWindow(QMainWindow):
             service = UpdateService(self.settings, folder, parent=self)
         self.updates = service
         service.changed.connect(self.show_update_state)
+        service.changed.connect(self.follow_update_download)
         service.notify.connect(self.announce_update)
+        # Asked after the service has started the download it found.
+        service.found.connect(lambda: QTimer.singleShot(0, self.offer_new_version))
         self.update_notifier = UpdateNotifier(self.windowIcon(), self)
         self.update_notifier.clicked.connect(self.update_clicked)
         service.start()
@@ -2458,7 +2463,7 @@ class MainWindow(QMainWindow):
         """Windows stacks these with other apps' notifications at the bottom right."""
         service = self.updates
         package = service.package
-        if package is None:
+        if package is None or self.installing_update or self.update_when_ready is not None:
             return
         if service.state == 'ready' and service.platform == 'darwin':
             self.update_notifier.show('ADF 새 버전 받기 완료',
@@ -2492,11 +2497,67 @@ class MainWindow(QMainWindow):
         if self.ask_to_update(service.package.version, service.platform == 'darwin'):
             self.install_update()
 
-    def ask_to_update(self, version, mac):
+    def offer_new_version(self):
+        """Ask as soon as ADF finds a new version after it starts, like messengers do.
+
+        Only the first check of a session asks this way. A version found later,
+        while the user works, keeps to the notification and the menu bar button.
+        """
+        service = self.updates
+        if service is None or service.package is None:
+            return
+        first, self.update_checked = not self.update_checked, True
+        if (not first or service.state not in ('available', 'downloading', 'ready') or self.installing_update
+                or self.update_offered == service.package.version or not self.isVisible()
+                or self.worker is not None or self.loading_dialog is not None
+                or QApplication.activeModalWidget() is not None):
+            return
+        self.update_offered = service.package.version
+        if not self.ask_to_update(service.package.version, service.platform == 'darwin', found=True):
+            return
+        if service.state == 'ready':
+            self.install_update()
+            return
+        progress = self.update_when_ready = QProgressDialog('새 버전을 받는 중입니다…', '나중에', 0, 100, self)
+        progress.setWindowTitle('ADF 업데이트')
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        # '나중에' leaves the download running; the notification and the button follow.
+        progress.canceled.connect(self.stop_following_update)
+        if service.state == 'available':
+            service.requested = True
+            service.download()
+        progress.show()
+        self.follow_update_download()
+
+    def follow_update_download(self):
+        progress, service = self.update_when_ready, self.updates
+        if progress is None:
+            return
+        if service.state == 'downloading':
+            progress.setValue(service.percent)
+        elif service.state == 'ready':
+            self.stop_following_update()
+            self.install_update()
+        else:
+            # The download stopped; the service retries and tells the user as before.
+            self.stop_following_update()
+            self.notice.showMessage('새 버전을 받지 못했습니다 · 잠시 뒤 다시 받습니다', 6000)
+
+    def stop_following_update(self):
+        progress, self.update_when_ready = self.update_when_ready, None
+        if progress is not None:
+            progress.blockSignals(True)
+            progress.close()
+            progress.deleteLater()
+
+    def ask_to_update(self, version, mac, found=False):
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Information)
         box.setWindowTitle('ADF 업데이트')
-        box.setText(f'새 버전({version})을 설치할 준비가 되었습니다.')
+        box.setText(f'ADF 새 버전({version})이 나왔습니다.' if found else f'새 버전({version})을 설치할 준비가 되었습니다.')
         if mac:
             detail = '지금 업데이트하면 설치 화면을 열고 ADF를 닫습니다. ADF를 응용 프로그램 폴더로 끌어 놓아 바꾸세요.'
         elif self.document.page_count:
@@ -2504,6 +2565,8 @@ class MainWindow(QMainWindow):
                       '저장하지 않은 변경이 있으면 먼저 저장 여부를 묻습니다.')
         else:
             detail = '지금 업데이트하면 ADF를 잠시 닫았다가 다시 엽니다.'
+        if found:
+            detail = detail.replace('지금 업데이트하면 ', '지금 업데이트하면 새 버전을 받아 ', 1)
         box.setInformativeText(detail)
         proceed = box.addButton('업데이트 진행하기', QMessageBox.ButtonRole.AcceptRole)
         later = box.addButton('나중에', QMessageBox.ButtonRole.RejectRole)

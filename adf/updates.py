@@ -30,7 +30,7 @@ from PySide6.QtNetwork import (QNetworkAccessManager, QNetworkInformation, QNetw
 from . import __version__
 
 RELEASES = 'https://github.com/Keilkim/ADF/releases'
-CHECK_DELAY = 20_000              # after start, so opening a document stays fast
+CHECK_DELAY = 5_000               # soon after start, so a new version is offered right away
 RECONNECT_DELAY = 5_000           # let a new connection settle before using it
 RECHECK = 12*60*60*1000           # while ADF stays open
 RETRY = 30*60*1000                # offline, behind a login page or GitHub unreachable
@@ -161,6 +161,7 @@ class UpdateService(QObject):
     """Check, download and stage updates for the current user."""
     changed = Signal()
     notify = Signal()
+    found = Signal()                      # a check found a newer release that this PC can install
 
     def __init__(self, settings, folder, current=__version__, platform=sys.platform,
                  releases=RELEASES, parent=None):
@@ -465,6 +466,7 @@ class UpdateService(QObject):
         if self._mismatches(package) >= MISMATCHES:
             return self._manual(version, 'mismatch')
         self.package, self.reason = package, None
+        self.found.emit()
         if self._stored('updates/ready') == asdict(package) and self.staged().is_file():
             return self._set('ready', announce=True)
         # A disk image must be installed by hand. A full installer waits on metered networks.

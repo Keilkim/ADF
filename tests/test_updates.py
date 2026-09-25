@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, Mock, patch
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 import pymupdf
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
@@ -557,6 +557,65 @@ class UpdateWindowTests(unittest.TestCase):
         install.assert_not_called()
         self.assertFalse(self.window.update_button.isHidden())
         self.assertEqual(self.window.update_button.text(), '업데이트 설치 · 0.3.28')
+
+    def found(self, state='downloading'):
+        self.service.package = self.package
+        self.service.percent = 0
+        self.service._set(state)
+        self.service.found.emit()
+
+    def test_a_new_version_found_after_start_is_offered_at_once_and_installed_when_downloaded(self):
+        self.window.show()
+        # Like the real one, installing starts at once and closes ADF.
+        installing = lambda: setattr(self.window, 'installing_update', True)
+        with patch.object(self.window, 'ask_to_update', return_value=True) as ask, \
+             patch.object(self.window, 'install_update', side_effect=installing) as install:
+            self.found()
+            wait_until(lambda: ask.called)
+            ask.assert_called_once_with('0.3.28', False, found=True)
+            progress = self.window.update_when_ready
+            self.assertIsNotNone(progress)
+            self.service.percent = 40
+            self.service._set('downloading')
+            self.assertEqual(progress.value(), 40)
+            install.assert_not_called()
+            with patch.object(self.window.update_notifier, 'show') as notified:
+                self.service._set('ready', announce=True)
+            install.assert_called_once_with()
+            notified.assert_not_called()
+            self.assertIsNone(self.window.update_when_ready)
+            # A later check of the same session does not ask again.
+            self.window.offer_update()
+            self.found('ready')
+            QTest.qWait(50)
+        ask.assert_called_once()
+
+    def test_later_keeps_the_download_and_a_check_during_work_does_not_ask(self):
+        self.window.show()
+        with patch.object(self.window, 'ask_to_update', return_value=True), \
+             patch.object(self.window, 'install_update') as install:
+            self.found()
+            wait_until(lambda: self.window.update_when_ready is not None)
+            QTest.keyClick(self.window.update_when_ready, Qt.Key.Key_Escape)
+            self.assertIsNone(self.window.update_when_ready)
+            self.service._set('ready', announce=True)
+        install.assert_not_called()
+        self.assertEqual(self.window.update_button.text(), '업데이트 설치 · 0.3.28')
+        self.window.update_offered = None
+        with patch.object(self.window, 'ask_to_update') as ask:
+            self.found()
+            QTest.qWait(50)
+        ask.assert_not_called()
+
+    def test_a_download_that_fails_closes_the_progress(self):
+        self.window.show()
+        with patch.object(self.window, 'ask_to_update', return_value=True), \
+             patch.object(self.window, 'install_update') as install:
+            self.found()
+            wait_until(lambda: self.window.update_when_ready is not None)
+            self.service._set('idle')
+        self.assertIsNone(self.window.update_when_ready)
+        install.assert_not_called()
 
     def pdf(self, name='열린 문서.pdf'):
         path = self.root/name
