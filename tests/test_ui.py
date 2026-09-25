@@ -1084,13 +1084,20 @@ class DesktopWorkflowTests(unittest.TestCase):
         order = [window.view_buttons['single'], window.view_buttons['continuous'],
                  window.view_buttons['spread'], window.view_buttons['spread_continuous'],
                  window.direction_buttons[False], window.direction_buttons[True], window.page_spin,
-                 window.view_buttons['grid'], window.fit_button, window.zoom, window.fullscreen_button]
+                 window.view_buttons['grid'], window.zoom, window.fit_buttons['width'], window.fit_button,
+                 window.fullscreen_button]
         positions = [row.indexOf(widget) for widget in order]
         self.assertNotIn(-1, positions)
         self.assertEqual(positions, sorted(positions))
         window.view.set_zoom(2)
+        self.assertFalse(window.fit_button.isChecked())
         QTest.mouseClick(window.fit_button, Qt.MouseButton.LeftButton)
         self.assertEqual(window.view.fit_mode, 'page')
+        self.assertTrue(window.fit_button.isChecked())
+        QTest.mouseClick(window.fit_buttons['width'], Qt.MouseButton.LeftButton)
+        self.assertEqual(window.view.fit_mode, 'width')
+        self.assertEqual([window.fit_buttons['width'].isChecked(), window.fit_button.isChecked()], [True, False])
+        self.assertEqual(window.zoom.findText('페이지 맞춤'), -1)
 
     def test_save_state_ends_the_menu_bar_and_turns_red_when_unsaved(self):
         window = self.window

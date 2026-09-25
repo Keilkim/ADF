@@ -309,3 +309,36 @@ def test_compare_view_turns_back_on_the_first_opposite_notch(app):
         QApplication.sendEvent(view.viewport(), event)
     assert steps == [-1, 1, 1]
     view.deleteLater()
+
+
+def test_page_fit_uses_the_shown_page_in_mixed_size_documents(app, tmp_path):
+    source = tmp_path / 'mixed.pdf'
+    with pymupdf.open() as pdf:
+        pdf.new_page(width=360, height=480)
+        pdf.new_page(width=360, height=480)
+        pdf.new_page(width=2400, height=480)  # a wide drawing sheet
+        pdf.new_page(width=360, height=480)
+        pdf.save(source)
+    document = PdfDocument()
+    document.open(source)
+    view = PdfView()
+    view.resize(900, 700)
+    view.show()
+    view.load(document)
+    try:
+        for mode in ('single', 'spread', 'continuous'):
+            view.set_mode(mode)
+            view.goto(0)
+            view.fit('page')
+            app.processEvents()
+            portrait = view.transform().m11()
+            # The portrait page fills the height, not a sliver beside the wide sheet.
+            assert portrait * 480 > 500, mode
+            view.goto(2)
+            app.processEvents()
+            assert view.transform().m11() < portrait, mode
+    finally:
+        view.close()
+        view.deleteLater()
+        app.processEvents()
+        document.close()
