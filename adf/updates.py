@@ -22,6 +22,7 @@ import re
 import shutil
 import sys
 import threading
+import time
 
 from PySide6.QtCore import QLockFile, QObject, QTimer, QUrl, Signal
 from PySide6.QtNetwork import (QNetworkAccessManager, QNetworkInformation, QNetworkProxyFactory,
@@ -32,7 +33,7 @@ from . import __version__
 RELEASES = 'https://github.com/Keilkim/ADF/releases'
 CHECK_DELAY = 5_000               # soon after start, so a new version is offered right away
 RECONNECT_DELAY = 5_000           # let a new connection settle before using it
-RECHECK = 12*60*60*1000           # while ADF stays open
+RECHECK = 60*60*1000              # while ADF stays open; also on return after a longer pause
 RETRY = 30*60*1000                # offline, behind a login page or GitHub unreachable
 LATER = 60*60*1000                # the release is still being assembled, or the disk is full
 OWNER_RETRY = 10*60*1000          # another ADF window owns updates; take over when it closes
@@ -176,6 +177,7 @@ class UpdateService(QObject):
         self.reason = None                # why the state is 'manual': failed, blocked, security or mismatch
         self.percent = 0
         self.requested = False            # the user asked for this download
+        self.checked_at = None            # wall-clock time of the last check; timers stop while the PC sleeps
         self.lock = None
         self.network = None
         self.reply = None
@@ -254,11 +256,19 @@ class UpdateService(QObject):
         if self.busy:
             return self.timer.start(RETRY)
         self.busy = True
+        self.checked_at = time.time()
         request = self._request(self.releases + '/latest')
         request.setAttribute(QNetworkRequest.Attribute.RedirectPolicyAttribute,
                              QNetworkRequest.RedirectPolicy.ManualRedirectPolicy)
         reply = self.reply = self.network.head(request)
         reply.finished.connect(lambda: self._checked(reply))
+
+    def check_if_stale(self):
+        """Check now when the last check is older than RECHECK, as after the PC wakes."""
+        if (self.checked_at is None or self.busy or self.closed or self.paused
+                or time.time() - self.checked_at < RECHECK/1000):
+            return
+        self.check()
 
     def download(self):
         package = self.package

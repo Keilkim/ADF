@@ -278,6 +278,22 @@ class UpdateServiceTests(unittest.TestCase):
         self.assertEqual([path for _, path, _ in self.server.requests], ['/releases/latest'])
         self.assertEqual(service.timer.interval(), updates.RECHECK)
 
+    def test_returning_after_a_long_pause_checks_again(self):
+        service = self.checked(self.service(current='0.3.28'))
+        self.assertEqual(len(self.server.requests), 1)
+        # A recent check is left to the timer.
+        service.check_if_stale()
+        self.assertFalse(service.busy)
+        # A PC that slept past the interval checks as soon as ADF is used again.
+        service.checked_at -= updates.RECHECK/1000 + 1
+        with patch.object(service, 'check') as check:
+            service.check_if_stale()
+        check.assert_called_once_with()
+        service.checked_at = None
+        with patch.object(service, 'check') as check:
+            service.check_if_stale()
+        check.assert_not_called()
+
     def test_failed_patch_falls_back_to_the_full_installer(self):
         self.folder.mkdir()
         (self.folder/'ADF-Update-0.3.27-to-0.3.28.exe').write_bytes(self.patch)
