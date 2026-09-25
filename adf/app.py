@@ -2410,11 +2410,17 @@ class MainWindow(QMainWindow):
         service.notify.connect(self.announce_update)
         # Asked after the service has started the download it found.
         service.found.connect(lambda: QTimer.singleShot(0, self.offer_new_version))
+        # Returning to ADF, also after the PC wakes, checks when the last check is old.
+        QApplication.instance().applicationStateChanged.connect(self.application_state_changed)
         self.update_notifier = UpdateNotifier(self.windowIcon(), self)
         self.update_notifier.clicked.connect(self.update_clicked)
         service.start()
         # An update downloaded in an earlier session is offered once ADF is on screen.
         QTimer.singleShot(1500, self.offer_update)
+
+    def application_state_changed(self, state):
+        if state == Qt.ApplicationState.ApplicationActive and self.updates is not None:
+            self.updates.check_if_stale()
 
     def toggle_auto_update(self, checked):
         self.settings.setValue('updates/auto', checked)
