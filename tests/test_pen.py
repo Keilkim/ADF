@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import pymupdf
-from PySide6.QtCore import QEvent, QPointF, Qt
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
 from PySide6.QtGui import QInputDevice, QPointingDevice, QTabletEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
@@ -308,6 +308,26 @@ class PenTests(unittest.TestCase):
         window.escape()
         self.assertEqual(window.pointer_mode, 'pen')
         self.assertEqual(view.dragMode(), view.DragMode.NoDrag)
+
+    def test_space_pans_with_pointer_movement_alone(self):
+        # Touchpads ignore taps while a key is down; moving the finger still moves the pointer.
+        view = self.window.view
+        view.set_zoom(3)
+        self.app.processEvents()
+        scroll = view.verticalScrollBar()
+        scroll.setValue(scroll.maximum() // 2)
+        before = scroll.value()
+        start = view.viewport().rect().center()
+        view.setFocus()
+        QTest.keyPress(view, Qt.Key.Key_Space)
+        QTest.mouseMove(view.viewport(), start)
+        QTest.mouseMove(view.viewport(), start + QPoint(0, 60))
+        self.assertLess(scroll.value(), before)
+        QTest.keyRelease(view, Qt.Key.Key_Space)
+        moved = scroll.value()
+        QTest.mouseMove(view.viewport(), start)
+        self.assertEqual(scroll.value(), moved)
+        self.assertEqual(len(list(self.window.document.doc[0].annots())), 0)
 
     def test_save_failure_keeps_original_and_unsaved_state(self):
         self.draw()
