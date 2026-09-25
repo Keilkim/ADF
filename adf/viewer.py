@@ -640,7 +640,8 @@ class PdfView(QGraphicsView):
         if self.is_spread:
             # Reserve both physical slots, including an absent first/last leaf.
             # Align pages to a shared gutter even when paper sizes differ.
-            all_groups = spread_groups(len(self.pages), self.start_right)
+            # A single spread fits its own pages; a wider leaf elsewhere must not shrink it.
+            all_groups = groups if self.mode == 'spread' else spread_groups(len(self.pages), self.start_right)
             columns = [max(self.pages[row[col] if row[col] is not None else row[1-col]].rect.width()
                            for row in all_groups) for col in (0, 1)]
             maxwidth = sum(columns) + gap
@@ -717,11 +718,17 @@ class PdfView(QGraphicsView):
         if not self.pages or not self.fit_mode:
             return
         width = self.sceneRect().width()
+        if self.mode == 'continuous':
+            # Fit the page being read, not the widest page of a mixed-size document.
+            width = self.pages[self.current].rect.width() + 48
         zoom = (self.viewport().width()-16) / max(1, width)
         if self.fit_mode == 'page':
             height = max(self.pages[i].rect.height() for i in self.current_group())
             zoom = min(zoom, (self.viewport().height()-30)/(height+48))
         self.set_zoom(zoom, False)
+        if self.mode == 'continuous':
+            horizontal = self.horizontalScrollBar()
+            horizontal.setValue((horizontal.minimum() + horizontal.maximum()) // 2)
 
     def fit(self, mode):
         self.fit_mode = mode
@@ -737,6 +744,8 @@ class PdfView(QGraphicsView):
         self.current = max(0, min(index, len(self.pages)-1))
         if self.mode in ('single', 'spread'):
             self.layout_pages()
+        elif self.mode == 'continuous' and self.fit_mode:
+            self.apply_fit()
         page = self.pages[self.current]
         top = self.mapFromScene(page.scenePos()).y()
         self.verticalScrollBar().setValue(self.verticalScrollBar().value()+top-20)

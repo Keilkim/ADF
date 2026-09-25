@@ -745,15 +745,9 @@ class MainWindow(QMainWindow):
         row.addWidget(following)
         separator()
         view_button('전체 보기', 'grid')
-        self.fit_button = QToolButton()
-        self.fit_button.setIcon(icon('fit_page'))
-        self.fit_button.setToolTip('페이지 맞춤')
-        self.fit_button.setAccessibleName('페이지 맞춤')
-        self.fit_button.clicked.connect(lambda: self.view.fit('page'))
-        row.addWidget(self.fit_button)
         self.zoom = QComboBox()
         self.zoom.setEditable(True)
-        self.zoom.addItems(['폭 맞춤','페이지 맞춤','50%','75%','100%','125%','150%','200%'])
+        self.zoom.addItems(['50%','75%','100%','125%','150%','200%'])
         self.zoom.setFixedWidth(104)
         self.zoom.setAccessibleName('확대 배율')
         self.zoom.activated.connect(self.zoom_selected)
@@ -761,6 +755,19 @@ class MainWindow(QMainWindow):
         row.addSpacing(4)
         row.addWidget(self.zoom)
         separator()
+        # Stays pressed while the pages follow the window; any other zoom releases it.
+        self.fit_buttons = {}
+        for mode, label in [('width', '폭 맞춤'), ('page', '페이지 맞춤')]:
+            button = QToolButton()
+            button.setIcon(icon('fit_' + mode))
+            button.setToolTip(label)
+            button.setAccessibleName(label)
+            button.setCheckable(True)
+            button.setChecked(mode == 'page')
+            button.clicked.connect(lambda checked=False, value=mode: self.fit_pages(value))
+            row.addWidget(button)
+            self.fit_buttons[mode] = button
+        self.fit_button = self.fit_buttons['page']
         # Follows the action: '전체 화면', and '전체 화면 해제' while full screen.
         self.fullscreen_button = QToolButton()
         self.fullscreen_button.setDefaultAction(self.actions['fullscreen'])
@@ -1059,16 +1066,18 @@ class MainWindow(QMainWindow):
         self.zoom.blockSignals(True)
         self.zoom.setEditText(f'{round(zoom*100)}%')
         self.zoom.blockSignals(False)
+        for mode, button in self.fit_buttons.items():
+            button.setChecked(self.view.fit_mode == mode)
+
+    def fit_pages(self, mode):
+        self.view.fit(mode)
+        self.zoom_changed(self.view.transform().m11())
 
     def zoom_selected(self,*args):
-        text = self.zoom.currentText()
-        if text in ('폭 맞춤','페이지 맞춤'):
-            self.view.fit('width' if text=='폭 맞춤' else 'page')
-        else:
-            try:
-                self.view.set_zoom(float(text.replace('%','').strip())/100)
-            except ValueError:
-                self.zoom_changed(self.view.transform().m11())
+        try:
+            self.view.set_zoom(float(self.zoom.currentText().replace('%','').strip())/100)
+        except ValueError:
+            self.zoom_changed(self.view.transform().m11())
 
     def page_context_menu(self,pos):
         menu = QMenu(self)
