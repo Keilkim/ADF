@@ -1,8 +1,12 @@
-"""A bouncing card at the bottom right of the window that asks to update."""
+"""A bouncing card at the bottom right that asks to update.
+
+Inside a window it sits in the window's corner; without a parent (the background
+agent) it floats above the taskbar at the bottom right of the screen.
+"""
 from datetime import datetime, timedelta
 
 from PySide6.QtCore import QEasingCurve, QEvent, QPoint, QPropertyAnimation, QTimer, Qt, Signal
-from PySide6.QtGui import QAccessible, QAccessibleEvent
+from PySide6.QtGui import QAccessible, QAccessibleEvent, QGuiApplication
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
 SNOOZE_HOUR = 9
@@ -14,6 +18,46 @@ def snooze_until(now=None):
     return (now + timedelta(days=1)).replace(hour=SNOOZE_HOUR, minute=0, second=0, microsecond=0)
 
 
+def snooze(settings):
+    settings.setValue('updates/snooze_until', snooze_until().timestamp())
+    settings.sync()
+
+
+def snooze_remaining(settings):
+    """Seconds until the notice may show again; shared by ADF's windows and the background agent."""
+    settings.sync()
+    return max(0.0, settings.value('updates/snooze_until', 0.0, type=float) - datetime.now().timestamp())
+
+
+def manual_reason(service):
+    """The notification title and the sentence that say why ADF does not install this version itself."""
+    return {
+        'blocked': (f'ADF 새 버전 {service.package.version}',
+                    'Windows 스마트 앱 컨트롤은 서명되지 않은 업데이트를 막으므로 자동으로 설치하지 않습니다.'),
+        'security': ('ADF 업데이트를 설치하지 못했습니다', 'Windows 보안 설정이 업데이트 설치 프로그램을 막았습니다.'),
+        'mismatch': ('ADF 업데이트를 받지 못했습니다',
+                     '받은 업데이트 파일이 두 번 모두 공개된 파일과 달라 자동으로 받지 않습니다.'),
+    }.get(service.reason, ('ADF 업데이트를 설치하지 못했습니다', '자동 업데이트를 설치하지 못했습니다.'))
+
+
+def toast_content(service, following=False):
+    """(title, text, button, enabled) for the service's state, or None when nothing waits."""
+    package = service.package
+    if package is None or service.state not in ('available', 'downloading', 'ready', 'manual'):
+        return None
+    if service.state == 'manual':
+        title, reason = manual_reason(service)
+        return title, reason, '다운로드 페이지', True
+    if service.state == 'ready':
+        return (f'ADF {package.version} 업데이트 준비 완료',
+                '지금 업데이트하면 ADF를 잠시 닫았다가 보던 문서를 다시 엽니다.', '업데이트', True)
+    if following and service.state == 'downloading':
+        return (f'ADF {package.version} 받는 중 · {service.percent}%',
+                '다 받으면 바로 설치합니다. 계속 작업할 수 있습니다.', '받는 중…', False)
+    return (f'ADF 새 버전 {package.version}이 나왔습니다',
+            '업데이트를 누르면 받아서 바로 설치합니다. 받는 동안 계속 작업할 수 있습니다.', '업데이트', True)
+
+
 class UpdateToast(QFrame):
     updateRequested = Signal()
     laterRequested = Signal()
@@ -21,10 +65,16 @@ class UpdateToast(QFrame):
     MARGIN_BOTTOM = 64
     REMIND_INTERVAL = 10 * 60 * 1000
 
-    def __init__(self, parent):
+    def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName('updateToast')
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        if parent is None:
+            self.setWindowFlags(Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
+                                | Qt.WindowType.WindowStaysOnTopHint)
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+            self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+            self.setWindowTitle('ADF 업데이트')
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 14, 16, 14)
         layout.setSpacing(4)
@@ -64,11 +114,15 @@ class UpdateToast(QFrame):
         self.reminder = QTimer(self)
         self.reminder.setInterval(self.REMIND_INTERVAL)
         self.reminder.timeout.connect(self.hop)
-        parent.installEventFilter(self)
+        if parent is not None:
+            parent.installEventFilter(self)
         self.hide()
 
     def resting_pos(self):
         parent = self.parentWidget()
+        if parent is None:
+            area = QGuiApplication.primaryScreen().availableGeometry()
+            return QPoint(area.right() - self.width() - 16, area.bottom() - self.height() - 16)
         return QPoint(max(8, parent.width() - self.width() - self.MARGIN_RIGHT),
                       max(8, parent.height() - self.height() - self.MARGIN_BOTTOM))
 

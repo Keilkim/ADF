@@ -20,7 +20,7 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import pymupdf
 from PySide6.QtCore import QEasingCurve, QPoint, QSettings, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from adf import updates
 from adf.updates import (Package, UpdateService, choose_package, installer_arguments, is_newer, parse_sums,
@@ -605,6 +605,24 @@ class UpdateWindowTests(unittest.TestCase):
             self.service._set('ready', announce=True)
         install.assert_called_once_with()
 
+    def test_window_leaves_the_notice_to_a_running_background_agent(self):
+        self.window.show()
+        with patch('adf.agent.running', return_value=True),              patch.object(self.window.update_notifier, 'show') as notified:
+            self.ready()
+        self.assertFalse(self.window.update_toast.isVisible())
+        notified.assert_not_called()
+
+    def test_update_now_installs_without_asking_even_when_snoozed(self):
+        from adf.update_toast import snooze
+        snooze(self.window.settings)
+        self.window.show()
+        self.window.update_now = True
+        self.ready()
+        with patch.object(self.window, 'ask_to_update') as ask,              patch.object(self.window, 'install_update') as install:
+            self.window.offer_update()
+        ask.assert_not_called()
+        install.assert_called_once_with()
+
     def test_opening_adf_with_a_downloaded_update_asks_once_to_install_it(self):
         self.window.show()
         self.ready()
@@ -915,6 +933,95 @@ class UpdateWindowTests(unittest.TestCase):
         self.window.actions['auto_update'].trigger()
         self.assertFalse(self.window.settings.value('updates/auto', True, type=bool))
         self.assertFalse(self.service.enabled)
+
+
+
+class BackgroundAgentTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+        cls.app.setQuitOnLastWindowClosed(False)
+
+    def setUp(self):
+        from adf.agent import Agent
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.settings = QSettings(str(self.root/'settings.ini'), QSettings.Format.IniFormat)
+        self.service = UpdateService(self.settings, self.root/'updates', current='0.3.27', platform='win32',
+                                     releases='http://127.0.0.1:9/releases')
+        self.addCleanup(self.service.shutdown)
+        without_smart_app_control(self)
+        self.opened = patch('adf.agent.open_adf').start()
+        self.addCleanup(patch.stopall)
+        self.agent = Agent(self.settings, self.service)
+        self.addCleanup(self.agent.toast.dismiss)
+        self.addCleanup(self.agent.tray.hide)
+        self.service.timer.stop()
+        self.package = Package('0.3.28', 'ADF-Update-0.3.27-to-0.3.28.exe', digest(b'installer'), 'patch')
+        (self.root/'updates'/self.package.name).write_bytes(b'installer')
+
+    def ready(self):
+        self.service.package = self.package
+        self.service._set('ready')
+
+    def test_agent_has_a_findable_hidden_window_and_a_tray_menu(self):
+        from adf import agent
+        self.assertEqual(self.agent.windowTitle(), agent.TITLE)
+        self.assertFalse(self.agent.isVisible())
+        self.assertTrue(self.agent.tray.isVisible() or not QSystemTrayIcon.isSystemTrayAvailable())
+        labels = [action.text() for action in self.agent.menu.actions() if action.text()]
+        self.assertEqual(labels, ['ADF 열기', '지금 업데이트 확인', '로그인할 때 자동 실행',
+                                  '업데이트 자동 확인', '백그라운드 실행 끝내기'])
+        self.agent.sync_menu()
+        self.assertTrue(self.agent.autostart.isChecked())
+        self.agent.autostart.trigger()
+        self.assertFalse(agent.enabled(self.settings))
+        self.agent.tray.activated.emit(QSystemTrayIcon.ActivationReason.Trigger)
+        self.opened.assert_called_once_with()
+
+    def test_ready_update_drops_on_the_screen_and_opens_adf_to_install(self):
+        self.ready()
+        toast = self.agent.toast
+        self.assertTrue(toast.isVisible())
+        self.assertIsNone(toast.parentWidget())
+        area = QApplication.primaryScreen().availableGeometry()
+        self.assertEqual(toast.resting_pos().x() + toast.width(), area.right() - 16)
+        toast.proceed.click()
+        self.opened.assert_called_once_with('--update-now')
+        self.assertFalse(toast.isVisible())
+
+    def test_found_version_downloads_then_opens_adf_to_install(self):
+        self.service.package = self.package
+        self.service._set('available')
+        with patch.object(self.service, 'download', side_effect=lambda: self.service._set('downloading')) as download:
+            self.agent.toast.proceed.click()
+        download.assert_called_once_with()
+        self.assertFalse(self.agent.toast.proceed.isEnabled())
+        self.opened.assert_not_called()
+        self.service._set('ready')
+        self.opened.assert_called_once_with('--update-now')
+
+    def test_later_quiets_the_agent_until_nine(self):
+        self.ready()
+        self.agent.toast.later.click()
+        self.assertFalse(self.agent.toast.isVisible())
+        self.assertTrue(self.agent.snooze_timer.isActive())
+        self.agent.refresh()
+        self.assertFalse(self.agent.toast.isVisible())
+
+    def test_close_message_stops_the_agent(self):
+        with patch.object(QApplication, 'quit') as quit:
+            self.agent.close()
+        quit.assert_called_once_with()
+        self.assertTrue(self.service.closed)
+
+    def test_agent_stays_off_outside_installed_windows_builds(self):
+        from adf import agent
+        with patch('adf.agent.start') as start, patch('adf.agent.set_autostart') as autostart:
+            agent.ensure(self.settings)
+        start.assert_not_called()
+        autostart.assert_not_called()
 
 
 if __name__ == '__main__':
