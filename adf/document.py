@@ -706,8 +706,6 @@ def replace_page_text(page: pymupdf.Page, rect, text: str, font_size: float = 11
     source = _valid_rect(rect)
     target = _valid_rect(target_rect if target_rect is not None else rect)
     sources = [source] if source_rects is None else [_valid_rect(item) for item in source_rects]
-    if not sources:
-        raise ValueError("수정할 원본 텍스트 영역이 없습니다.")
     if any(not (source + (-.5, -.5, .5, .5)).contains(item) for item in sources):
         raise ValueError("선택한 텍스트 밖의 영역은 수정할 수 없습니다.")
     text = text.replace("\r\n", "\n").replace("\r", "\n")
@@ -726,9 +724,11 @@ def replace_page_text(page: pymupdf.Page, rect, text: str, font_size: float = 11
         raise ValueError("이 페이지에 기존 교정 표시가 있습니다. 다른 PDF 편집기에서 먼저 처리해 주세요.")
     if text:
         font_size, lines, line_step = _fit_text(text, metrics, font_size, target, fit, lineheight)
-    for area in sources:
-        page.add_redact_annot(area, fill=False, cross_out=False)
-    page.apply_redactions(images=0, graphics=0, text=0)
+    # An empty source_rects list writes new text without removing anything.
+    if sources:
+        for area in sources:
+            page.add_redact_annot(area, fill=False, cross_out=False)
+        page.apply_redactions(images=0, graphics=0, text=0)
     if text:
         if fontbuffer:
             page.insert_font(fontname=name, fontbuffer=fontbuffer)

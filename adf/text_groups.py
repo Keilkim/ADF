@@ -230,3 +230,21 @@ def text_group_at(page: pymupdf.Page, point) -> dict | None:
         "source_rects": source_rects, "lineheight": median(spacings) if spacings else None,
         "dir": chosen[0].direction, "wmode": chosen[0].wmode,
     }.items() if key != "chars"}
+
+
+def new_text_box(page: pymupdf.Page, point, size: float = 11, width: float = 240) -> dict:
+    """Return an empty paragraph at a click, for writing new text on a page.
+
+    Empty source_rects mean nothing is removed from the page when it is applied.
+    The box starts one line tall around the click and stays inside the page.
+    """
+    point = pymupdf.Point(point)
+    bounds = page.rect * page.derotation_matrix
+    lineheight = 1.3
+    height = min(size * lineheight + 2, bounds.height)
+    width = min(width, bounds.width)
+    x0 = min(max(bounds.x0, point.x), bounds.x1 - width)
+    y0 = min(max(bounds.y0, point.y - height / 2), bounds.y1 - height)
+    return {"text": "", "font": "", "size": size, "color": 0x222222, "flags": 0,
+            "bbox": (x0, y0, x0 + width, y0 + height), "source_rects": [], "lineheight": lineheight,
+            "dir": (1.0, 0.0), "wmode": 0, "new": True}
