@@ -1,4 +1,5 @@
 """Screen density, clipped zoom rendering and responsive page thumbnails."""
+import math
 import os
 from pathlib import Path
 import tempfile
@@ -179,6 +180,32 @@ class RenderingTests(unittest.TestCase):
             self.assertLessEqual(len(view.cache), 18)
             self.assertLessEqual(view.cache_bytes, PAGE_CACHE_BYTES)
             self.assertIsNotNone(view.pages[0].pixmap)
+
+    def test_landscape_thumbnail_rows_are_not_padded_to_portrait_height(self):
+        thumbs = self.window.thumbnails
+        thumbs.resize(260, 900)
+        thumbs.update_thumbnail_layout()
+        self.assertEqual(thumbs.columns, 1)
+        portrait, landscape = (thumbs.item(i).sizeHint().height() for i in (0, 1))
+        self.assertEqual(landscape, math.ceil(thumbs.thumbnail_size(1).height()) + 46)
+        self.assertLess(landscape, portrait - 100)
+
+    def test_hover_gap_opens_and_closes_gradually(self):
+        thumbs = self.window.thumbnails
+        normal = thumbs.item(0).sizeHint().height()
+        thumbs.set_hover_slot(1, animate=True)
+        self.assertLess(thumbs.item(0).sizeHint().height(), normal + 40)
+        self.assertFalse(thumbs.insert_button.isVisible())
+        for _ in range(40):
+            thumbs.step_gaps()
+        self.assertEqual(thumbs.item(0).sizeHint().height(), normal + 40)
+        self.assertFalse(thumbs.gap_timer.isActive())
+        thumbs.set_hover_slot(None, animate=True)
+        self.assertGreater(thumbs.item(0).sizeHint().height(), normal)
+        for _ in range(40):
+            thumbs.step_gaps()
+        self.assertEqual(thumbs.item(0).sizeHint().height(), normal)
+        self.assertEqual(thumbs.gap_heights, {})
 
     def test_hover_gap_keeps_current_thumbnail_size_and_center(self):
         thumbs = self.window.thumbnails

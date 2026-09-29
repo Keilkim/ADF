@@ -397,6 +397,8 @@ class MainWindow(QMainWindow):
         a('compare', 'PDF 두 버전 비교…', self.compare_versions, None, 'compare')
         a('paste', '이미지 붙여넣기', self.paste_image, QKeySequence.StandardKey.Paste)
         a('text', '텍스트 수정', self.toggle_text, None, 'text', True)
+        a('text_add', '텍스트 쓰기', lambda checked: self.toggle_text(checked, add=True), None, 'text_add', True)
+        self.actions['text_add'].setToolTip('페이지를 클릭한 곳에 새 글을 씁니다 · Esc로 끝내기')
         a('select_image', '기존 이미지 선택', self.toggle_image_select, None, 'image', True)
         snap = a('snap', '오브젝트 스냅', self.toggle_snap, None, 'magnet', True)
         snap.setChecked(self.settings.value('object_snap', True, type=bool))
@@ -446,7 +448,7 @@ class MainWindow(QMainWindow):
 
     def create_menus(self):
         groups = [('파일', ['open','save','save_as','close',None,'compare','merge','combine','split','extract','compress','markdown',None,'print','default']),
-                  ('편집',['undo','redo',None,'copy','copy_region','region_tool','paste','image','stamps','text','select_image']),
+                  ('편집',['undo','redo',None,'copy','copy_region','region_tool','paste','image','stamps','text','text_add','select_image']),
                   ('페이지',['rotate','rotate_left','blank','replace','delete',None,'up','down','number','number_remove']),
                   ('보기',['find','fullscreen',None,'select_tool','hand_tool','pen','eraser',None,'snap','settings']),
                   ('도움말',['help','licenses','sources',None,'intro','auto_update','about'])]
@@ -468,7 +470,7 @@ class MainWindow(QMainWindow):
             [('split','분할'), ('extract','페이지 추출')],
             [('rotate','오른쪽 회전'), ('rotate_left','왼쪽 회전')],
             [('number','페이지 번호'), ('number_remove','번호 삭제')],
-            [('image','이미지'), ('text','텍스트 수정'), ('pen','펜'), ('eraser','지우개')],
+            [('image','이미지'), ('text','텍스트 수정'), ('pen','펜'), ('text_add','텍스트'), ('eraser','지우개')],
             [('snap','스냅'), ('region_tool','캡처'), ('stamps','도장 보관함')],
         ]:
             self.toolbar.section()
@@ -523,6 +525,7 @@ class MainWindow(QMainWindow):
         self.text_value.textChanged.connect(self.update_text_preview)
         self.text_value.applyRequested.connect(self.apply_text)
         self.edit_font = None
+        self.new_text_style = (None, 11, 0x222222)
         self.font_choices = {}
         self.edit_font_id = -1
         self.edit_font_family = None
@@ -829,7 +832,7 @@ class MainWindow(QMainWindow):
             self.stamp_dock.set_editable(editable)
         for key in ['save','save_as','close','split','extract','compress','markdown','find','print','copy','next','previous','settings','fullscreen']:
             self.actions[key].setEnabled(loaded)
-        for key in ['merge','number','number_remove','image','paste','text','select_image','rotate','rotate_left','delete','blank','replace','up','down']:
+        for key in ['merge','number','number_remove','image','paste','text','text_add','select_image','rotate','rotate_left','delete','blank','replace','up','down']:
             self.actions[key].setEnabled(editable)
         self.actions['undo'].setEnabled(loaded and self.document.can_undo)
         self.actions['redo'].setEnabled(loaded and self.document.can_redo)
@@ -1026,6 +1029,7 @@ class MainWindow(QMainWindow):
         self.view.text_mode = False
         self.font_choices.clear()
         self.actions['text'].setChecked(False)
+        self.actions['text_add'].setChecked(False)
         self.textbar.hide()
         self.clear_text_selection()
         self.view.load(self.document)
@@ -1161,9 +1165,15 @@ class MainWindow(QMainWindow):
         location.addItems(['선택 페이지 뒤','선택 페이지 앞'])
         size = QComboBox()
         size.addItems(['현재 페이지와 동일','A4','A3','Letter'])
+        current = self.selected_pages()[0] if index is None else min(max(index - 1, 0), self.document.page_count - 1)
+        width, height = self.document.page_size(current)
+        orientation = QComboBox()
+        orientation.addItems(['세로','가로'])
+        orientation.setCurrentIndex(int(width > height))
         if index is None:
             layout.addRow('위치',location)
         layout.addRow('크기',size)
+        layout.addRow('방향',orientation)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
@@ -1174,6 +1184,8 @@ class MainWindow(QMainWindow):
             if dimensions is None:
                 rect = self.document.doc[i].rect
                 dimensions = (rect.width,rect.height)
+            short, long = sorted(dimensions)
+            dimensions = (long, short) if orientation.currentIndex() else (short, long)
             target = i+(location.currentIndex()==0) if index is None else index
             if self.edit(lambda: self.document.insert_blank(target,*dimensions)):
                 self.view.goto(target)
@@ -1512,6 +1524,7 @@ class MainWindow(QMainWindow):
             self.view.text_mode = False
             self.view.image_mode = False
             self.actions['text'].setChecked(False)
+            self.actions['text_add'].setChecked(False)
             self.actions['select_image'].setChecked(False)
             self.selected_image = None
             self.view.clear_region_selection()
@@ -1604,20 +1617,32 @@ class MainWindow(QMainWindow):
             self.error(e)
             return False
 
-    def toggle_text(self,checked):
+    def toggle_text(self, checked, add=False):
+        """Edit existing paragraphs, or with add write new text where the page is clicked."""
+        key, other = ('text_add', 'text') if add else ('text', 'text_add')
         self.stop_pen()
         self.stop_stamp()
         if not checked and self.text_selection_dirty and not self.apply_text():
-            self.actions['text'].setChecked(True)
+            self.actions[key].setChecked(True)
             return
+        if checked and self.actions[other].isChecked():
+            if not self.finish_text_selection():
+                self.actions[key].setChecked(False)
+                return
+            self.actions[other].setChecked(False)
         self.view.text_mode = checked
+        self.view.text_add_mode = checked and add
         self.view.image_mode = False
         self.actions['select_image'].setChecked(False)
         self.clear_content_selection()
         self.textbar.setVisible(checked and self.text_selection is not None)
         if checked:
             self.view.setDragMode(PdfView.DragMode.NoDrag)
-            self.notice.clearMessage()
+            if add:
+                self.notice.showMessage('글을 쓸 곳을 클릭하세요 · 완료나 Esc로 반영 · 다시 누르면 끝냅니다', 6000)
+            else:
+                self.notice.clearMessage()
+            self.view.update_content_cursor()
         else:
             self.clear_text_selection()
             self.view.setDragMode(PdfView.DragMode.NoDrag if self.pointer_mode == 'select_tool' else PdfView.DragMode.ScrollHandDrag)
@@ -1632,6 +1657,7 @@ class MainWindow(QMainWindow):
         self.view.image_mode = checked
         self.view.text_mode = False
         self.actions['text'].setChecked(False)
+        self.actions['text_add'].setChecked(False)
         self.textbar.hide()
         self.clear_text_selection()
         self.clear_content_selection()
@@ -1650,20 +1676,31 @@ class MainWindow(QMainWindow):
             self.notice.showMessage('세로쓰기나 기울어진 텍스트는 아직 문단 편집을 지원하지 않습니다', 6000)
             return
         self.clear_text_selection()
-        source = original_font(self.document.doc[page], span.get('font', ''), span.get('text', ''))
-        if source is None or not self.activate_edit_font(source):
-            source = installed_font(span.get('font', '').split('+')[-1])
-            if source is None or source.missing(span.get('text', '')) or not self.activate_edit_font(source):
-                source = self.choose_replacement_font(span.get('font', ''), span.get('text', ''))
-                if source is None or not self.activate_edit_font(source):
-                    return
+        if span.get('new'):
+            family, size, color = self.new_text_style
+            span = {**span, 'size': size, 'color': color}
+            source = next((font for font in map(installed_font, filter(None, [
+                family, 'Malgun Gothic', 'Apple SD Gothic Neo', 'Arial', 'DejaVu Sans']))
+                if font is not None and self.activate_edit_font(font)), None)
+            if source is None:
+                self.notice.showMessage('글을 쓸 글꼴을 찾지 못했습니다', 6000)
+                return
+        else:
+            source = original_font(self.document.doc[page], span.get('font', ''), span.get('text', ''))
+            if source is None or not self.activate_edit_font(source):
+                source = installed_font(span.get('font', '').split('+')[-1])
+                if source is None or source.missing(span.get('text', '')) or not self.activate_edit_font(source):
+                    source = self.choose_replacement_font(span.get('font', ''), span.get('text', ''))
+                    if source is None or not self.activate_edit_font(source):
+                        return
         self.text_selection = (page, span)
         color_value = int(span.get('color', 0))
         color = QColor((color_value >> 16) & 255, (color_value >> 8) & 255, color_value & 255)
         self._updating_text_controls = True
         self.text_value.setPlainText(span.get('text', ''))
         self.text_size.setValue(max(4, min(144, float(span.get('size', 11)))))
-        self.text_font.setToolTip(f"원본 글꼴: {span.get('font', '')} · {source.source}")
+        self.text_font.setToolTip(f"{source.label} · {source.source}" if span.get('new') else
+                                  f"원본 글꼴: {span.get('font', '')} · {source.source}")
         self.text_color.color = color
         self.text_color._update()
         self._updating_text_controls = False
@@ -1829,8 +1866,15 @@ class MainWindow(QMainWindow):
         target_rect = self.view.text_rect()
         if target_rect is None:
             return True
+        if selection.get('new') and not self.text_value.toPlainText().strip():
+            return True
         if not self.ensure_text_font():
             return not self.text_selection
+        if selection.get('new'):
+            color = self.text_color.color
+            self.new_text_style = (self.edit_font.label, self.text_size.value(),
+                                   (color.red() << 16) | (color.green() << 8) | color.blue())
+            self.view.new_text_size = self.text_size.value()
         try:
             self.document.replace_text(page, source_rect, self.text_value.toPlainText(),
                                        font_size=self.text_size.value(), color=self.text_color.rgb,
@@ -1869,6 +1913,7 @@ class MainWindow(QMainWindow):
         self.view.image_mode = False
         self.view.copy_region_mode = mode == 'region_tool'
         self.actions['text'].setChecked(False)
+        self.actions['text_add'].setChecked(False)
         self.textbar.hide()
         self.clear_text_selection()
         self.clear_content_selection()
@@ -1881,18 +1926,20 @@ class MainWindow(QMainWindow):
     def toggle_hand_tool(self):
         """The hand stays on until clicked again or Esc, then the previous tool returns."""
         if self.pointer_mode != 'hand_tool':
-            previous = (self.pointer_mode, self.actions['text'].isChecked(), self.actions['select_image'].isChecked())
+            previous = (self.pointer_mode, [key for key in ('text', 'text_add', 'select_image') if self.actions[key].isChecked()])
             if self.change_pointer('hand_tool'):
                 self.hand_return = previous
             return
-        mode, text, image = self.hand_return or ('select_tool', False, False)
+        mode, checked = self.hand_return or ('select_tool', [])
         self.hand_return = None
         if not self.change_pointer(mode):
             return
-        for key, restore in (('text', self.toggle_text), ('select_image', self.toggle_image_select)):
-            if (text if key == 'text' else image) and self.actions[key].isEnabled():
+        restores = {'text': self.toggle_text, 'text_add': lambda on: self.toggle_text(on, add=True),
+                    'select_image': self.toggle_image_select}
+        for key in checked:
+            if self.actions[key].isEnabled():
                 self.actions[key].setChecked(True)
-                restore(True)
+                restores[key](True)
 
     def show_temporary_pan(self, active):
         # Space or the wheel button shows the hand pressed only while held.
@@ -2084,6 +2131,9 @@ class MainWindow(QMainWindow):
             self.cancel_image()
         elif self.text_selection:
             self.finish_text_selection()
+        elif self.actions['text_add'].isChecked():
+            self.actions['text_add'].setChecked(False)
+            self.toggle_text(False, add=True)
         elif self.isFullScreen():
             self.showNormal()
         else:

@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsItem,
     QStyledItemDelegate, QStyleOptionViewItem, QStyle)
 
 from . import pinch
-from .text_groups import text_group_at
+from .text_groups import new_text_box, text_group_at
 from .page_layout import spread_groups
 from .snapping import SnapIndex
 
@@ -310,6 +310,8 @@ class PdfView(QGraphicsView):
         self.fit_mode = 'page'
         self.start_right = False
         self.text_mode = False
+        self.text_add_mode = False
+        self.new_text_size = 11
         self.text_placement = None
         self.text_page = None
         self.text_selection_data = None
@@ -1137,7 +1139,7 @@ class PdfView(QGraphicsView):
                 page = self.document.doc[item.index]
                 local = item.mapFromScene(pos)
                 point = pymupdf.Point(local.x(), local.y()) * page.derotation_matrix
-                group = text_group_at(page, point)
+                group = new_text_box(page, point, self.new_text_size) if self.text_add_mode else text_group_at(page, point)
                 if group:
                     group['click_point'] = (point.x, point.y)
                     self.textRequested.emit(item.index, group)
@@ -1187,7 +1189,9 @@ class PdfView(QGraphicsView):
         if self.ink_selection is not None and self.ink_selection.contains(self.ink_selection.mapFromScene(scene_pos)):
             return
         item = self.page_at(scene_pos) if not self.image_mode else None
-        if item is not None:
+        if item is not None and self.text_mode and self.text_add_mode:
+            cursor = Qt.CursorShape.IBeamCursor
+        elif item is not None:
             page = self.document.doc[item.index]
             key = (item.index, self.document.revision)
             if key not in self.cursor_text_cache:
@@ -1528,6 +1532,9 @@ class ThumbnailList(QListWidget):
     # Five 36px footer buttons and their four 6px gaps.
     THUMB_WIDTH = 204
     CELL_WIDTH = THUMB_WIDTH + 24
+    GAP = 40
+    HOVER_OPEN_DELAY = 120
+    HOVER_CLOSE_DELAY = 250
     reordered = Signal(list)
     filesDropped = Signal(list)
     filesInserted = Signal(list, int)
@@ -1539,7 +1546,6 @@ class ThumbnailList(QListWidget):
         self.setObjectName('pageThumbnails')
         self.setStyleSheet('QListWidget#pageThumbnails::item { padding: 0; margin: 0; border: none; }')
         self.columns = 1
-        self.cell_height = math.ceil(self.THUMB_WIDTH * 1.414) + 46
         self.setViewMode(QListWidget.ViewMode.IconMode)
         self.setResizeMode(QListWidget.ResizeMode.Adjust)
         self.setMovement(QListWidget.Movement.Snap)
@@ -1557,6 +1563,14 @@ class ThumbnailList(QListWidget):
         self.setMouseTracking(True)
         self.viewport().setMouseTracking(True)
         self.hover_slot = None
+        self.pending_slot = None
+        self.gap_heights = {}
+        self.hover_timer = QTimer(self)
+        self.hover_timer.setSingleShot(True)
+        self.hover_timer.timeout.connect(lambda: self.set_hover_slot(self.pending_slot, animate=True))
+        self.gap_timer = QTimer(self)
+        self.gap_timer.setInterval(15)
+        self.gap_timer.timeout.connect(self.step_gaps)
         self.drag_active = False
         self.insert_button = QToolButton(self.viewport())
         from .theme import icon
@@ -1586,8 +1600,6 @@ class ThumbnailList(QListWidget):
         self.cache_bytes = 0
         self.document = document
         self.layout_signature = None
-        self.cell_height = max((math.ceil(self.thumbnail_size(i).height()) + 46
-                                for i in range(document.page_count)), default=334)
         for i in range(document.page_count):
             item = QListWidgetItem(str(i+1))
             item.setData(Qt.ItemDataRole.UserRole, i)
@@ -1639,17 +1651,25 @@ class ThumbnailList(QListWidget):
         height = min(width * page_height / page_width, width * 2)
         return QSizeF(height * page_width / page_height, height)
 
+    def row_gaps(self, row):
+        """Open insertion gap heights (above, below) for a row; slot 0 sits above the first page."""
+        return (self.gap_heights.get(0, 0) if row == 0 else 0), self.gap_heights.get(row + 1, 0)
+
     def row_size(self, row):
-        gap = 40 if self.item(row).data(Qt.ItemDataRole.UserRole + 5) else 0
-        return QSize(max(self.CELL_WIDTH, (self.viewport().width() - 1) // self.columns), self.cell_height + gap)
+        gap = round(sum(self.row_gaps(row)))
+        return QSize(max(self.CELL_WIDTH, (self.viewport().width() - 1) // self.columns), self.cell_height(row) + gap)
+
+    def cell_height(self, row):
+        # Only pages sharing a visual row share a height, so one portrait page
+        # does not pad every landscape page in the list.
+        start = row - row % self.columns
+        rows = range(start, min(start + self.columns, self.count()))
+        return max((math.ceil(self.thumbnail_size(i).height()) + 46 for i in rows), default=334)
 
     def item_body_rect(self, row):
         rect = QRectF(self.visualItemRect(self.item(row)))
-        gap = self.item(row).data(Qt.ItemDataRole.UserRole + 5)
-        if gap == 'before':
-            rect.adjust(0, 40, 0, 0)
-        elif gap == 'after':
-            rect.adjust(0, 0, 0, -40)
+        before, after = self.row_gaps(row)
+        rect.adjust(0, round(before), 0, -round(after))
         return rect
 
     def thumbnail_rect(self, row):
@@ -1682,35 +1702,71 @@ class ThumbnailList(QListWidget):
             gap = self.hover_gap_rect()
             self.insert_button.move(round(gap.center().x()-15), round(gap.center().y()-15))
 
-    def set_hover_slot(self, slot):
+    def request_hover_slot(self, slot):
+        """Open or close a gap only after the pointer settles, so passing over edges stays calm."""
+        if slot == self.pending_slot:
+            return
+        self.pending_slot = slot
+        if slot == self.hover_slot:
+            self.hover_timer.stop()
+        else:
+            self.hover_timer.start(self.HOVER_OPEN_DELAY if slot is not None else self.HOVER_CLOSE_DELAY)
+
+    def set_hover_slot(self, slot, animate=False):
         if self.drag_active or QApplication.mouseButtons() != Qt.MouseButton.NoButton:
             slot = None
-        if slot == self.hover_slot:
-            return
-        if self.hover_slot is not None and self.count():
-            old = self.item(max(0, self.hover_slot - 1))
-            if old is not None:
-                old.setData(Qt.ItemDataRole.UserRole + 5, None)
-                old.setSizeHint(self.row_size(self.row(old)))
+        self.hover_timer.stop()
+        self.pending_slot = slot
+        if slot is not None and not self.count():
+            slot = None
         self.hover_slot = slot
-        self.insert_button.hide()
-        if slot is not None and self.count():
-            item = self.item(max(0, slot - 1))
-            item.setData(Qt.ItemDataRole.UserRole + 5, 'before' if slot == 0 else 'after')
-            item.setSizeHint(self.row_size(self.row(item)))
-        self.doItemsLayout()
-        if slot is not None:
+        if animate:
+            self.gap_timer.start()
+            self.step_gaps()
+        else:
+            self.gap_timer.stop()
+            self.apply_gaps({slot: self.GAP} if slot is not None else {})
+
+    def step_gaps(self):
+        heights = {}
+        for slot in set(self.gap_heights) | ({self.hover_slot} - {None}):
+            target = self.GAP if slot == self.hover_slot else 0
+            height = self.gap_heights.get(slot, 0)
+            height += (target - height) * .3
+            if abs(target - height) < .75:
+                height = target
+            if height:
+                heights[slot] = height
+        if all(height in (0, self.GAP) for height in heights.values()) and all(
+                (height == self.GAP) == (slot == self.hover_slot) for slot, height in heights.items()):
+            self.gap_timer.stop()
+        self.apply_gaps(heights)
+
+    def apply_gaps(self, heights):
+        rows = {max(0, slot - 1) for slot in set(self.gap_heights) | set(heights)}
+        self.gap_heights = heights
+        for row in rows:
+            if row < self.count():
+                self.item(row).setSizeHint(self.row_size(row))
+        if rows:
+            self.doItemsLayout()
+        # The button appears once its gap is mostly open, and never over a closing gap.
+        if self.hover_slot is not None and self.gap_heights.get(self.hover_slot, 0) >= self.GAP * .6:
             self.position_insert_button()
-            self.insert_button.show()
-            self.insert_button.raise_()
+            if not self.insert_button.isVisible():
+                self.insert_button.show()
+                self.insert_button.raise_()
+        else:
+            self.insert_button.hide()
         self.viewport().update()
 
     def hover_gap_rect(self):
         if self.hover_slot is None:
             return QRectF()
+        height = self.gap_heights.get(self.hover_slot, 0)
         rect = QRectF(self.visualItemRect(self.item(max(0, self.hover_slot - 1))))
-        return QRectF(rect.left(), rect.top() if self.hover_slot == 0 else rect.bottom()-40,
-                      rect.width(), 40)
+        return QRectF(rect.left(), rect.top() if self.hover_slot == 0 else rect.bottom()-height,
+                      rect.width(), height)
 
     def request_insertion(self):
         if self.hover_slot is not None and not self.drag_active:
@@ -1734,20 +1790,20 @@ class ThumbnailList(QListWidget):
                 if abs(point.y() - rect.bottom()) < 12:
                     slot = row + 1
                     break
-        self.set_hover_slot(slot)
+        self.request_hover_slot(slot)
         super().mouseMoveEvent(event)
 
     def mousePressEvent(self, event):
-        self.set_hover_slot(None)
+        self.set_hover_slot(None, animate=True)
         super().mousePressEvent(event)
 
     def leaveEvent(self, event):
         if not self.viewport().rect().contains(self.viewport().mapFromGlobal(QCursor.pos())):
-            self.set_hover_slot(None)
+            self.request_hover_slot(None)
         super().leaveEvent(event)
 
     def wheelEvent(self, event):
-        self.set_hover_slot(None)
+        self.set_hover_slot(None, animate=True)
         super().wheelEvent(event)
 
     def startDrag(self, actions):

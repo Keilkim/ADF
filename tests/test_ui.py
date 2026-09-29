@@ -756,7 +756,7 @@ class DesktopWorkflowTests(unittest.TestCase):
                          Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.assertEqual([keys(group) for group in toolbar.edit_groups], [
             ['split', 'extract'], ['rotate', 'rotate_left'], ['number', 'number_remove'],
-            ['image', 'text', 'pen', 'eraser'], ['snap', 'region_tool', 'stamps']])
+            ['image', 'text', 'pen', 'text_add', 'eraser'], ['snap', 'region_tool', 'stamps']])
         self.assertEqual(toolbar.tail_items, [])
         self.assertNotIn('replace', file_keys + keys(toolbar.edit_items))
 
@@ -948,6 +948,29 @@ class DesktopWorkflowTests(unittest.TestCase):
         result = self.window.document.doc[0].get_text()
         self.assertIn('문단을 수정했습니다.', ' '.join(result.split()))
         self.assertIn('줄바꿈도 유지합니다.', ' '.join(result.split()))
+
+    def test_text_writing_tool_adds_text_without_removing_page_content(self):
+        from adf.text_groups import new_text_box
+        self.window.actions['text_add'].trigger()
+        self.assertTrue(self.window.view.text_mode and self.window.view.text_add_mode)
+        self.assertFalse(self.window.actions['text'].isChecked())
+        page = self.window.document.doc[0]
+        # An empty box leaves the page untouched.
+        self.window.edit_text(0, new_text_box(page, (40, 120)))
+        self.window.text_value.setPlainText('')
+        self.assertTrue(self.window.finish_text_selection())
+        self.assertFalse(self.window.document.dirty)
+        self.window.edit_text(0, new_text_box(page, (40, 120)))
+        self.window.text_size.setValue(14)
+        self.window.text_value.setPlainText('새로 쓴 글입니다')
+        self.assertTrue(self.window.finish_text_selection())
+        result = ' '.join(self.window.document.doc[0].get_text().split())
+        self.assertIn('새로 쓴 글입니다', result)
+        self.assertIn('Original content 1', result)
+        self.assertEqual(self.window.new_text_style[1], 14)
+        self.window.actions['text'].trigger()
+        self.assertFalse(self.window.actions['text_add'].isChecked())
+        self.assertFalse(self.window.view.text_add_mode)
 
     def test_merge_table_metadata_duplicate_ranges_and_reordering(self):
         dialog = MergeDialog(parent=self.window, paths=[self.source, self.source])
