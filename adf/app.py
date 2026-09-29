@@ -2464,6 +2464,13 @@ class MainWindow(QMainWindow):
         QApplication.instance().applicationStateChanged.connect(self.application_state_changed)
         self.update_notifier = UpdateNotifier(self.windowIcon(), self)
         self.update_notifier.clicked.connect(self.update_clicked)
+        from .update_toast import UpdateToast
+        self.update_toast = UpdateToast(self)
+        self.update_toast.updateRequested.connect(self.toast_update)
+        self.update_toast.laterRequested.connect(self.snooze_update)
+        self.update_snooze_timer = QTimer(self)
+        self.update_snooze_timer.setSingleShot(True)
+        self.update_snooze_timer.timeout.connect(self.refresh_update_toast)
         service.start()
         # An update downloaded in an earlier session is offered once ADF is on screen.
         QTimer.singleShot(1500, self.offer_update)
@@ -2471,6 +2478,8 @@ class MainWindow(QMainWindow):
     def application_state_changed(self, state):
         if state == Qt.ApplicationState.ApplicationActive and self.updates is not None:
             self.updates.check_if_stale()
+            # Timers do not count sleep; a PC woken after 9 shows the snoozed notice here.
+            self.refresh_update_toast()
 
     def toggle_auto_update(self, checked):
         self.settings.setValue('updates/auto', checked)
@@ -2480,6 +2489,7 @@ class MainWindow(QMainWindow):
     def show_update_state(self):
         service = self.updates
         package = service.package
+        self.refresh_update_toast()
         if service.state == 'idle' or package is None:
             self.update_button.hide()
             self.update_notifier.hide()
@@ -2504,6 +2514,56 @@ class MainWindow(QMainWindow):
         self.update_button.setEnabled(service.state in ('available', 'ready', 'manual') and not self.installing_update)
         self.update_button.show()
 
+    def update_snoozed(self):
+        """True until 9 the morning after '나중에 다시 보기'; the timer brings the notice back then."""
+        from datetime import datetime
+        until = self.settings.value('updates/snooze_until', 0.0, type=float)
+        remaining = until - datetime.now().timestamp()
+        if remaining <= 0:
+            return False
+        if not self.update_snooze_timer.isActive():
+            self.update_snooze_timer.start(min(int(remaining * 1000) + 1000, 2**31 - 1))
+        return True
+
+    def refresh_update_toast(self):
+        toast, service = getattr(self, 'update_toast', None), self.updates
+        if toast is None:
+            return
+        package = service.package if service is not None else None
+        if (package is None or service.state not in ('available', 'downloading', 'ready', 'manual')
+                or self.installing_update or self.update_when_ready is not None or self.update_snoozed()):
+            toast.dismiss()
+            return
+        if not self.isVisible():
+            return
+        if service.state == 'manual':
+            title, reason = self.manual_update_reason()
+            toast.present(title, reason, '다운로드 페이지')
+        elif service.state == 'ready':
+            toast.present(f'ADF {package.version} 업데이트 준비 완료',
+                          '지금 업데이트하면 ADF를 잠시 닫았다가 보던 문서를 다시 엽니다.', '업데이트')
+        else:
+            toast.present(f'ADF 새 버전 {package.version}이 나왔습니다',
+                          '업데이트를 누르면 받아서 바로 설치합니다. 받는 동안 계속 작업할 수 있습니다.', '업데이트')
+
+    def toast_update(self):
+        service = self.updates
+        self.update_toast.dismiss()
+        if service is None or service.package is None or self.installing_update:
+            return
+        if service.state in ('available', 'downloading'):
+            self.download_then_install()
+        else:
+            self.update_clicked()
+
+    def snooze_update(self):
+        from .update_toast import snooze_until
+        self.settings.setValue('updates/snooze_until', snooze_until().timestamp())
+        self.update_snooze_timer.stop()
+        self.update_toast.dismiss()
+        self.update_snoozed()
+        self.notice.showMessage('내일 아침 9시에 다시 알려 드립니다', 4000)
+
     def manual_update_reason(self):
         """The notification title and the sentence that say why ADF does not install this version itself."""
         service = self.updates
@@ -2519,7 +2579,7 @@ class MainWindow(QMainWindow):
         """Windows stacks these with other apps' notifications at the bottom right."""
         service = self.updates
         package = service.package
-        if package is None or self.installing_update or self.update_when_ready is not None:
+        if package is None or self.installing_update or self.update_when_ready is not None or self.update_snoozed():
             return
         if service.state == 'ready' and service.platform == 'darwin':
             self.update_notifier.show('ADF 새 버전 받기 완료',
@@ -2544,7 +2604,9 @@ class MainWindow(QMainWindow):
         while the user types could take an Enter meant for the document.
         """
         service = self.updates
+        self.refresh_update_toast()
         if (service is None or service.state != 'ready' or service.package is None or self.installing_update
+                or self.update_snoozed()
                 or self.update_offered == service.package.version or not self.isVisible()
                 or self.worker is not None or self.loading_dialog is not None
                 or QApplication.activeModalWidget() is not None):
@@ -2564,6 +2626,7 @@ class MainWindow(QMainWindow):
             return
         first, self.update_checked = not self.update_checked, True
         if (not first or service.state not in ('available', 'downloading', 'ready') or self.installing_update
+                or self.update_snoozed()
                 or self.update_offered == service.package.version or not self.isVisible()
                 or self.worker is not None or self.loading_dialog is not None
                 or QApplication.activeModalWidget() is not None):
@@ -2573,6 +2636,13 @@ class MainWindow(QMainWindow):
             return
         if service.state == 'ready':
             self.install_update()
+            return
+        self.download_then_install()
+
+    def download_then_install(self):
+        """Show the download of the new version and install it as soon as it is ready."""
+        service = self.updates
+        if self.update_when_ready is not None:
             return
         progress = self.update_when_ready = QProgressDialog('새 버전을 받는 중입니다…', '나중에', 0, 100, self)
         progress.setWindowTitle('ADF 업데이트')
@@ -2586,6 +2656,7 @@ class MainWindow(QMainWindow):
             service.requested = True
             service.download()
         progress.show()
+        self.refresh_update_toast()
         self.follow_update_download()
 
     def follow_update_download(self):

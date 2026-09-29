@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, Mock, patch
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 import pymupdf
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QEasingCurve, QPoint, QSettings, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
@@ -549,6 +549,61 @@ class UpdateWindowTests(unittest.TestCase):
         self.service._set('downloading')
         self.assertEqual(self.window.update_button.text(), '업데이트 받는 중 · 42%')
         self.assertFalse(self.window.update_button.isEnabled())
+
+    def test_update_toast_bounces_in_and_installs(self):
+        self.window.show()
+        toast = self.window.update_toast
+        self.assertFalse(toast.isVisible())
+        self.ready()
+        self.assertTrue(toast.isVisible())
+        self.assertEqual(toast.proceed.text(), '업데이트')
+        self.assertEqual(toast.animation.easingCurve().type(), QEasingCurve.Type.OutBounce)
+        wait_until(lambda: toast.pos() == toast.resting_pos())
+        self.assertGreater(toast.x(), self.window.width() // 2)
+        toast.hop()
+        self.assertEqual(toast.animation.keyValueAt(.1), toast.resting_pos() - QPoint(0, 22))
+        with patch.object(self.window, 'install_update') as install:
+            toast.proceed.click()
+        install.assert_called_once_with()
+        self.assertFalse(toast.isVisible())
+
+    def test_update_toast_later_rests_until_nine_the_next_morning(self):
+        from datetime import datetime
+        from adf.update_toast import snooze_until
+        self.assertEqual(snooze_until(datetime(2026, 9, 29, 23, 40)), datetime(2026, 9, 30, 9, 0))
+        self.assertEqual(snooze_until(datetime(2026, 9, 30, 8, 0)), datetime(2026, 10, 1, 9, 0))
+        self.window.show()
+        toast = self.window.update_toast
+        with patch.object(self.window, 'ask_to_update') as ask:
+            self.ready()
+            toast.later.click()
+            self.assertFalse(toast.isVisible())
+            self.assertTrue(self.window.update_snooze_timer.isActive())
+            self.window.show_update_state()
+            self.window.offer_update()
+            self.assertFalse(toast.isVisible())
+            ask.assert_not_called()
+            # Past 9 the next morning the notice comes back.
+            self.window.settings.setValue('updates/snooze_until', datetime.now().timestamp() - 1)
+            self.window.update_snooze_timer.stop()
+            self.window.refresh_update_toast()
+        self.assertTrue(toast.isVisible())
+
+    def test_update_toast_downloads_then_installs_a_found_version(self):
+        self.window.show()
+        self.service.package = self.package
+        self.service._set('available')
+        toast = self.window.update_toast
+        self.assertTrue(toast.isVisible())
+        installing = lambda: setattr(self.window, 'installing_update', True)
+        with patch.object(self.service, 'download', side_effect=lambda: self.service._set('downloading')) as download, \
+             patch.object(self.window, 'install_update', side_effect=installing) as install:
+            toast.proceed.click()
+            download.assert_called_once_with()
+            self.assertIsNotNone(self.window.update_when_ready)
+            self.assertFalse(toast.isVisible())
+            self.service._set('ready', announce=True)
+        install.assert_called_once_with()
 
     def test_opening_adf_with_a_downloaded_update_asks_once_to_install_it(self):
         self.window.show()
