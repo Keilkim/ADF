@@ -182,6 +182,35 @@ class RenderingTests(unittest.TestCase):
             self.assertLessEqual(view.cache_bytes, PAGE_CACHE_BYTES)
             self.assertIsNotNone(view.pages[0].pixmap)
 
+    def test_arrow_keys_scroll_a_zoomed_single_page_then_turn_it(self):
+        view = self.window.view
+        view.set_mode('single')
+        view.goto(0)
+        self.app.processEvents()
+        QTest.keyClick(view, Qt.Key.Key_Down)
+        self.assertEqual(view.current, 1)
+        QTest.keyClick(view, Qt.Key.Key_Up)
+        self.assertEqual(view.current, 0)
+        QTest.keyClick(view, Qt.Key.Key_Right)
+        self.assertEqual(view.current, 1)
+        QTest.keyClick(view, Qt.Key.Key_Left)
+        self.assertEqual(view.current, 0)
+        view.set_zoom(3)
+        self.app.processEvents()
+        scroll = view.verticalScrollBar()
+        scroll.setValue(scroll.minimum())
+        self.assertGreater(scroll.maximum(), scroll.minimum())
+        QTest.keyClick(view, Qt.Key.Key_Down)
+        self.assertEqual(view.current, 0)
+        self.assertGreater(scroll.value(), scroll.minimum())
+        QTest.keyClick(view, Qt.Key.Key_Up)
+        self.assertEqual(scroll.value(), scroll.minimum())
+        self.assertEqual(view.current, 0)
+        scroll.setValue(scroll.maximum())
+        QTest.keyClick(view, Qt.Key.Key_Down)
+        self.assertEqual(view.current, 1)
+        self.assertEqual(scroll.value(), scroll.minimum())
+
     def test_landscape_thumbnail_rows_are_not_padded_to_portrait_height(self):
         thumbs = self.window.thumbnails
         thumbs.resize(260, 900)
