@@ -390,8 +390,10 @@ class MainWindow(QMainWindow):
         a('split', '분할', self.split, None, 'split')
         a('extract', '선택 페이지 추출…', self.extract_pages, None, 'split')
         a('markdown', 'OCR · Markdown 내보내기…', self.export_markdown, None, 'ocr')
-        a('number', '페이지 번호', self.number, None, 'number')
-        a('number_remove', '번호 삭제', self.remove_numbers, None, 'number_remove')
+        a('number', '페이지 번호 및 머리말 추가…', self.number, None, 'number')
+        a('number_remove', '페이지 번호 및 머리말 제거', self.remove_numbers, None, 'number_remove')
+        self.actions['number'].setToolTip('페이지 번호와 머리말·꼬리말 글자를 넣습니다. ADF가 넣은 것이 있으면 새 설정으로 바꿉니다.')
+        self.actions['number_remove'].setToolTip('ADF가 넣은 페이지 번호와 머리말·꼬리말을 지웁니다.')
         a('compress', '저용량 저장', self.compress, None, 'compress')
         a('image', '이미지 삽입', self.insert_image, None, 'image')
         a('stamps', '도장 보관함', self.show_stamps, None, 'stamp')
@@ -476,7 +478,7 @@ class MainWindow(QMainWindow):
         for group in [
             [('split','분할'), ('extract','페이지 추출')],
             [('rotate','오른쪽 회전'), ('rotate_left','왼쪽 회전')],
-            [('number','페이지 번호'), ('number_remove','번호 삭제')],
+            [('number','페이지 번호 및 머리말 추가'), ('number_remove','페이지 번호 및 머리말 제거')],
             [('image','이미지'), ('text','텍스트 수정'), ('pen','펜'), ('text_add','텍스트'), ('eraser','지우개')],
             [('snap','스냅'), ('region_tool','캡처'), ('stamps','도장 보관함')],
         ]:
@@ -1298,13 +1300,13 @@ class MainWindow(QMainWindow):
             return
         pages = self.document.numbered_pages()
         if not pages:
-            QMessageBox.information(self, '번호 삭제', 'ADF로 넣은 페이지 번호가 없습니다.\n'
-                                    '이전 버전이나 다른 프로그램에서 넣은 번호는 지울 수 없습니다.')
+            QMessageBox.information(self, '페이지 번호 및 머리말 제거', 'ADF로 넣은 페이지 번호와 머리말이 없습니다.\n'
+                                    '이전 버전이나 다른 프로그램에서 넣은 번호·머리말은 지울 수 없습니다.')
             return
         outcome = []
         if self.edit(lambda: outcome.extend(self.document.remove_page_numbers(pages))):
             removed, kept = outcome
-            message = f'페이지 번호 {len(removed):,}개를 지웠습니다 · Ctrl+Z로 되돌릴 수 있습니다'
+            message = f'{len(removed):,}쪽의 페이지 번호와 머리말을 지웠습니다 · Ctrl+Z로 되돌릴 수 있습니다'
             if kept:
                 message += f' · 번호 주변이 바뀐 {len(kept):,}쪽은 그대로 두었습니다'
             self.notice.showMessage(message, 8000)

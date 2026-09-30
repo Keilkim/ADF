@@ -882,7 +882,7 @@ class NumberingDialog(QDialog):
         self.options = {}
         self.position = 'bottom-center'
         self.anchor_page = current_page
-        self.setWindowTitle("페이지 번호 넣기")
+        self.setWindowTitle("페이지 번호 및 머리말 추가")
         self.resize(1260, 780)
         self.setMinimumSize(1060, 650)
         layout = QVBoxLayout(self)
@@ -1183,7 +1183,10 @@ class NumberingDialog(QDialog):
                                                           'label', 'label_before', 'label_gap', 'label_font_size',
                                                           'label_color', 'label_fontfile') if key in options
                         })
-                self.preview_status.setText(f"{len(selected):,}페이지에 번호를 넣습니다. 다른 편집과 함께 마지막에 저장하세요.")
+                # As Acrobat offers to update existing headers and footers, ADF replaces its own.
+                existing = len(set(selected) & set(self.document.numbered_pages()))
+                update = f" 이미 ADF 번호·머리말이 있는 {existing:,}쪽은 새 설정으로 바꿉니다." if existing else ""
+                self.preview_status.setText(f"{len(selected):,}페이지에 번호를 넣습니다.{update} 다른 편집과 함께 마지막에 저장하세요.")
             except Exception as exc:
                 labels = {}
                 error = exc
