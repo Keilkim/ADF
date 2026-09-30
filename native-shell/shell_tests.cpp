@@ -523,8 +523,13 @@ void ThumbnailTests(const std::wstring& dll, const std::wstring& fixture) {
     const bool right = AdfOpensPdf();
     std::printf("PDF default app is %s: the mark goes %s.\n", right ? "ADF" : "another program", right ? "bottom-right" : "bottom-left");
     Check(right ? page.Blue(88, 216, 128, 256) > 60 : page.Blue(0, 216, 40, 256) > 60, "ADF mark sits in its bottom corner");
-    Check(page.Blue(0, 0, 128, 200) == 0 && (right ? page.Blue(0, 200, 80, 256) : page.Blue(48, 200, 128, 256)) == 0,
+    Check(page.Blue(0, 0, 128, 180) == 0 && (right ? page.Blue(0, 180, 56, 256) : page.Blue(72, 180, 128, 256)) == 0,
           "ADF mark covers only its corner, not the page");
+    // A 64-pixel plate, 6 pixels from the edges: its top edge is light gray, its inside white.
+    const BYTE* plate_edge = page.At(right ? 90 : 38, 186);
+    Check(plate_edge[0] > 195 && plate_edge[0] < 235 && plate_edge[2] > 195 && plate_edge[2] < 235,
+          "The mark sits on a plate with a light gray edge");
+    Check(page.White(right ? 64 : 12, 234), "The plate around the mark is white");
     Thumbnail desktop = FileThumbnail(factory, portrait, 48);
     CheckHr(desktop.result, "Render a desktop-size thumbnail");
     Check(desktop.width == 24 && desktop.height == 48 && (right ? desktop.Blue(12, 34, 24, 48) : desktop.Blue(0, 34, 12, 48)) > 4
@@ -536,7 +541,7 @@ void ThumbnailTests(const std::wstring& dll, const std::wstring& fixture) {
     Thumbnail large = FileThumbnail(factory, portrait, 1024);
     CheckHr(large.result, "Render an extra-large thumbnail");
     Check(large.width == 512 && large.height == 1024 && large.Red(40, 512) && large.White(480, 512), "Extra-large thumbnail renders at full resolution");
-    Check((right ? large.Blue(340, 850, 512, 1024) : large.Blue(0, 850, 170, 1024)) > 1000 && large.Blue(0, 0, 512, 800) == 0,
+    Check((right ? large.Blue(340, 850, 512, 1024) : large.Blue(0, 850, 170, 1024)) > 1000 && large.Blue(0, 0, 512, 730) == 0,
           "ADF mark scales with the thumbnail");
     // Each mark loads and destroys the logo icon; the harness deletes each bitmap.
     const DWORD users = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS), graphics = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);

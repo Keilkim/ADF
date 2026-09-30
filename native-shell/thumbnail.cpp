@@ -279,18 +279,21 @@ bool AdfOpensPdf() {
         && _wcsicmp(progid, L"ADF.Document") == 0;
 }
 
-// The blue ADF mark, small, in a bottom corner of Explorer and desktop
-// thumbnails. It is scaled from the icon's 256-pixel frame, because Windows
-// would stretch the nearest small frame and soften the logo's shape. The
-// desktop's medium icons ask for 48 pixels; smaller views show icons. The mark
-// is best-effort: without memory or the icon the page is shown unmarked.
+// The blue ADF mark on a small rounded white plate, in a bottom corner of
+// Explorer and desktop thumbnails. The plate keeps the mark readable on dark or
+// busy pages. The mark is scaled from the icon's 256-pixel frame, because
+// Windows would stretch the nearest small frame and soften the logo's shape.
+// The desktop's medium icons ask for 48 pixels; smaller views show icons. The
+// mark is best-effort: without memory or the icon the page is shown unmarked.
 void StampLogo(HBITMAP bitmap) noexcept {
     DIBSECTION section{};
     if (GetObjectW(bitmap, sizeof(section), &section) != sizeof(section) || !section.dsBm.bmBits) return;
     const int width = section.dsBm.bmWidth, height = section.dsBm.bmHeight;
     if (std::max(width, height) < 40) return;
-    const int mark = std::min({std::max(12, static_cast<int>(std::lround(std::max(width, height) * 0.15))), width, height});
-    const int margin = std::max(1, mark / 4);
+    const int plate = std::min({std::max(14, static_cast<int>(std::lround(std::max(width, height) * 0.25))), width, height});
+    const int margin = std::max(1, plate / 10);
+    const int inset = std::max(1, static_cast<int>(std::lround(plate * 0.06)));
+    const int mark = plate - 2 * inset;
     const size_t bytes = static_cast<size_t>(mark) * mark * 4;
     // Allocated before the icon, so that nothing between loading and destroying it can fail.
     const std::unique_ptr<BYTE[]> logo(new (std::nothrow) BYTE[bytes]);
@@ -312,12 +315,30 @@ void StampLogo(HBITMAP bitmap) noexcept {
     DestroyIcon(icon);
     if (!scaled) return;
     auto* pixels = static_cast<BYTE*>(section.dsBm.bmBits);
-    const int left = AdfOpensPdf() ? std::max(0, width - mark - margin) : std::min(margin, width - mark);
-    const int top = std::max(0, height - mark - margin);
+    const int left = AdfOpensPdf() ? std::max(0, width - plate - margin) : std::min(margin, width - plate);
+    const int top = std::max(0, height - plate - margin);
+    // Plate: white, rounded, with a thin light gray edge; antialiased by distance to the rounded square.
+    const double half = plate / 2.0, radius = plate * 0.22, edge = std::max(1.0, plate / 32.0);
+    const BYTE fill[3] = {255, 255, 255}, border[3] = {222, 216, 212};
+    auto blend = [](BYTE* page, const BYTE* color, double coverage) {
+        for (int channel = 0; channel < 3; ++channel)
+            page[channel] = static_cast<BYTE>(std::lround(color[channel] * coverage + page[channel] * (1 - coverage)));
+    };
+    for (int y = 0; y < plate; ++y) {
+        for (int x = 0; x < plate; ++x) {
+            const double qx = std::abs(x + 0.5 - half) - (half - radius), qy = std::abs(y + 0.5 - half) - (half - radius);
+            const double distance = std::hypot(std::max(qx, 0.0), std::max(qy, 0.0)) + std::min(std::max(qx, qy), 0.0) - radius;
+            const double outside = std::clamp(0.5 - distance, 0.0, 1.0), inside = std::clamp(0.5 - distance - edge, 0.0, 1.0);
+            if (outside <= 0) continue;
+            BYTE* page = pixels + (static_cast<size_t>(top + y) * width + left + x) * 4;
+            blend(page, fill, inside);
+            blend(page, border, outside - inside);
+        }
+    }
     for (int y = 0; y < mark; ++y) {
         for (int x = 0; x < mark; ++x) {
             const BYTE* mark_pixel = logo.get() + (static_cast<size_t>(y) * mark + x) * 4;
-            BYTE* page = pixels + (static_cast<size_t>(top + y) * width + left + x) * 4;
+            BYTE* page = pixels + (static_cast<size_t>(top + inset + y) * width + left + inset + x) * 4;
             for (int channel = 0; channel < 3; ++channel)
                 page[channel] = static_cast<BYTE>(mark_pixel[channel] + page[channel] * (255 - mark_pixel[3]) / 255);
         }
