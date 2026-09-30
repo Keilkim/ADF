@@ -430,7 +430,9 @@ def check_printing_and_extraction(window, folder, output):
             assert doc.page_count == expected
             assert all(abs(page.rect.width-595) < 1 and abs(page.rect.height-842) < 1 for page in doc)
 
-    window.resize(2000, 1000)
+    # Navigation controls have different minimum widths across platforms.
+    window.resize(max(2000, window.minimumSizeHint().width()
+                      + 5 * window.thumbnails.CELL_WIDTH + 12), 1000)
     for columns in (1, 2, 5, 1):
         width = 248 if columns == 1 else columns*window.thumbnails.CELL_WIDTH + 12
         splitter = window.reader_splitter

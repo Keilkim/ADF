@@ -65,8 +65,10 @@ class RenderingTests(unittest.TestCase):
                 document.new_page(width=595, height=842)
             document.save(source)
         self.window.open_path(source)
-        self.window.resize(2000, 1000)
         thumbs = self.window.thumbnails
+        # Leave room for five columns plus the platform's navigation controls.
+        self.window.resize(max(2000, self.window.minimumSizeHint().width()
+                               + 5 * thumbs.CELL_WIDTH + 12), 1000)
         previous_width = thumbs.thumbnail_rect(0).width()
         self.assertGreater(previous_width, 180)
         for width, expected_columns in ((248, 1), (467, 1), (468, 2), (696, 3),
