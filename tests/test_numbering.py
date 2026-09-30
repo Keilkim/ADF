@@ -144,6 +144,53 @@ class NumberingTests(unittest.TestCase):
         finally:
             model.close()
 
+    def spans(self, index):
+        page = self.model.doc[index]
+        return [span for block in page.get_text('dict')['blocks'] for line in block.get('lines', ())
+                for span in line['spans'] if span['text'].strip() and 'Original' not in span['text']]
+
+    def test_header_text_sits_before_or_after_the_number_with_a_gap(self):
+        dialog = self.dialog()
+        dialog.ranges.setText('1')
+        dialog.label_text.setText('Report')
+        dialog.label_gap.setValue(5)
+        dialog._update_preview()
+        self.assertTrue(dialog.format_example.text().startswith('Report 1'))
+        self.model.number_pages(**dialog._options())
+        label, number = sorted(self.spans(0), key=lambda span: span['bbox'][0])
+        self.assertEqual((label['text'].strip(), number['text'].strip()), ('Report', '1'))
+        self.assertAlmostEqual(label['origin'][1], number['origin'][1], places=1)
+        self.assertAlmostEqual(number['bbox'][0] - label['bbox'][2], 5 * MM_TO_PT, delta=1.5)
+        # Removing the number removes its header text too.
+        self.assertEqual(self.model.remove_page_numbers([0]), ([0], []))
+        self.assertEqual(self.spans(0), [])
+
+        dialog.label_side.setCurrentIndex(1)
+        dialog.label_same_font.setChecked(False)
+        self.assertFalse(dialog.label_font_controls.isHidden())
+        dialog.label_font_size.setValue(8)
+        dialog._update_preview()
+        self.assertTrue(dialog.format_example.text().startswith('1 Report'))
+        self.model.number_pages(**dialog._options())
+        number, label = sorted(self.spans(0), key=lambda span: span['bbox'][0])
+        self.assertEqual((number['text'].strip(), label['text'].strip()), ('1', 'Report'))
+        self.assertAlmostEqual(label['size'], 8, places=1)
+        self.assertAlmostEqual(number['size'], dialog.font_size.value(), places=1)
+
+    def test_header_text_is_placed_and_removed_on_rotated_pages(self):
+        self.model.number_pages(range(6), label='Chapter', label_before=False, position='bottom-center')
+        for index in range(6):
+            words = self.model.doc[index].get_text().split()
+            self.assertIn('Chapter', words)
+            self.assertIn(str(index + 1), words)
+        self.assertEqual(self.model.remove_page_numbers(range(6)), (list(range(6)), []))
+        for index in range(6):
+            self.assertEqual(self.model.doc[index].get_text().split(), f'Original page {index + 1}'.split())
+
+    def test_header_text_that_does_not_fit_is_refused(self):
+        with self.assertRaises(ValueError):
+            self.model.number_pages([0], label='W' * 200)
+
     def test_changed_numbers_are_left_alone(self):
         self.model.number_pages([0, 1, 2], prefix='p.', position='bottom-center')
         # Another label now overlaps page 1's number, and page 2's number was edited.

@@ -985,15 +985,60 @@ class NumberingDialog(QDialog):
 
         affix_row = QHBoxLayout()
         affix_row.setSpacing(10)
-        affix_row.addWidget(QLabel('번호 앞뒤'))
+        affix_row.addWidget(QLabel('번호 형식'))
         self.affix = QComboBox()
         self.affix.addItem('없음 · 1', ('', ''))
         self.affix.addItem('앞에 p. · p.1', ('p.', ''))
         self.affix.addItem('뒤에 p · 1p', ('', 'p'))
-        self.affix.setAccessibleName('번호 앞뒤 표시')
+        self.affix.addItem('양옆에 줄표 · -1-', ('-', '-'))
+        self.affix.setAccessibleName('번호 형식')
         affix_row.addWidget(self.affix)
         affix_row.addStretch()
         settings.addLayout(affix_row)
+
+        # Header or footer text beside the number, as in Acrobat's header and footer.
+        label_box = QVBoxLayout()
+        label_box.setSpacing(8)
+        label_box.addWidget(QLabel('머리말·꼬리말 글자'))
+        self.label_text = QLineEdit()
+        self.label_text.setPlaceholderText('예: 2026 도시디자인 기본계획 · 비워 두면 번호만')
+        self.label_text.setAccessibleName('머리말·꼬리말 글자')
+        label_box.addWidget(self.label_text)
+        label_row = QHBoxLayout()
+        label_row.setSpacing(8)
+        self.label_side = QComboBox()
+        self.label_side.addItem('번호 앞에', True)
+        self.label_side.addItem('번호 뒤에', False)
+        self.label_side.setAccessibleName('글자 위치')
+        self.label_gap = _decimal(0, 50, 3, " mm")
+        self.label_gap.setAccessibleName('번호와의 간격')
+        self.label_gap.setToolTip('글자와 번호 사이의 간격')
+        label_row.addWidget(self.label_side)
+        label_row.addWidget(QLabel('간격'))
+        label_row.addWidget(self.label_gap)
+        label_row.addStretch()
+        label_box.addLayout(label_row)
+        self.label_same_font = QCheckBox('번호와 같은 글꼴·크기·색')
+        self.label_same_font.setChecked(True)
+        label_box.addWidget(self.label_same_font)
+        label_font_row = QHBoxLayout()
+        label_font_row.setSpacing(7)
+        self.label_font_picker = FontPicker()
+        self.label_font_picker.file_button.hide()
+        self.label_font_picker.status.hide()
+        self.label_font_picker.combo.setMinimumWidth(115)
+        self.label_font_picker.combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.label_font_size = NumberFontSize()
+        self.label_color = NumberColor()
+        label_font_row.addWidget(self.label_font_picker, 1)
+        label_font_row.addWidget(self.label_font_size)
+        label_font_row.addWidget(self.label_color)
+        self.label_font_controls = QWidget()
+        self.label_font_controls.setLayout(label_font_row)
+        label_font_row.setContentsMargins(0, 0, 0, 0)
+        self.label_font_controls.setVisible(False)
+        label_box.addWidget(self.label_font_controls)
+        settings.addLayout(label_box)
         self.format_example = QLabel()
         self.format_example.setObjectName('numberExample')
         self.format_example.setWordWrap(True)
@@ -1017,6 +1062,13 @@ class NumberingDialog(QDialog):
         self.ranges.textChanged.connect(self._schedule_preview)
         self.zero_pad.toggled.connect(self._schedule_preview)
         self.affix.currentIndexChanged.connect(self._schedule_preview)
+        self.label_text.textChanged.connect(self._schedule_preview)
+        self.label_side.currentIndexChanged.connect(self._schedule_preview)
+        self.label_gap.valueChanged.connect(self._schedule_preview)
+        self.label_same_font.toggled.connect(self._label_font_toggled)
+        self.label_font_picker.changed.connect(self._schedule_preview)
+        self.label_font_size.currentTextChanged.connect(self._schedule_preview)
+        self.label_color.changed.connect(self._schedule_preview)
         self.font_size.currentTextChanged.connect(self._schedule_preview)
         self.mirror.toggled.connect(self._mirror_changed)
         self.font_picker.changed.connect(self._schedule_preview)
@@ -1026,6 +1078,10 @@ class NumberingDialog(QDialog):
     def _schedule_preview(self, *_):
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
         self._preview_timer.start()
+
+    def _label_font_toggled(self, same):
+        self.label_font_controls.setVisible(not same)
+        self._schedule_preview()
 
     def _mirror_changed(self, checked):
         from .page_layout import page_side, numbering_position
@@ -1073,7 +1129,23 @@ class NumberingDialog(QDialog):
             "margin_x": self.margin_x.value(), "margin_y": self.margin_y.value(),
             "font_size": self.font_size.value(), "color": self.color_button.rgb,
             "fontfile": self.font_picker.require_file(),
+            **self._label_options(),
         }
+
+    def _label_options(self):
+        label = self.label_text.text().strip()
+        options = {"label": label, "label_before": self.label_side.currentData(), "label_gap": self.label_gap.value()}
+        if label and not self.label_same_font.isChecked():
+            options.update(label_font_size=self.label_font_size.value(), label_color=self.label_color.rgb,
+                           label_fontfile=self.label_font_picker.require_file())
+        return options
+
+    @staticmethod
+    def _labelled(number, options):
+        label = options.get('label')
+        if not label:
+            return number
+        return f"{label} {number}" if options.get('label_before', True) else f"{number} {label}"
 
     def _update_preview(self):
         from .document import copy_page_number_record, number_page
@@ -1096,18 +1168,20 @@ class NumberingDialog(QDialog):
                 labels = {index: numbering_label(options['start'], offset, len(selected),
                                                   prefix=options['prefix'], suffix=options['suffix'], zero_pad=options['zero_pad'])
                           for offset, index in enumerate(selected)}
-                examples = [labels[selected[0]]]
+                examples = [self._labelled(labels[selected[0]], options)]
                 if len(selected) > 1:
-                    examples.append(labels[selected[1]])
+                    examples.append(self._labelled(labels[selected[1]], options))
                 if len(selected) > 2:
-                    examples += ['…', labels[selected[-1]]]
+                    examples += ['…', self._labelled(labels[selected[-1]], options)]
                 self.format_example.setText('  ·  '.join(examples))
                 for slot, index in enumerate(shown):
                     if index in labels:
                         position = numbering_position(self.position, index, mirror=self.mirror.isChecked(),
                                                       anchor_page=self.anchor_page, start_right=self.start_right)
                         number_page(preview_doc[slot], labels[index], position=position, **{
-                            key: options[key] for key in ('margin_x', 'margin_y', 'font_size', 'color', 'fontfile')
+                            key: options[key] for key in ('margin_x', 'margin_y', 'font_size', 'color', 'fontfile',
+                                                          'label', 'label_before', 'label_gap', 'label_font_size',
+                                                          'label_color', 'label_fontfile') if key in options
                         })
                 self.preview_status.setText(f"{len(selected):,}페이지에 번호를 넣습니다. 다른 편집과 함께 마지막에 저장하세요.")
             except Exception as exc:
