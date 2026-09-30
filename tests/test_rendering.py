@@ -60,8 +60,9 @@ class RenderingTests(unittest.TestCase):
     def test_fixed_thumbnails_reflow_into_only_complete_columns(self):
         source = Path(self.temp.name) / 'many.pdf'
         with pymupdf.open() as document:
-            for width, height in [(595, 842), (842, 595)] * 6:
-                document.new_page(width=width, height=height)
+            # One orientation: every thumbnail takes the full artwork width.
+            for _ in range(12):
+                document.new_page(width=595, height=842)
             document.save(source)
         self.window.open_path(source)
         self.window.resize(2000, 1000)
@@ -188,7 +189,25 @@ class RenderingTests(unittest.TestCase):
         self.assertEqual(thumbs.columns, 1)
         portrait, landscape = (thumbs.item(i).sizeHint().height() for i in (0, 1))
         self.assertEqual(landscape, math.ceil(thumbs.thumbnail_size(1).height()) + 46)
-        self.assertLess(landscape, portrait - 100)
+        self.assertLess(landscape, portrait - 50)
+
+    def test_mixed_orientation_thumbnails_keep_the_same_paper_the_same_size(self):
+        thumbs = self.window.thumbnails
+        self.assertTrue(thumbs.mixed_orientation)
+        portrait, landscape = thumbs.thumbnail_size(0), thumbs.thumbnail_size(1)
+        # A portrait A4 is a landscape A4 turned, not a page 1.4 times as tall.
+        self.assertAlmostEqual(portrait.height(), landscape.width(), delta=.01)
+        self.assertAlmostEqual(portrait.width(), landscape.height(), delta=.01)
+        self.assertAlmostEqual(portrait.height(), thumbs.THUMB_WIDTH, delta=.01)
+        # A document of one orientation still fills the full thumbnail width.
+        with pymupdf.open() as doc:
+            for _ in range(2):
+                doc.new_page(width=595, height=842)
+            doc.save(self.source)
+        self.window.open_path(self.source)
+        self.app.processEvents()
+        self.assertFalse(thumbs.mixed_orientation)
+        self.assertAlmostEqual(thumbs.thumbnail_size(0).width(), thumbs.THUMB_WIDTH, delta=.01)
 
     def test_hover_gap_opens_and_closes_gradually(self):
         thumbs = self.window.thumbnails
