@@ -779,7 +779,7 @@ class DesktopWorkflowTests(unittest.TestCase):
             text = self.window.document.doc[index].get_text()
             self.assertNotIn(f'p.{index + 1}', text.split())
             self.assertIn(f'needle page {index + 1}', text)
-        self.assertIn('페이지 번호 6개를 지웠습니다', self.window.notice.currentMessage())
+        self.assertIn('6쪽의 페이지 번호와 머리말을 지웠습니다', self.window.notice.currentMessage())
         self.window.undo()
         self.assertEqual(self.window.document.numbered_pages(), list(range(6)))
         self.assert_source_unchanged()

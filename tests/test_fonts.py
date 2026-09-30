@@ -255,14 +255,22 @@ class DocumentFontTests(unittest.TestCase):
         self.with_window(run)
 
     def test_replacement_dialog_labels_and_cancel_default(self):
+        from adf.font_widgets import FontSubstituteDialog, OTHER_FONT
         window = MainWindow(smoke=True)
         def inspect(dialog):
-            self.assertEqual({button.text() for button in dialog.buttons()}, {'대체 글꼴로 편집', '편집 취소'})
-            self.assertEqual(dialog.defaultButton().text(), '편집 취소')
-            self.assertFalse(dialog.checkBox().isChecked())
+            self.assertEqual({dialog.replace.text(), dialog.cancel.text()}, {'대체 글꼴로 편집', '편집 취소'})
+            self.assertTrue(dialog.cancel.isDefault())
+            self.assertFalse(dialog.remember.isChecked())
+            self.assertFalse(dialog.save_exception.isChecked())
+            self.assertIn('Missing', dialog.headline.text())
+            # Ranked suggestions with their reasons, then a free choice.
+            self.assertGreaterEqual(dialog.fonts.count(), 2)
+            self.assertIn('  ·  ', dialog.fonts.itemText(0))
+            self.assertEqual(dialog.fonts.itemText(dialog.fonts.count()-1), OTHER_FONT)
+            self.assertIsNotNone(dialog.choice)
             return 0
         try:
-            with patch.object(QMessageBox, 'exec', inspect):
+            with patch.object(FontSubstituteDialog, 'exec', inspect):
                 self.assertIsNone(window.choose_replacement_font('Missing', 'ABC', 'C'))
         finally:
             window.close()
@@ -297,19 +305,19 @@ class DocumentFontTests(unittest.TestCase):
         self.assertIsNone(equivalent_font([one, two]))
 
     def test_checked_choice_is_reused_only_for_same_font_and_document(self):
+        from adf.font_widgets import FontSubstituteDialog
         window = MainWindow(smoke=True)
         prompts = []
         def accept(dialog):
-            prompts.append(dialog.text())
-            dialog.checkBox().setChecked(True)
-            button = next(b for b in dialog.buttons() if b.text() == '대체 글꼴로 편집')
-            button.click()
-            return 0
+            prompts.append(dialog.headline.text())
+            dialog.remember.setChecked(True)
+            return 1
         try:
-            with patch.object(QMessageBox, 'exec', accept):
+            with patch.object(FontSubstituteDialog, 'exec', accept):
                 first = window.choose_replacement_font('AAAAAA+MissingOne', 'ABC')
                 second = window.choose_replacement_font('MissingOne', 'ABC')
                 self.assertIs(first, second)
+                self.assertTrue(first.source.startswith('대체 글꼴'))
                 self.assertEqual(len(prompts), 1)
                 window.choose_replacement_font('MissingTwo', 'ABC')
                 self.assertEqual(len(prompts), 2)
@@ -322,22 +330,76 @@ class DocumentFontTests(unittest.TestCase):
             window.close()
 
     def test_unchecked_choice_is_not_remembered_and_cancel_does_not_store_it(self):
+        from adf.font_widgets import FontSubstituteDialog
         window = MainWindow(smoke=True)
-        def accept(dialog):
-            self.assertFalse(dialog.checkBox().isChecked())
-            next(b for b in dialog.buttons() if b.text() == '대체 글꼴로 편집').click()
-            return 0
         try:
-            with patch.object(QMessageBox, 'exec', accept) as call:
+            with patch.object(FontSubstituteDialog, 'exec', lambda dialog: 1):
                 self.assertIsNotNone(window.choose_replacement_font('Missing', 'ABC'))
                 self.assertIsNotNone(window.choose_replacement_font('Missing', 'ABC'))
                 self.assertEqual(window.font_choices, {})
             def cancel(dialog):
-                dialog.checkBox().setChecked(True)
-                next(b for b in dialog.buttons() if b.text() == '편집 취소').click()
+                dialog.remember.setChecked(True)
                 return 0
-            with patch.object(QMessageBox, 'exec', cancel):
+            with patch.object(FontSubstituteDialog, 'exec', cancel):
                 self.assertIsNone(window.choose_replacement_font('Missing', 'ABC'))
                 self.assertEqual(window.font_choices, {})
         finally:
             window.close()
+
+    def test_saved_substitute_is_suggested_first_in_later_documents(self):
+        from adf.font_widgets import FontSubstituteDialog
+        window = MainWindow(smoke=True)
+        window.settings.remove('fonts/substitutes')
+        self.addCleanup(window.settings.remove, 'fonts/substitutes')
+        seen = []
+        def keep_second(dialog):
+            seen.append([dialog.fonts.itemText(i) for i in range(dialog.fonts.count())])
+            if len(seen) == 1:
+                dialog.fonts.setCurrentIndex(1)
+                dialog.save_exception.setChecked(True)
+            return 1
+        try:
+            with patch.object(FontSubstituteDialog, 'exec', keep_second):
+                chosen = window.choose_replacement_font('SavedMissing', 'ABC')
+                again = window.choose_replacement_font('SavedMissing', 'ABC')
+            self.assertEqual(again.label, chosen.label)
+            self.assertTrue(seen[1][0].startswith(chosen.label + '  ·  저장한 대체 글꼴'))
+        finally:
+            window.close()
+
+
+class SimilarFontTests(unittest.TestCase):
+    def test_font_names_split_into_family_weight_and_italic(self):
+        from adf.fonts import font_kind, font_style
+        self.assertEqual(font_style('AAAAAA+NanumGothic-Bold'), ('nanumgothic', 700, False))
+        self.assertEqual(font_style('MalgunGothicBold'), ('malgungothic', 700, False))
+        self.assertEqual(font_style('Arial,BoldItalic'), ('arial', 700, True))
+        self.assertEqual(font_style('Arial-BoldMT'), ('arial', 700, False))
+        self.assertEqual(font_style('Pretendard-SemiBold'), ('pretendard', 600, False))
+        self.assertEqual(font_style('NanumSquareEB'), ('nanumsquare', 800, False))
+        self.assertEqual(font_style('HY헤드라인M'), ('hy헤드라인', 500, False))
+        # A capital at the end of an ordinary name is not a weight.
+        self.assertEqual(font_style('Arial'), ('arial', 400, False))
+        self.assertEqual(font_style('GulimChe'), ('gulimche', 400, False))
+        self.assertEqual(font_kind('NanumMyeongjo'), 'serif')
+        self.assertEqual(font_kind('CourierNewPSMT'), 'mono')
+        self.assertEqual(font_kind('Unknown', flags=2), 'serif')
+        self.assertEqual(font_kind('Unknown'), 'sans')
+
+    def test_similar_names_come_first_in_the_nearest_weight(self):
+        from adf.fonts import similar_fonts
+        from adf.system_fonts import font_families
+        if 'arial' not in font_families():
+            self.skipTest('Arial is not installed')
+        found = similar_fonts('Arial-BoldMT', 'ABC')
+        self.assertEqual(found[0][1], '이름이 비슷한 글꼴')
+        self.assertIn('Arial', found[0][0].label)
+        self.assertIn('Bold', found[0][0].label)
+        self.assertTrue(all(not font.missing('ABC') for font, _ in found))
+
+    def test_unknown_names_get_the_default_of_their_kind(self):
+        from adf.fonts import similar_fonts
+        found = similar_fonts('QqxzUnrelated', 'ABC')
+        if not found:
+            self.skipTest('No default font is installed')
+        self.assertTrue(found[0][1].endswith('기본 글꼴'))

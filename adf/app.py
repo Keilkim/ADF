@@ -390,8 +390,10 @@ class MainWindow(QMainWindow):
         a('split', '분할', self.split, None, 'split')
         a('extract', '선택 페이지 추출…', self.extract_pages, None, 'split')
         a('markdown', 'OCR · Markdown 내보내기…', self.export_markdown, None, 'ocr')
-        a('number', '페이지 번호', self.number, None, 'number')
-        a('number_remove', '번호 삭제', self.remove_numbers, None, 'number_remove')
+        a('number', '페이지 번호 및 머리말 추가…', self.number, None, 'number')
+        a('number_remove', '페이지 번호 및 머리말 제거', self.remove_numbers, None, 'number_remove')
+        self.actions['number'].setToolTip('페이지 번호와 머리말·꼬리말 글자를 넣습니다. ADF가 넣은 것이 있으면 새 설정으로 바꿉니다.')
+        self.actions['number_remove'].setToolTip('ADF가 넣은 페이지 번호와 머리말·꼬리말을 지웁니다.')
         a('compress', '저용량 저장', self.compress, None, 'compress')
         a('image', '이미지 삽입', self.insert_image, None, 'image')
         a('stamps', '도장 보관함', self.show_stamps, None, 'stamp')
@@ -476,7 +478,7 @@ class MainWindow(QMainWindow):
         for group in [
             [('split','분할'), ('extract','페이지 추출')],
             [('rotate','오른쪽 회전'), ('rotate_left','왼쪽 회전')],
-            [('number','페이지 번호'), ('number_remove','번호 삭제')],
+            [('number','페이지 번호 및 머리말 추가'), ('number_remove','페이지 번호 및 머리말 제거')],
             [('image','이미지'), ('text','텍스트 수정'), ('pen','펜'), ('text_add','텍스트'), ('eraser','지우개')],
             [('snap','스냅'), ('region_tool','캡처'), ('stamps','도장 보관함')],
         ]:
@@ -1298,13 +1300,13 @@ class MainWindow(QMainWindow):
             return
         pages = self.document.numbered_pages()
         if not pages:
-            QMessageBox.information(self, '번호 삭제', 'ADF로 넣은 페이지 번호가 없습니다.\n'
-                                    '이전 버전이나 다른 프로그램에서 넣은 번호는 지울 수 없습니다.')
+            QMessageBox.information(self, '페이지 번호 및 머리말 제거', 'ADF로 넣은 페이지 번호와 머리말이 없습니다.\n'
+                                    '이전 버전이나 다른 프로그램에서 넣은 번호·머리말은 지울 수 없습니다.')
             return
         outcome = []
         if self.edit(lambda: outcome.extend(self.document.remove_page_numbers(pages))):
             removed, kept = outcome
-            message = f'페이지 번호 {len(removed):,}개를 지웠습니다 · Ctrl+Z로 되돌릴 수 있습니다'
+            message = f'{len(removed):,}쪽의 페이지 번호와 머리말을 지웠습니다 · Ctrl+Z로 되돌릴 수 있습니다'
             if kept:
                 message += f' · 번호 주변이 바뀐 {len(kept):,}쪽은 그대로 두었습니다'
             self.notice.showMessage(message, 8000)
@@ -1697,7 +1699,8 @@ class MainWindow(QMainWindow):
             if source is None or not self.activate_edit_font(source):
                 source = installed_font(span.get('font', '').split('+')[-1])
                 if source is None or source.missing(span.get('text', '')) or not self.activate_edit_font(source):
-                    source = self.choose_replacement_font(span.get('font', ''), span.get('text', ''))
+                    source = self.choose_replacement_font(span.get('font', ''), span.get('text', ''),
+                                                          page=self.document.doc[page])
                     if source is None or not self.activate_edit_font(source):
                         return
         self.text_selection = (page, span)
@@ -1772,41 +1775,41 @@ class MainWindow(QMainWindow):
         self._updating_text_controls = previous
         return True
 
-    def choose_replacement_font(self, original, text, missing=''):
+    def choose_replacement_font(self, original, text, missing='', page=None):
+        """Ask for a stand-in font, suggesting installed fonts with similar names first."""
+        import dataclasses
+        from .fonts import font_flags, similar_fonts
+        from .font_widgets import FontSubstituteDialog
         choice_key = normal_name(original)
         remembered = self.font_choices.get(choice_key)
         if remembered is not None and not remembered.missing(text):
             return remembered
-        candidate = None
-        for family in ['Malgun Gothic', 'Apple SD Gothic Neo', 'Arial', 'DejaVu Sans']:
-            font = installed_font(family)
-            if font and not font.missing(text):
-                candidate = font
-                break
-        if candidate is None:
+        try:
+            saved = json.loads(self.settings.value('fonts/substitutes', '{}') or '{}')
+        except ValueError:
+            saved = {}
+        flags, weight = font_flags(page, original) if page is not None else (0, None)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            candidates = similar_fonts(original, text, flags=flags, weight=weight, preferred=saved.get(choice_key))
+        finally:
+            QApplication.restoreOverrideCursor()
+        if not candidates:
             QMessageBox.information(self, '글꼴 확인', '이 텍스트를 지원하는 글꼴을 찾지 못했습니다. 현재 문단 편집을 취소합니다.')
             return None
-        dialog = QMessageBox(self)
-        dialog.setWindowTitle('글꼴 확인')
-        dialog.setText(f'「{original}」 글꼴로 이 텍스트를 편집할 수 없습니다.')
-        reason = f'PDF 글꼴에 없는 글자: {missing[:30]}\n' if missing else '사용 가능한 원본 내장 글꼴이나 같은 PC 글꼴을 찾지 못했습니다.\n'
-        dialog.setInformativeText(reason + f'「{candidate.label}」 글꼴로 바꾸어 편집하시겠습니까?')
-        remember = QCheckBox('이 문서의 같은 글꼴에 이 선택 적용', dialog)
-        remember.setChecked(False)
-        check_icon = resource_path('assets/check-white.svg').as_posix()
-        remember.setStyleSheet('QCheckBox::indicator { background: white; border: 1px solid #bfc1c6; border-radius: 3px; } '
-                              'QCheckBox::indicator:checked { background: #62656b; border-color: #62656b; image: url("' + check_icon + '"); }')
-        dialog.setCheckBox(remember)
-        replace = dialog.addButton('대체 글꼴로 편집', QMessageBox.ButtonRole.AcceptRole)
-        cancel = dialog.addButton('편집 취소', QMessageBox.ButtonRole.RejectRole)
-        dialog.setDefaultButton(cancel)
-        dialog.setEscapeButton(cancel)
-        dialog.exec()
-        if dialog.clickedButton() == replace:
-            if remember.isChecked():
-                self.font_choices[choice_key] = candidate
-            return candidate
-        return None
+        dialog = FontSubstituteDialog(original, text, candidates, missing, self)
+        if not dialog.exec() or dialog.choice is None:
+            return None
+        shown = original.split('+')[-1]
+        # The text bar says which font stands in for the original, as Illustrator marks substituted text.
+        choice = dataclasses.replace(dialog.choice, source=f'대체 글꼴 {dialog.choice.label}')
+        if dialog.remember.isChecked():
+            self.font_choices[choice_key] = choice
+        if dialog.save_exception.isChecked():
+            saved[choice_key] = dialog.choice.label
+            self.settings.setValue('fonts/substitutes', json.dumps(saved, ensure_ascii=False))
+        self.notice.showMessage(f'「{shown}」 대신 「{dialog.choice.label}」 글꼴로 편집합니다', 6000)
+        return choice
 
     def ensure_text_font(self, prompt=True):
         if not self.text_selection:
