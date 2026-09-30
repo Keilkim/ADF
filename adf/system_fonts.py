@@ -191,3 +191,38 @@ def resolve_font_face(name, *, allow_family=False):
 def resolve_font_file(name):
     face = resolve_font_face(name, allow_family=True)
     return face.file() if face else None
+
+
+def font_families():
+    """Installed faces by normalized family name, including localized names."""
+    return _font_index(_inventory())[1]
+
+
+@lru_cache(maxsize=4096)
+def _face_details(signature, index, collection):
+    """Display name, weight class, PANOSE serif style and italic of one face."""
+    label, weight, serif, italic = None, 400, 0, False
+    try:
+        with TTFont(signature[0], fontNumber=index if collection else -1, lazy=True, recalcTimestamp=False) as font:
+            names = {}
+            for record in font['name'].names:
+                if record.nameID in (1, 4):
+                    try:
+                        names.setdefault((record.nameID, record.langID), record.toUnicode())
+                    except (UnicodeError, LookupError):
+                        continue
+            # The Korean full name first, as the Windows font list shows it; then English.
+            label = next((names[key] for key in ((4, 0x412), (4, 0x409), (4, 0), (1, 0x412), (1, 0x409), (1, 0))
+                          if key in names), None) or next(iter(names.values()), None)
+            if 'OS/2' in font:
+                table = font['OS/2']
+                weight = int(getattr(table, 'usWeightClass', 400) or 400)
+                serif = int(getattr(getattr(table, 'panose', None), 'bSerifStyle', 0) or 0)
+                italic = bool(getattr(table, 'fsSelection', 0) & 1)
+    except Exception:
+        pass
+    return label or Path(signature[0]).stem, weight, serif, italic
+
+
+def face_details(face):
+    return _face_details(face.signature, face.index, face.collection)

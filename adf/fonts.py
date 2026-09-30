@@ -293,3 +293,132 @@ def original_font(page, name, text):
     if installed and not installed.missing(text):
         return installed
     return None
+
+
+# Weight words in PDF and PostScript font names, longest first so 'ExtraBold' wins over 'Bold'.
+_WEIGHTS = [('extralight', 200), ('ultralight', 200), ('hairline', 100), ('semilight', 300), ('semibold', 600),
+            ('demibold', 600), ('extrabold', 800), ('ultrabold', 800), ('regular', 400), ('medium', 500),
+            ('normal', 400), ('light', 300), ('heavy', 900), ('black', 900), ('thin', 100), ('bold', 700),
+            ('book', 400), ('roman', 400)]
+# Korean families mark the weight with a trailing letter: NanumSquareB, HY헤드라인M, NanumSquareEB.
+_WEIGHT_LETTERS = [('ul', 200), ('eb', 800), ('xb', 800), ('sb', 600), ('l', 300), ('r', 400), ('m', 500), ('b', 700)]
+_SERIF_WORDS = ('myeongjo', 'myungjo', 'batang', 'mincho', 'serif', 'times', 'garamond', 'georgia', 'song',
+                '명조', '바탕', '궁서', 'gungsuh')
+_MONO_WORDS = ('mono', 'courier', 'consol', 'code', 'd2coding', 'fixed')
+_SANS_DEFAULTS = ['Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', 'NanumGothic', 'Arial', 'DejaVu Sans']
+_SERIF_DEFAULTS = ['Batang', 'AppleMyungjo', 'Noto Serif KR', 'NanumMyeongjo', 'Times New Roman', 'DejaVu Serif']
+_MONO_DEFAULTS = ['Consolas', 'D2Coding', 'Courier New', 'Menlo', 'DejaVu Sans Mono']
+
+
+def font_style(name):
+    """Split a PDF font name into a normalized family, a weight class and italic.
+
+    'AAAAAA+NanumGothic-Bold' gives ('nanumgothic', 700, False); 'HY헤드라인M' gives ('hy헤드라인', 500, False).
+    """
+    name = re.sub(r'^[A-Z]{6}\+', '', name)
+    family = re.sub(r'[\s_,.\-]', '', name)
+    italic = bool(re.search(r'(italic|oblique)$', family, re.I))
+    family = re.sub(r'(italic|oblique)$', '', family, flags=re.I)
+    family = re.sub(r'(PSMT|MT|PS)$', '', family)
+    key = family.casefold()
+    for word, value in _WEIGHTS:
+        if key.endswith(word) and len(key) > len(word) + 2:
+            return key[:-len(word)], value, italic
+    for letters, value in _WEIGHT_LETTERS:
+        cut = len(family) - len(letters)
+        # Only an uppercase suffix after a lowercase or Hangul letter is a weight: NanumSquareB, not Arial.
+        if (cut > 2 and family[cut:].isupper() and family[cut:].casefold() == letters
+                and (family[cut-1].islower() or '가' <= family[cut-1] <= '힣')):
+            return key[:cut], value, italic
+    return key, 400, italic
+
+
+def font_kind(name, flags=0):
+    """'serif', 'mono' or 'sans', from the PDF descriptor flags or else from the name."""
+    key = name.casefold()
+    if flags & 1 or any(word in key for word in _MONO_WORDS):
+        return 'mono'
+    if flags & 2 or any(word in key for word in _SERIF_WORDS):
+        return 'serif'
+    return 'sans'
+
+
+def font_flags(page, name):
+    """The FontDescriptor flags and weight of the page's font of this name, when the PDF records them."""
+    doc = page.parent
+    for resource in page.get_fonts(full=True):
+        if normal_name(resource[3]) != normal_name(name):
+            continue
+        xref = resource[0]
+        kind, value = doc.xref_get_key(xref, 'DescendantFonts')
+        if kind == 'array':
+            match = re.search(r'(\d+) 0 R', value)
+            if match:
+                xref = int(match.group(1))
+        kind, value = doc.xref_get_key(xref, 'FontDescriptor')
+        if kind != 'xref':
+            continue
+        descriptor = int(value.split()[0])
+        flags, weight = doc.xref_get_key(descriptor, 'Flags'), doc.xref_get_key(descriptor, 'FontWeight')
+        try:
+            return (int(flags[1]) if flags[0] == 'int' else 0,
+                    int(float(weight[1])) if weight[0] in ('int', 'real') else None)
+        except ValueError:
+            return 0, None
+    return 0, None
+
+
+def similar_fonts(name, text, *, flags=0, weight=None, preferred=None, limit=8):
+    """Installed fonts that can stand in for a missing one, best first, each with a reason.
+
+    Like CorelDRAW's font matching: a saved substitute first, then installed families
+    whose names are close to the missing name, then the default font of the same kind
+    (명조, 고딕 or 고정폭). Each covers every character of the text, in the closest weight.
+    """
+    from difflib import SequenceMatcher
+    from .system_fonts import face_details, font_families, resolve_font_face
+    family, named_weight, italic = font_style(name)
+    if weight is None:
+        weight = 700 if flags & (1 << 18) else named_weight
+    families = font_families()
+    results, seen = [], set()
+
+    def best_face(faces):
+        return min(faces, key=lambda face: (abs(face_details(face)[1] - weight), face_details(face)[3] != italic,
+                                             not face.regular, face.signature[0], face.index))
+
+    def add(face, reason):
+        key = (face.signature, face.index)
+        if key in seen or len(results) >= limit:
+            return
+        seen.add(key)
+        try:
+            font = EditFont(face_details(face)[0], face.data(), 'PC 글꼴')
+        except Exception:
+            return
+        if not font.missing(text):
+            results.append((font, reason))
+
+    if preferred:
+        # A saved substitute is the face the user chose, by its full name.
+        face = resolve_font_face(preferred, allow_family=True)
+        if face is not None:
+            add(face, '저장한 대체 글꼴')
+    if len(family) >= 3:
+        scored = []
+        for key, faces in families.items():
+            ratio = SequenceMatcher(None, family, key).ratio()
+            if min(len(family), len(key)) >= 4 and (family.startswith(key) or key.startswith(family)):
+                ratio = max(ratio, .85)
+            if ratio >= .6:
+                scored.append((ratio, key, faces))
+        for _, _, faces in sorted(scored, key=lambda item: (-item[0], item[1])):
+            add(best_face(faces), '이름이 비슷한 글꼴')
+    kind = font_kind(name, flags)
+    defaults = {'serif': _SERIF_DEFAULTS, 'mono': _MONO_DEFAULTS}.get(kind, _SANS_DEFAULTS)
+    label = {'serif': '명조(세리프)', 'mono': '고정폭'}.get(kind, '고딕(산세리프)')
+    for default in defaults + (_SANS_DEFAULTS if kind != 'sans' else []):
+        faces = families.get(normal_name(default))
+        if faces:
+            add(best_face(faces), f'{label} 기본 글꼴' if default in defaults else '기본 글꼴')
+    return results
