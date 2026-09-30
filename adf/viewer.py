@@ -515,7 +515,35 @@ class PdfView(QGraphicsView):
             self.refresh_snap_interaction(event.modifiers() | Qt.KeyboardModifier.AltModifier)
             event.accept()
             return
+        if self.arrow_page(event):
+            event.accept()
+            return
         super().keyPressEvent(event)
+
+    def arrow_page(self, event):
+        """Arrow keys in page-by-page views: scroll a zoomed page first, then turn it at its edge."""
+        keys = {Qt.Key.Key_Up: -1, Qt.Key.Key_Down: 1, Qt.Key.Key_Left: -1, Qt.Key.Key_Right: 1}
+        if (event.key() not in keys or self.mode not in ('single', 'spread') or not self.pages
+                or event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier
+                or self.scene().focusItem() is not None or self.placement is not None):
+            return False
+        step = keys[event.key()]
+        vertical = event.key() in (Qt.Key.Key_Up, Qt.Key.Key_Down)
+        scroll = self.verticalScrollBar() if vertical else self.horizontalScrollBar()
+        at_edge = scroll.value() >= scroll.maximum() - 1 if step > 0 else scroll.value() <= scroll.minimum() + 1
+        if not at_edge:
+            size = self.viewport().height() if vertical else self.viewport().width()
+            scroll.setValue(scroll.value() + step * max(40, round(size * .12)))
+            return True
+        # Holding the key scrolls to the edge and stops; a new press turns the page.
+        if event.isAutoRepeat():
+            return True
+        target = self.navigation_target(step)
+        if 0 <= target < len(self.pages):
+            self.goto(target)
+            if vertical:
+                scroll.setValue(scroll.minimum() if step > 0 else scroll.maximum())
+        return True
 
     def keyReleaseEvent(self, event):
         if event.key() == Qt.Key.Key_Space and 'space' in self.pan.sources:
@@ -1582,6 +1610,7 @@ class ThumbnailList(QListWidget):
         self.insert_button.hide()
         self.insert_button.clicked.connect(self.request_insertion)
         self.document = None
+        self.mixed_orientation = False
         self.cache = OrderedDict()
         self.cache_bytes = 0
         self.layout_signature = None
@@ -1600,6 +1629,8 @@ class ThumbnailList(QListWidget):
         self.cache_bytes = 0
         self.document = document
         self.layout_signature = None
+        sizes = [document.page_size(i) for i in range(document.page_count)]
+        self.mixed_orientation = (any(w > h for w, h in sizes) and any(h > w for w, h in sizes))
         for i in range(document.page_count):
             item = QListWidgetItem(str(i+1))
             item.setData(Qt.ItemDataRole.UserRole, i)
@@ -1647,6 +1678,12 @@ class ThumbnailList(QListWidget):
         if not self.document or not self.document.doc:
             return QSizeF(width, width * 1.414)
         page_width, page_height = self.document.page_size(row)
+        if self.mixed_orientation:
+            # Portrait and landscape pages share the long side, so the same paper
+            # looks the same size turned either way instead of a portrait page
+            # standing much taller than the landscape pages around it.
+            scale = width / max(page_width, page_height)
+            return QSizeF(page_width * scale, page_height * scale)
         # Fixed artwork width; cap exceptionally tall pages to two widths.
         height = min(width * page_height / page_width, width * 2)
         return QSizeF(height * page_width / page_height, height)

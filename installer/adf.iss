@@ -1,6 +1,6 @@
 #define AppName "ADF"
 #ifndef AppVersion
-  #define AppVersion "0.3.33"
+  #define AppVersion "0.3.34"
 #endif
 #define RepoRoot AddBackslash(SourcePath) + ".."
 #ifndef AppBuildDir
@@ -87,6 +87,8 @@ Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\ADF.Document\shell
 ; corner where the thumbnail handler already puts the mark.
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\ADF.Document"; ValueType: string; ValueName: "TypeOverlay"; ValueData: ""
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\.pdf\OpenWithProgids"; ValueType: none; ValueName: "ADF.Document"; Flags: uninsdeletevalue
+; ADF writes its own sign-in start for the background agent (adf/agent.py); uninstalling removes it.
+Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "ADF"; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\Applications\ADF.exe"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "ADF"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\Applications\ADF.exe\SupportedTypes"; ValueType: string; ValueName: ".pdf"; ValueData: ""
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\Applications\ADF.exe\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\ADF.exe"" ""%1"""
@@ -256,12 +258,33 @@ end;
   while it names ADF's handler served from this installation. The uninstaller of
   an isolated test gets no test token, and this check keeps it off the real slot;
   its own slot goes with its private registry tree. }
+{ The background agent (ADF.exe --background) has no visible window; its hidden
+  window takes WM_CLOSE and quits, so its files can be replaced or removed. }
+procedure StopBackgroundAgent;
+var
+  I: Integer;
+  Agent: HWND;
+begin
+  Agent := FindWindowByWindowName('ADF Background Agent');
+  if Agent = 0 then
+    Exit;
+  PostMessage(Agent, 16, 0, 0);
+  for I := 1 to 50 do begin
+    if FindWindowByWindowName('ADF Background Agent') = 0 then
+      Exit;
+    Sleep(100);
+  end;
+  Log('The ADF background agent did not quit.');
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   Handler, Server: String;
 begin
   if CurUninstallStep <> usUninstall then
     Exit;
+  if not IsIsolatedTest then
+    StopBackgroundAgent;
   if RegQueryStringValue(HKCU, ThumbnailSlot, '', Handler) and (CompareText(Handler, ThumbnailHandler) = 0)
     and RegQueryStringValue(HKCU, 'Software\Classes\CLSID\' + ThumbnailHandler + '\InprocServer32', '', Server)
     and (CompareText(ExtractFilePath(Server), ExpandConstant('{app}\')) = 0) then begin
@@ -322,6 +345,8 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   Result := '';
+  if not IsIsolatedTest then
+    StopBackgroundAgent;
   if not DistributionPage.Values[0] then
     Result := 'ADF redistribution notice acknowledgement is required.';
 #ifdef PatchFrom
