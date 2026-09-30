@@ -585,15 +585,35 @@ class PdfDocument:
                      fontfile: str | None = None, zero_pad: bool = False, mirror: bool = False,
                      anchor_page: int = 0, start_right: bool = False, label: str = "", label_before: bool = True,
                      label_gap: float = 2, label_font_size: float | None = None, label_color=None,
-                     label_fontfile: str | None = None) -> None:
+                     label_fontfile: str | None = None, kind: str = "number", mark_id: str | None = None,
+                     font_family: str | None = None, label_font_family: str | None = None) -> str:
+        """Add or edit one item: a page number, header text, or header text with the number.
+
+        One position holds one item, like Acrobat's header and footer boxes. Adding
+        at a position that already has an item edits that item; mark_id edits a
+        given item. Other items stay as they are. Returns the item's id.
+        """
+        from uuid import uuid4
         from .page_layout import numbering_label, numbering_position
         selected = _indices(indices, self.page_count)
         _indices([anchor_page], self.page_count)
+        if kind not in ("number", "text", "both"):
+            raise ValueError("넣을 항목의 종류가 잘못되었습니다.")
+        if kind == "number" and label.strip():
+            kind = "both"
+        if kind != "number" and not label.strip():
+            raise ValueError("머리말 글자를 입력해 주세요.")
         if isinstance(start, bool) or not isinstance(start, int) or start < 0:
             raise ValueError("시작 번호는 0 이상의 정수여야 합니다.")
         if not isinstance(digits, int) or not 1 <= digits <= 12:
             raise ValueError("자릿수는 1~12로 지정해 주세요.")
         with self._edit() as doc:
+            settings = _mark_settings(doc)
+            if mark_id is None:
+                mark_id = next((key for key, item in settings.items() if item.get("position") == position),
+                               None) or uuid4().hex[:8]
+            for page in doc:
+                remove_marks(page, {mark_id} | ({"legacy"} if kind != "text" and page.number in selected else set()))
             for offset, index in enumerate(selected):
                 text = numbering_label(start, offset, len(selected), prefix=prefix, suffix=suffix,
                                        digits=digits, zero_pad=zero_pad)
@@ -602,16 +622,63 @@ class PdfDocument:
                 number_page(doc[index], text, position=actual_position, margin_x=margin_x, margin_y=margin_y,
                             font_size=font_size, color=color, fontfile=fontfile, label=label,
                             label_before=label_before, label_gap=label_gap, label_font_size=label_font_size,
-                            label_color=label_color, label_fontfile=label_fontfile)
+                            label_color=label_color, label_fontfile=label_fontfile, kind=kind, mark_id=mark_id)
+            # Kept so that the dialog can show and edit the item later, also after saving.
+            settings[mark_id] = {
+                "kind": kind, "position": position, "start": start, "prefix": prefix, "suffix": suffix,
+                "zero_pad": zero_pad, "mirror": mirror, "anchor_page": anchor_page, "start_right": start_right,
+                "margin_x": margin_x, "margin_y": margin_y, "font_size": font_size, "color": list(color),
+                "font_family": font_family, "label": label.strip(), "label_before": label_before,
+                "label_gap": label_gap, "label_font_size": label_font_size,
+                "label_color": list(label_color) if label_color is not None else None,
+                "label_font_family": label_font_family}
+            _write_mark_settings(doc, settings)
+        return mark_id
+
+    def page_marks(self) -> list[dict]:
+        """The items on this document's pages, each with its settings and the pages it is on."""
+        doc = self._require_doc()
+        pages = {}
+        for page in doc:
+            for mark in page_marks(page):
+                pages.setdefault(mark["id"], []).append(page.number)
+        settings = _mark_settings(doc)
+        items = []
+        for key, found in pages.items():
+            item = dict(settings.get(key) or {"kind": "number", "position": None})
+            item.update(id=key, pages=found)
+            items.append(item)
+        order = [f"{v}-{h}" for v in ("top", "bottom") for h in ("left", "center", "right")]
+        return sorted(items, key=lambda item: order.index(item["position"]) if item["position"] in order else 6)
+
+    def remove_marks(self, ids: Iterable[str]) -> tuple[list[int], list[int]]:
+        """Remove the chosen items from every page as one undoable edit; returns removed and kept pages."""
+        ids = set(ids)
+        removed, kept = [], []
+        with self._edit() as doc:
+            for page in doc:
+                if not any(mark["id"] in ids for mark in page_marks(page)):
+                    continue
+                try:
+                    (removed if remove_marks(page, ids) else kept).append(page.number)
+                except ValueError:
+                    kept.append(page.number)
+            if not removed:
+                raise ValueError("지울 수 있는 페이지 번호·머리말을 찾지 못했습니다. 직접 고쳤거나 주변 글자가 바뀌었을 수 있습니다.")
+            settings = _mark_settings(doc)
+            remaining = {mark["id"] for page in doc for mark in page_marks(page)}
+            _write_mark_settings(doc, {key: item for key, item in settings.items()
+                                       if key not in ids or key in remaining})
+        return removed, kept
 
     def numbered_pages(self) -> list[int]:
-        """Pages that still carry a number recorded by number_page."""
+        """Pages that still carry a number or header text recorded by ADF."""
         doc = self._require_doc()
         return [index for index in range(doc.page_count)
                 if doc.xref_get_key(doc.page_xref(index), NUMBER_RECORD)[0] == "string"]
 
     def remove_page_numbers(self, indices: Iterable[int]) -> tuple[list[int], list[int]]:
-        """Remove recorded numbers as one undoable edit; returns removed and kept pages."""
+        """Remove every recorded item from these pages as one undoable edit; returns removed and kept pages."""
         selected = _indices(indices, self.page_count)
         removed, kept = [], []
         with self._edit() as doc:
@@ -841,137 +908,205 @@ def _font(text: str, fontfile: str | None = None, fontbuffer: bytes | None = Non
 
 
 NUMBER_RECORD = "ADFPageNumber"
+MARK_SETTINGS = "ADFPageMarks"
+
+
+def _mark_settings(doc: pymupdf.Document) -> dict:
+    """Each item's settings by id, kept in the catalog so the dialog can edit items later."""
+    kind, value = doc.xref_get_key(doc.pdf_catalog(), MARK_SETTINGS)
+    if kind != "string":
+        return {}
+    try:
+        settings = json.loads(value)
+        return settings if isinstance(settings, dict) else {}
+    except ValueError:
+        return {}
+
+
+def _write_mark_settings(doc: pymupdf.Document, settings: dict) -> None:
+    if not settings:
+        doc.xref_set_key(doc.pdf_catalog(), MARK_SETTINGS, "null")
+        return
+    value = json.dumps(settings, ensure_ascii=True)
+    doc.xref_set_key(doc.pdf_catalog(), MARK_SETTINGS, "<" + value.encode("ascii").hex() + ">")
 
 
 def _same_rect(first, second) -> bool:
     return all(abs(a - b) < .5 for a, b in zip(first, second))
 
 
-def page_number_parts(page: pymupdf.Page):
-    """Each text run that number_page last recorded on this page: the number and any header text."""
+def page_marks(page: pymupdf.Page) -> list[dict]:
+    """The page numbers and header text ADF drew on this page, one entry per item.
+
+    Each entry has the item id, the position it was drawn at, its text runs with
+    their rectangles, and which run is the number. Records written before items
+    existed read as one number item with the id 'legacy'.
+    """
     kind, value = page.parent.xref_get_key(page.xref, NUMBER_RECORD)
     if kind != "string":
-        return None
+        return []
     try:
         record = json.loads(value)
+        if "marks" in record:
+            return [{"id": str(mark["id"]), "position": mark.get("position"),
+                     "number": mark.get("number"),
+                     "parts": [(str(text), pymupdf.Rect(rect)) for text, rect in mark["parts"]]}
+                    for mark in record["marks"]]
         parts = record.get("parts") or [[record["text"], record["rect"]]]
-        return [(str(text), pymupdf.Rect(rect)) for text, rect in parts]
+        parts = [(str(text), pymupdf.Rect(rect)) for text, rect in parts]
+        number = next((i for i, (text, _) in enumerate(parts) if text == record["text"]), 0)
+        return [{"id": "legacy", "position": None, "number": number, "parts": parts}]
     except (ValueError, KeyError, TypeError, AttributeError):
-        return None
+        return []
 
 
-def page_number_record(page: pymupdf.Page):
-    """The number's label and position that number_page last recorded on this page, if any."""
-    kind, value = page.parent.xref_get_key(page.xref, NUMBER_RECORD)
-    if kind != "string":
-        return None
-    try:
-        record = json.loads(value)
-        return str(record["text"]), pymupdf.Rect(record["rect"])
-    except (ValueError, KeyError, TypeError):
-        return None
-
-
-def _record_page_number(page: pymupdf.Page, text: str, rect, parts=None) -> None:
-    record = {"text": text, "rect": list(rect)}
-    if parts:
-        # ADF before 0.3.35 reads only text and rect, so the number stays where it looks.
-        record["parts"] = [[part, list(area)] for part, area in parts]
+def _write_marks(page: pymupdf.Page, marks: list[dict]) -> None:
+    if not marks:
+        page.parent.xref_set_key(page.xref, NUMBER_RECORD, "null")
+        return
+    record = {"marks": [{"id": mark["id"], "position": mark["position"], "number": mark["number"],
+                         "parts": [[text, list(rect)] for text, rect in mark["parts"]]} for mark in marks]}
+    # ADF before 0.3.35 reads only text and rect: give it the first number, which it can still remove.
+    numbered = next((mark for mark in marks if mark["number"] is not None), None)
+    if numbered:
+        record["text"], record["rect"] = numbered["parts"][numbered["number"]][0], list(numbered["parts"][numbered["number"]][1])
     value = json.dumps(record, ensure_ascii=True)
     page.parent.xref_set_key(page.xref, NUMBER_RECORD, "<" + value.encode("ascii").hex() + ">")
 
 
+def page_number_parts(page: pymupdf.Page):
+    """Every text run of every item ADF recorded on this page."""
+    marks = page_marks(page)
+    return [part for mark in marks for part in mark["parts"]] if marks else None
+
+
+def page_number_record(page: pymupdf.Page):
+    """The first page number that ADF recorded on this page and its position, if any."""
+    for mark in page_marks(page):
+        if mark["number"] is not None:
+            return mark["parts"][mark["number"]]
+    return None
+
+
 def copy_page_number_record(source: pymupdf.Page, target: pymupdf.Page) -> None:
     """insert_pdf leaves the record out; keep it with a copied page."""
-    kind, value = source.parent.xref_get_key(source.xref, NUMBER_RECORD)
-    if kind == "string" and page_number_parts(source):
-        target.parent.xref_set_key(target.xref, NUMBER_RECORD, "<" + value.encode("utf-8").hex() + ">")
+    marks = page_marks(source)
+    if marks:
+        _write_marks(target, marks)
+
+
+def remove_marks(page: pymupdf.Page, ids=None) -> bool:
+    """Remove the runs of the given items (all when ids is None), only while they are intact.
+
+    Page numbers and header text are ordinary page text. Each recorded run must
+    still be the only text at its recorded position. Text added by other programs
+    or by earlier ADF versions without a record is never touched.
+    """
+    marks = page_marks(page)
+    chosen = [mark for mark in marks if ids is None or mark["id"] in ids]
+    if not chosen:
+        return False
+    found = []
+    for mark in chosen:
+        for text, rect in mark["parts"]:
+            hits = [hit for hit in page.search_for(text) if _same_rect(hit, rect)]
+            if not hits:
+                continue
+            if len(hits) != 1 or page.get_text("text", clip=hits[0]).split() != text.split():
+                raise ValueError(f"{page.number + 1}쪽의 기존 페이지 번호·머리말 주변 글자가 바뀌어 안전하게 고치지 못했습니다.")
+            found.append(hits[0])
+    if found:
+        if any(annot.type[0] == pymupdf.PDF_ANNOT_REDACT for annot in page.annots() or ()):
+            raise ValueError("이 페이지에 기존 교정 표시가 있습니다. 다른 PDF 편집기에서 먼저 처리해 주세요.")
+        for hit in found:
+            page.add_redact_annot(hit, fill=False, cross_out=False)
+        page.apply_redactions(images=0, graphics=0, text=0)
+    # Items whose text was edited or flattened have nothing left to remove; forget them too.
+    _write_marks(page, [mark for mark in marks if mark not in chosen])
+    return bool(found)
 
 
 def remove_page_number(page: pymupdf.Page) -> bool:
-    """Remove the label number_page recorded, only while it is still intact.
+    """Remove everything ADF recorded on this page."""
+    return remove_marks(page)
 
-    Page numbers are ordinary page text. Each recorded run must still be the
-    only text at its recorded position. Numbers added by other programs or by
-    earlier ADF versions carry no record and are never touched.
+
+def draw_mark(page: pymupdf.Page, runs, *, position: str = "bottom-center", margin_x: float = 12,
+              margin_y: float = 12, gap: float = 2, mark_id: str = "legacy", number: int | None = 0) -> None:
+    """Draw one item's text runs side by side on one baseline and record them under mark_id.
+
+    runs are (text, fontfile, font_size, color); gap is in mm; number is the index
+    of the run that is the page number, if any.
     """
-    parts = page_number_parts(page)
-    if parts is None:
-        return False
-    found = []
-    for text, rect in parts:
-        hits = [hit for hit in page.search_for(text) if _same_rect(hit, rect)]
-        if not hits:
-            continue
-        if len(hits) != 1 or page.get_text("text", clip=hits[0]).split() != text.split():
-            raise ValueError(f"{page.number + 1}쪽의 기존 페이지 번호 주변 글자가 바뀌어 안전하게 고치지 못했습니다.")
-        found.append(hits[0])
-    if not found:
-        # The label was edited or flattened; nothing of it remains to remove.
-        page.parent.xref_set_key(page.xref, NUMBER_RECORD, "null")
-        return False
-    if any(annot.type[0] == pymupdf.PDF_ANNOT_REDACT for annot in page.annots() or ()):
-        raise ValueError("이 페이지에 기존 교정 표시가 있습니다. 다른 PDF 편집기에서 먼저 처리해 주세요.")
-    for hit in found:
-        page.add_redact_annot(hit, fill=False, cross_out=False)
-    page.apply_redactions(images=0, graphics=0, text=0)
-    page.parent.xref_set_key(page.xref, NUMBER_RECORD, "null")
-    return True
+    if any(not math.isfinite(v) or v < 0 for v in (margin_x, margin_y, gap)):
+        raise ValueError("여백과 간격은 0 이상의 숫자로 지정해 주세요.")
+    if position not in {f"{v}-{h}" for v in ("top", "bottom") for h in ("left", "center", "right")}:
+        raise ValueError("번호 위치가 잘못되었습니다.")
+    fonts = []
+    for text, fontfile, size, color in runs:
+        _validate_text_style(size, color)
+        if not text.strip():
+            raise ValueError("머리말 글자를 입력해 주세요.")
+        if "\r" in text or "\n" in text:
+            raise ValueError("페이지 번호와 머리말은 한 줄로 입력해 주세요.")
+        fonts.append(_font(text, fontfile))
+    others = [mark for mark in page_marks(page) if mark["id"] != mark_id]
+    if any(mark["position"] == position for mark in others):
+        raise ValueError(f"{page.number + 1}쪽의 이 자리에는 이미 다른 페이지 번호·머리말이 있습니다.")
+    gap_pt = gap * MM_TO_PT
+    widths = [font.text_length(text, fontsize=size) for (text, _, size, _), (font, _, _) in zip(runs, fonts)]
+    ascent = max(font.ascender * size for (_, _, size, _), (font, _, _) in zip(runs, fonts))
+    descent = min(font.descender * size for (_, _, size, _), (font, _, _) in zip(runs, fonts))
+    top, horizontal = position.split("-")
+    width, height = page.rect.width, page.rect.height
+    mx, my = margin_x * MM_TO_PT, margin_y * MM_TO_PT
+    total = sum(widths) + gap_pt * (len(runs) - 1)
+    if mx * 2 + total > width or my * 2 + ascent - descent > height:
+        raise ValueError("페이지 밖으로 번호가 나갑니다. 여백 또는 글자 크기를 줄여 주세요.")
+    x = {"left": mx, "center": (width - total) / 2, "right": width - mx - total}[horizontal]
+    y = my + ascent if top == "top" else height - my + descent
+    # Drawing an item again edits it: its runs recorded here earlier are replaced.
+    remove_marks(page, {mark_id})
+    placed = []
+    for (text, _, size, color), (_, name, file), run_width in zip(runs, fonts, widths):
+        before = page.search_for(text)
+        point = pymupdf.Point(x, y) * page.derotation_matrix
+        page.insert_text(point, text, fontsize=size, fontname=name, fontfile=file,
+                         color=color, rotate=page.rotation, overlay=True)
+        # Record the new runs so that they can later be edited or removed on their own.
+        added = [hit for hit in page.search_for(text) if not any(_same_rect(hit, old) for old in before)]
+        placed.append((text, added[0] if len(added) == 1 else None))
+        x += run_width + gap_pt
+    if all(rect is not None for _, rect in placed):
+        _write_marks(page, page_marks(page) + [{"id": mark_id, "position": position, "number": number,
+                                                 "parts": placed}])
 
 
 def number_page(page: pymupdf.Page, text: str, *, position: str = "bottom-center", margin_x: float = 12,
                 margin_y: float = 12, font_size: float = 11, color=(0, 0, 0), fontfile: str | None = None,
                 label: str = "", label_before: bool = True, label_gap: float = 2,
-                label_font_size: float | None = None, label_color=None, label_fontfile: str | None = None) -> None:
-    """Draw one page number, with header or footer text before or after it.
+                label_font_size: float | None = None, label_color=None, label_fontfile: str | None = None,
+                kind: str = "number", mark_id: str | None = None) -> None:
+    """Draw a page number, header text, or header text before or after the number.
 
-    Shared by the live preview and final document editing. The text has its own
-    font, size and color, defaulting to the number's, and sits label_gap mm away
-    on the number's baseline, as Acrobat's header and footer text does.
+    Without mark_id this replaces everything ADF drew on the page, as numbering
+    did before items existed; with it, only that item's runs are replaced.
     """
-    _validate_text_style(font_size, color)
     label = label.strip()
-    label_font_size = font_size if label_font_size is None else label_font_size
-    label_color = color if label_color is None else label_color
-    if label:
-        _validate_text_style(label_font_size, label_color)
-    if any(not math.isfinite(v) or v < 0 for v in (margin_x, margin_y, label_gap)):
-        raise ValueError("여백과 간격은 0 이상의 숫자로 지정해 주세요.")
-    if position not in {f"{v}-{h}" for v in ("top", "bottom") for h in ("left", "center", "right")}:
-        raise ValueError("번호 위치가 잘못되었습니다.")
-    if any(mark in value for value in (text, label) for mark in "\r\n"):
-        raise ValueError("페이지 번호와 머리말·꼬리말은 한 줄로 입력해 주세요.")
-    runs = [(text, _font(text, fontfile), font_size, color)]
-    if label:
-        run = (label, _font(label, label_fontfile), label_font_size, label_color)
-        runs.insert(0 if label_before else 1, run)
-    gap = label_gap * MM_TO_PT if label else 0
-    widths = [font.text_length(value, fontsize=size) for value, (font, _, _), size, _ in runs]
-    ascent = max(font.ascender * size for _, (font, _, _), size, _ in runs)
-    descent = min(font.descender * size for _, (font, _, _), size, _ in runs)
-    top, horizontal = position.split("-")
-    width, height = page.rect.width, page.rect.height
-    mx, my = margin_x * MM_TO_PT, margin_y * MM_TO_PT
-    total = sum(widths) + gap
-    if mx * 2 + total > width or my * 2 + ascent - descent > height:
-        raise ValueError("페이지 밖으로 번호가 나갑니다. 여백 또는 글자 크기를 줄여 주세요.")
-    x = {"left": mx, "center": (width - total) / 2, "right": width - mx - total}[horizontal]
-    y = my + ascent if top == "top" else height - my + descent
-    # Adding a number again edits it: the label recorded here earlier is replaced.
-    remove_page_number(page)
-    placed = []
-    for (value, (font, name, file), size, run_color), run_width in zip(runs, widths):
-        before = page.search_for(value)
-        point = pymupdf.Point(x, y) * page.derotation_matrix
-        page.insert_text(point, value, fontsize=size, fontname=name, fontfile=file,
-                         color=run_color, rotate=page.rotation, overlay=True)
-        # Record the new runs so that they can later be edited or removed on their own.
-        added = [hit for hit in page.search_for(value) if not any(_same_rect(hit, old) for old in before)]
-        placed.append((value, added[0] if len(added) == 1 else None))
-        x += run_width + gap
-    number_rect = next(rect for value, rect in placed if value == text) if label else placed[0][1]
-    if number_rect is not None and all(rect is not None for _, rect in placed):
-        _record_page_number(page, text, number_rect, placed if label else None)
+    label_run = (label, label_fontfile or fontfile, font_size if label_font_size is None else label_font_size,
+                 color if label_color is None else label_color)
+    number_run = (text, fontfile, font_size, color)
+    if kind == "text":
+        runs, number = [label_run], None
+    elif kind == "both" or (kind == "number" and label):
+        runs = [label_run, number_run] if label_before else [number_run, label_run]
+        number = 1 if label_before else 0
+    else:
+        runs, number = [number_run], 0
+    if mark_id is None:
+        remove_marks(page)
+    draw_mark(page, runs, position=position, margin_x=margin_x, margin_y=margin_y, gap=label_gap,
+              mark_id=mark_id or "legacy", number=number)
 
 
 def parse_ranges(text: str, page_count: int) -> list[list[int]]:

@@ -888,7 +888,7 @@ class NumberingDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(14)
-        layout.addWidget(_description("미리보기의 위치 아이콘을 눌러 번호를 배치하세요."))
+        layout.addWidget(_description("미리보기의 위치 아이콘을 눌러 쪽 번호나 머리말을 배치하세요. 한 자리에는 항목 하나가 들어갑니다."))
         body = QHBoxLayout()
         body.setSpacing(20)
         self.preview = NumberingPreview()
@@ -928,6 +928,43 @@ class NumberingDialog(QDialog):
         settings = QVBoxLayout(settings_widget)
         settings.setContentsMargins(18, 18, 18, 18)
         settings.setSpacing(20)
+        # Items already on the pages, one per position, as Acrobat's six header and footer boxes.
+        self.items = document.page_marks()
+        self.editing = None
+        self.item_list = QListWidget()
+        self.item_list.setAccessibleName('넣은 페이지 번호·머리말')
+        for item in self.items:
+            row = QListWidgetItem(self._item_title(item))
+            row.setData(Qt.ItemDataRole.UserRole, item['id'])
+            if item['position'] is None:
+                row.setToolTip('이전 버전에서 넣은 번호입니다. 지울 수는 있지만 여기서 고칠 수는 없습니다.')
+            self.item_list.addItem(row)
+        new_row = QListWidgetItem('+ 새 항목 추가')
+        new_row.setData(Qt.ItemDataRole.UserRole, None)
+        self.item_list.addItem(new_row)
+        # Every row shows at once: the list is short, one row per position at most.
+        self.item_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.item_list.setFixedHeight(self.item_list.sizeHintForRow(0) * self.item_list.count()
+                                      + 2 * self.item_list.frameWidth() + 6)
+        self.items_title = QLabel('넣은 항목 · 눌러서 수정')
+        for widget in (self.items_title, self.item_list):
+            widget.setVisible(bool(self.items))
+        settings.addWidget(self.items_title)
+        settings.addWidget(self.item_list)
+        kind_row = QHBoxLayout()
+        kind_row.setSpacing(10)
+        kind_row.addWidget(QLabel('넣을 항목'))
+        self.kind = QComboBox()
+        for title, value in [('쪽 번호', 'number'), ('머리말', 'text'), ('머리말 + 쪽 번호', 'both')]:
+            self.kind.addItem(title, value)
+        self.kind.setAccessibleName('넣을 항목')
+        kind_row.addWidget(self.kind)
+        kind_row.addStretch()
+        settings.addLayout(kind_row)
+        self.item_hint = QLabel()
+        self.item_hint.setObjectName('muted')
+        self.item_hint.setWordWrap(True)
+        settings.addWidget(self.item_hint)
         self.mirror = QCheckBox('맞쪽 번호 · 좌우 대칭')
         self.mirror.setToolTip('왼쪽·오른쪽 페이지에 번호 위치를 대칭으로 적용합니다')
         settings.addWidget(self.mirror)
@@ -964,11 +1001,11 @@ class NumberingDialog(QDialog):
         self.ranges = QLineEdit()
         self.ranges.setPlaceholderText('전체')
         self.ranges.setToolTip('비워 두면 전체 · 예: 2-끝, 1-3, 7')
-        self.ranges.setAccessibleName('번호 적용 페이지')
+        self.ranges.setAccessibleName('적용 페이지')
         self.start = _spin(0, 9999999, 1)
         self.start.setFixedWidth(108)
         self.start.setAccessibleName('시작 번호')
-        for title, control, stretch in [('번호 적용 페이지', self.ranges, 1), ('시작 번호', self.start, 0)]:
+        for title, control, stretch in [('적용 페이지', self.ranges, 1), ('시작 번호', self.start, 0)]:
             column = QVBoxLayout()
             column.setSpacing(6)
             column.addWidget(QLabel(title))
@@ -996,28 +1033,32 @@ class NumberingDialog(QDialog):
         affix_row.addStretch()
         settings.addLayout(affix_row)
 
-        # Header or footer text beside the number, as in Acrobat's header and footer.
-        label_box = QVBoxLayout()
+        # Header or footer text, alone or beside the number, as in Acrobat's header and footer.
+        self.label_section = QWidget()
+        label_box = QVBoxLayout(self.label_section)
+        label_box.setContentsMargins(0, 0, 0, 0)
         label_box.setSpacing(8)
-        label_box.addWidget(QLabel('머리말·꼬리말 글자'))
+        label_box.addWidget(QLabel('머리말 글자'))
         self.label_text = QLineEdit()
-        self.label_text.setPlaceholderText('예: 2026 도시디자인 기본계획 · 비워 두면 번호만')
-        self.label_text.setAccessibleName('머리말·꼬리말 글자')
+        self.label_text.setPlaceholderText('예: 2026 도시디자인 기본계획')
+        self.label_text.setAccessibleName('머리말 글자')
         label_box.addWidget(self.label_text)
-        label_row = QHBoxLayout()
+        self.label_arrangement = QWidget()
+        label_row = QHBoxLayout(self.label_arrangement)
+        label_row.setContentsMargins(0, 0, 0, 0)
         label_row.setSpacing(8)
         self.label_side = QComboBox()
-        self.label_side.addItem('번호 앞에', True)
-        self.label_side.addItem('번호 뒤에', False)
-        self.label_side.setAccessibleName('글자 위치')
+        self.label_side.addItem('머리말 다음에 번호', True)
+        self.label_side.addItem('번호 다음에 머리말', False)
+        self.label_side.setAccessibleName('머리말과 번호 순서')
         self.label_gap = _decimal(0, 50, 3, " mm")
         self.label_gap.setAccessibleName('번호와의 간격')
-        self.label_gap.setToolTip('글자와 번호 사이의 간격')
+        self.label_gap.setToolTip('머리말과 번호 사이의 간격')
         label_row.addWidget(self.label_side)
         label_row.addWidget(QLabel('간격'))
         label_row.addWidget(self.label_gap)
         label_row.addStretch()
-        label_box.addLayout(label_row)
+        label_box.addWidget(self.label_arrangement)
         self.label_same_font = QCheckBox('번호와 같은 글꼴·크기·색')
         self.label_same_font.setChecked(True)
         label_box.addWidget(self.label_same_font)
@@ -1038,7 +1079,7 @@ class NumberingDialog(QDialog):
         label_font_row.setContentsMargins(0, 0, 0, 0)
         self.label_font_controls.setVisible(False)
         label_box.addWidget(self.label_font_controls)
-        settings.addLayout(label_box)
+        settings.addWidget(self.label_section)
         self.format_example = QLabel()
         self.format_example.setObjectName('numberExample')
         self.format_example.setWordWrap(True)
@@ -1066,6 +1107,8 @@ class NumberingDialog(QDialog):
         self.label_side.currentIndexChanged.connect(self._schedule_preview)
         self.label_gap.valueChanged.connect(self._schedule_preview)
         self.label_same_font.toggled.connect(self._label_font_toggled)
+        self.kind.currentIndexChanged.connect(self._kind_changed)
+        self.item_list.currentRowChanged.connect(self._item_selected)
         self.label_font_picker.changed.connect(self._schedule_preview)
         self.label_font_size.currentTextChanged.connect(self._schedule_preview)
         self.label_color.changed.connect(self._schedule_preview)
@@ -1073,15 +1116,114 @@ class NumberingDialog(QDialog):
         self.mirror.toggled.connect(self._mirror_changed)
         self.font_picker.changed.connect(self._schedule_preview)
         self.color_button.changed.connect(self._schedule_preview)
-        self._schedule_preview()
+        self._start_new_item()
 
     def _schedule_preview(self, *_):
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
         self._preview_timer.start()
 
+    POSITION_NAMES = {f'{v}-{h}': f'{vt} {ht}' for v, vt in [('top', '상단'), ('bottom', '하단')]
+                      for h, ht in [('left', '왼쪽'), ('center', '가운데'), ('right', '오른쪽')]}
+    KIND_NAMES = {'number': '쪽 번호', 'text': '머리말', 'both': '머리말 + 쪽 번호'}
+
+    def _item_title(self, item):
+        return mark_title(item)
+
+    def _item_at(self, position):
+        return next((item for item in self.items if item['position'] == position), None)
+
     def _label_font_toggled(self, same):
-        self.label_font_controls.setVisible(not same)
+        self.label_font_controls.setVisible(not same and self.kind.currentData() == 'both')
         self._schedule_preview()
+
+    def _kind_changed(self, *_):
+        kind = self.kind.currentData()
+        self.label_section.setVisible(kind != 'number')
+        self.label_arrangement.setVisible(kind == 'both')
+        self.label_same_font.setVisible(kind == 'both')
+        self.label_font_controls.setVisible(kind == 'both' and not self.label_same_font.isChecked())
+        # A header alone has no number settings to show.
+        number_labels = [label for label in self.findChildren(QLabel) if label.text() in ('시작 번호', '자릿수', '번호 형식')]
+        for widget in (self.start, self.zero_pad, self.affix, *number_labels):
+            widget.setVisible(kind != 'text')
+        self._update_hint()
+        self._schedule_preview()
+
+    def _update_hint(self):
+        ok = self.buttons.button(QDialogButtonBox.StandardButton.Ok)
+        place = self.POSITION_NAMES[self.position]
+        if self.editing:
+            ok.setText('수정')
+            text = f'{place}에 있는 항목을 수정합니다. 다른 항목은 그대로 둡니다.'
+        else:
+            ok.setText('추가')
+            text = f'{place}에 새 항목을 추가합니다. 이미 넣은 항목은 그대로 둡니다.' if self.items else ''
+            numbered = next((item for item in self.items if item.get('kind') != 'text'), None)
+            if numbered and self.kind.currentData() != 'text':
+                where = self.POSITION_NAMES.get(numbered['position'], '다른 자리')
+                text += f' 쪽 번호가 이미 {where}에 있습니다. 옮기려면 위 목록에서 그 항목을 고르세요.'
+        self.item_hint.setText(text.strip())
+        self.item_hint.setVisible(bool(text.strip()))
+
+    def _start_new_item(self):
+        self.editing = None
+        numbered = any(item.get('kind') != 'text' for item in self.items)
+        # With a number already there, the next item is most likely a header, in a free place.
+        order = ['top-center', 'top-left', 'top-right', 'bottom-center', 'bottom-left', 'bottom-right'] if numbered else \
+            ['bottom-center', 'bottom-right', 'bottom-left', 'top-center', 'top-right', 'top-left']
+        self.position = next((position for position in order if not self._item_at(position)), order[0])
+        with QSignalBlocker(self.item_list):
+            self.item_list.setCurrentRow(self.item_list.count() - 1)
+        with QSignalBlocker(self.kind):
+            self.kind.setCurrentIndex(self.kind.findData('text' if numbered else 'number'))
+        self._kind_changed()
+
+    def _item_selected(self, row):
+        key = self.item_list.item(row).data(Qt.ItemDataRole.UserRole) if row >= 0 else None
+        item = next((item for item in self.items if item['id'] == key), None)
+        if item is None or item['position'] is None:
+            if item is not None:
+                QMessageBox.information(self, '페이지 번호 및 머리말', '이전 버전에서 넣은 번호는 여기서 고칠 수 없습니다. '
+                                        '지운 뒤 새로 추가해 주세요.')
+            self._start_new_item()
+            return
+        self._load_item(item)
+
+    def _load_item(self, item, kind=None):
+        from PySide6.QtGui import QFont
+        self.editing = item['id']
+        self.position = item['position']
+        self.anchor_page = item.get('anchor_page', 0)
+        with QSignalBlocker(self.item_list):
+            self.item_list.setCurrentRow(next(i for i in range(self.item_list.count())
+                                              if self.item_list.item(i).data(Qt.ItemDataRole.UserRole) == item['id']))
+        blockers = [QSignalBlocker(widget) for widget in (self.kind, self.mirror)]
+        self.kind.setCurrentIndex(self.kind.findData(kind or item.get('kind', 'number')))
+        self.mirror.setChecked(bool(item.get('mirror')))
+        del blockers
+        self.ranges.setText('' if len(item['pages']) == self.document.page_count else _page_range_text(item['pages']))
+        self.start.setValue(item.get('start', 1))
+        self.zero_pad.setChecked(bool(item.get('zero_pad')))
+        affix = (item.get('prefix', ''), item.get('suffix', ''))
+        index = next((i for i in range(self.affix.count()) if tuple(self.affix.itemData(i)) == affix), 0)
+        self.affix.setCurrentIndex(index)
+        self.margin_x.setValue(item.get('margin_x', 12))
+        self.margin_y.setValue(item.get('margin_y', 12))
+        self.font_size.setValue(item.get('font_size', 11))
+        self.color_button.value.setText(QColor.fromRgbF(*item.get('color', (0, 0, 0))).name().upper())
+        if item.get('font_family'):
+            self.font_picker.combo.setCurrentFont(QFont(item['font_family']))
+        self.label_text.setText(item.get('label', ''))
+        self.label_side.setCurrentIndex(0 if item.get('label_before', True) else 1)
+        self.label_gap.setValue(item.get('label_gap', 3))
+        separate = item.get('label_font_size') is not None
+        self.label_same_font.setChecked(not separate)
+        if separate:
+            self.label_font_size.setValue(item['label_font_size'])
+            self.label_color.value.setText(QColor.fromRgbF(*(item.get('label_color') or (0, 0, 0))).name().upper())
+            if item.get('label_font_family'):
+                self.label_font_picker.combo.setCurrentFont(QFont(item['label_font_family']))
+        self._kind_changed()
 
     def _mirror_changed(self, checked):
         from .page_layout import page_side, numbering_position
@@ -1095,8 +1237,19 @@ class NumberingDialog(QDialog):
         self._schedule_preview()
 
     def _choose_position(self, index, position):
+        other = self._item_at(position)
+        if other and other['id'] != self.editing:
+            # One place holds one item: choosing a taken place edits what is there.
+            # A number added where a header is joins it, before or after the header.
+            joining = self.kind.currentData() != 'text' and other.get('kind') == 'text'
+            self._load_item(other, 'both' if joining else None)
+            if joining:
+                self.item_hint.setText(f"{self.POSITION_NAMES[position]}의 머리말 “{other.get('label', '')}”에 "
+                                       "쪽 번호를 붙입니다. 순서와 간격을 고르세요.")
+            return
         self.position = position
         self.anchor_page = index
+        self._update_hint()
         self._schedule_preview()
 
     def _shown_slots(self):
@@ -1129,26 +1282,32 @@ class NumberingDialog(QDialog):
             "margin_x": self.margin_x.value(), "margin_y": self.margin_y.value(),
             "font_size": self.font_size.value(), "color": self.color_button.rgb,
             "fontfile": self.font_picker.require_file(),
+            "kind": self.kind.currentData(), "mark_id": self.editing,
+            "font_family": self.font_picker.combo.currentFont().family(),
             **self._label_options(),
         }
 
     def _label_options(self):
-        label = self.label_text.text().strip()
+        kind = self.kind.currentData()
+        label = self.label_text.text().strip() if kind != 'number' else ''
         options = {"label": label, "label_before": self.label_side.currentData(), "label_gap": self.label_gap.value()}
-        if label and not self.label_same_font.isChecked():
+        if kind == 'both' and not self.label_same_font.isChecked():
             options.update(label_font_size=self.label_font_size.value(), label_color=self.label_color.rgb,
-                           label_fontfile=self.label_font_picker.require_file())
+                           label_fontfile=self.label_font_picker.require_file(),
+                           label_font_family=self.label_font_picker.combo.currentFont().family())
         return options
 
     @staticmethod
     def _labelled(number, options):
         label = options.get('label')
+        if options.get('kind') == 'text':
+            return label or '머리말'
         if not label:
             return number
         return f"{label} {number}" if options.get('label_before', True) else f"{number} {label}"
 
     def _update_preview(self):
-        from .document import copy_page_number_record, number_page
+        from .document import copy_page_number_record, number_page, remove_marks
         from .page_layout import numbering_label, numbering_position
 
         shown = self._shown_indices()
@@ -1169,24 +1328,28 @@ class NumberingDialog(QDialog):
                                                   prefix=options['prefix'], suffix=options['suffix'], zero_pad=options['zero_pad'])
                           for offset, index in enumerate(selected)}
                 examples = [self._labelled(labels[selected[0]], options)]
-                if len(selected) > 1:
+                if len(selected) > 1 and options['kind'] != 'text':
                     examples.append(self._labelled(labels[selected[1]], options))
-                if len(selected) > 2:
+                if len(selected) > 2 and options['kind'] != 'text':
                     examples += ['…', self._labelled(labels[selected[-1]], options)]
                 self.format_example.setText('  ·  '.join(examples))
                 for slot, index in enumerate(shown):
+                    # As applying does: the edited item and older unrecorded-item numbers are replaced.
+                    replaced = {options['mark_id'] or '__new__'} | ({'legacy'} if options['kind'] != 'text' and index in labels else set())
+                    remove_marks(preview_doc[slot], replaced)
                     if index in labels:
                         position = numbering_position(self.position, index, mirror=self.mirror.isChecked(),
                                                       anchor_page=self.anchor_page, start_right=self.start_right)
-                        number_page(preview_doc[slot], labels[index], position=position, **{
+                        number_page(preview_doc[slot], labels[index], position=position,
+                                    mark_id=options['mark_id'] or '__new__', **{
                             key: options[key] for key in ('margin_x', 'margin_y', 'font_size', 'color', 'fontfile',
                                                           'label', 'label_before', 'label_gap', 'label_font_size',
-                                                          'label_color', 'label_fontfile') if key in options
+                                                          'label_color', 'label_fontfile', 'kind') if key in options
                         })
-                # As Acrobat offers to update existing headers and footers, ADF replaces its own.
-                existing = len(set(selected) & set(self.document.numbered_pages()))
-                update = f" 이미 ADF 번호·머리말이 있는 {existing:,}쪽은 새 설정으로 바꿉니다." if existing else ""
-                self.preview_status.setText(f"{len(selected):,}페이지에 번호를 넣습니다.{update} 다른 편집과 함께 마지막에 저장하세요.")
+                labels = {index: self._labelled(label, options) for index, label in labels.items()}
+                what = {'number': '쪽 번호를', 'text': '머리말을', 'both': '머리말과 쪽 번호를'}[options['kind']]
+                verb = '수정합니다' if self.editing else '넣습니다'
+                self.preview_status.setText(f"{len(selected):,}페이지에 {what} {verb}. 다른 편집과 함께 마지막에 저장하세요.")
             except Exception as exc:
                 labels = {}
                 error = exc
@@ -1215,6 +1378,45 @@ class NumberingDialog(QDialog):
     def reject(self):
         self._preview_timer.stop()
         super().reject()
+
+
+def mark_title(item):
+    """One line naming an item: what it is, where, and on which pages."""
+    place = NumberingDialog.POSITION_NAMES.get(item['position'], '이전 버전 번호')
+    kind = NumberingDialog.KIND_NAMES.get(item.get('kind'), '쪽 번호')
+    text = f" “{item['label']}”" if item.get('label') else ''
+    return f"{kind}{text} · {place} · {_page_range_text(item['pages'])}쪽"
+
+
+class MarkRemoveDialog(QDialog):
+    """Choose which page numbers and headers to remove; all are chosen at first."""
+
+    def __init__(self, items, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('페이지 번호 및 머리말 제거')
+        self.setMinimumWidth(460)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 20, 24, 18)
+        layout.setSpacing(12)
+        layout.addWidget(_description('지울 항목을 고르세요. ADF가 넣은 번호와 머리말만 지우며 Ctrl+Z로 되돌릴 수 있습니다.'))
+        self.checks = []
+        for item in items:
+            check = QCheckBox(mark_title(item))
+            check.setChecked(True)
+            check.setProperty('mark', item['id'])
+            check.toggled.connect(self._update)
+            layout.addWidget(check)
+            self.checks.append(check)
+        self.buttons = _buttons(self, '선택 항목 제거')
+        layout.addWidget(self.buttons)
+        self._update()
+
+    @property
+    def ids(self):
+        return [check.property('mark') for check in self.checks if check.isChecked()]
+
+    def _update(self, *_):
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(bool(self.ids))
 
 
 class CompressionDialog(QDialog):
