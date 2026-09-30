@@ -774,7 +774,9 @@ class DesktopWorkflowTests(unittest.TestCase):
             self.window.remove_numbers()
         information.assert_called_once()
         self.assertTrue(self.window.edit(lambda: self.window.document.number_pages(list(range(6)), prefix='p.')))
-        self.window.remove_numbers()
+        from adf.dialogs import MarkRemoveDialog
+        with patch.object(MarkRemoveDialog, 'exec', lambda dialog: 1):
+            self.window.remove_numbers()
         for index in range(6):
             text = self.window.document.doc[index].get_text()
             self.assertNotIn(f'p.{index + 1}', text.split())
@@ -783,6 +785,27 @@ class DesktopWorkflowTests(unittest.TestCase):
         self.window.undo()
         self.assertEqual(self.window.document.numbered_pages(), list(range(6)))
         self.assert_source_unchanged()
+
+    def test_remove_dialog_can_keep_the_header_and_remove_only_the_number(self):
+        from adf.dialogs import MarkRemoveDialog
+        document = self.window.document
+        self.assertTrue(self.window.edit(lambda: document.number_pages(range(6), kind='text', label='Plan',
+                                                                       position='top-center')))
+        self.assertTrue(self.window.edit(lambda: document.number_pages(range(6), prefix='p.')))
+        def only_number(dialog):
+            self.assertEqual(len(dialog.checks), 2)
+            self.assertTrue(all(check.isChecked() for check in dialog.checks))
+            header = next(check for check in dialog.checks if check.text().startswith('머리말'))
+            header.setChecked(False)
+            return 1
+        with patch.object(MarkRemoveDialog, 'exec', only_number):
+            self.window.remove_numbers()
+        for index in range(6):
+            words = document.doc[index].get_text().split()
+            self.assertIn('Plan', words)
+            self.assertNotIn(f'p.{index + 1}', words)
+        self.assertIn('고른 항목을 지웠습니다', self.window.notice.currentMessage())
+        self.assertEqual([item['kind'] for item in document.page_marks()], ['text'])
 
     def test_empty_launch_and_close_have_no_document_content(self):
         fresh = MainWindow(smoke=True)

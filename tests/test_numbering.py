@@ -131,11 +131,20 @@ class NumberingTests(unittest.TestCase):
             # Numbers from other programs have no record and are never removed.
             with self.assertRaises(ValueError):
                 model.remove_page_numbers([0, 1])
-            model.number_pages([0, 1], prefix='p.', position='bottom-right')
-            model.number_pages([0, 1], start=10, prefix='p.', position='top-left')
+            first = model.number_pages([0, 1], prefix='p.', position='bottom-right')
+            # Another position adds a second item; the same position edits that item.
+            second = model.number_pages([0, 1], start=10, prefix='p.', position='top-left')
+            self.assertNotEqual(first, second)
+            self.assertEqual(model.number_pages([0, 1], start=20, prefix='p.', position='top-left'), second)
+            # An item is moved by editing it.
+            self.assertEqual(model.number_pages([0, 1], start=30, prefix='p.', position='bottom-center',
+                                                mark_id=first), first)
+            self.assertEqual([item['position'] for item in model.page_marks()], ['top-left', 'bottom-center'])
             for index, page in enumerate(model.doc):
                 words = page.get_text().split()
-                self.assertIn(f'p.{index + 10}', words)
+                self.assertIn(f'p.{index + 20}', words)
+                self.assertIn(f'p.{index + 30}', words)
+                self.assertNotIn(f'p.{index + 10}', words)
                 self.assertEqual(words.count(f'p.{index + 1}'), 1)
                 self.assertIn('p.7', words)
             self.assertEqual(model.remove_page_numbers(model.numbered_pages()), ([0, 1], []))
@@ -152,6 +161,7 @@ class NumberingTests(unittest.TestCase):
     def test_header_text_sits_before_or_after_the_number_with_a_gap(self):
         dialog = self.dialog()
         dialog.ranges.setText('1')
+        dialog.kind.setCurrentIndex(dialog.kind.findData('both'))
         dialog.label_text.setText('Report')
         dialog.label_gap.setValue(5)
         dialog._update_preview()
@@ -191,6 +201,80 @@ class NumberingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.model.number_pages([0], label='W' * 200)
 
+    def test_header_alone_then_a_number_elsewhere_then_remove_only_the_number(self):
+        header = self.model.number_pages(range(6), kind='text', label='Plan', position='top-center')
+        number = self.model.number_pages(range(6), position='bottom-right')
+        items = {item['id']: item for item in self.model.page_marks()}
+        self.assertEqual(items[header]['kind'], 'text')
+        self.assertEqual(items[number]['kind'], 'number')
+        self.assertEqual(items[header]['pages'], list(range(6)))
+        for index in range(6):
+            words = self.model.doc[index].get_text().split()
+            self.assertIn('Plan', words)
+            self.assertEqual(words.count(str(index + 1)), 2)
+        self.assertEqual(self.model.remove_marks([number]), (list(range(6)), []))
+        self.assertEqual([item['id'] for item in self.model.page_marks()], [header])
+        for index in range(6):
+            words = self.model.doc[index].get_text().split()
+            self.assertIn('Plan', words)
+            self.assertEqual(words.count(str(index + 1)), 1)
+        # The header's settings survive saving, so it can be edited after reopening.
+        saved = self.root / 'marks.pdf'
+        self.model.save(saved)
+        reopened = PdfDocument()
+        reopened.open(saved)
+        try:
+            [item] = reopened.page_marks()
+            self.assertEqual((item['id'], item['label'], item['position']), (header, 'Plan', 'top-center'))
+            reopened.number_pages(range(6), kind='both', label='Plan', label_before=True, mark_id=header,
+                                  position='top-center')
+            self.assertIn('Plan 1', ' '.join(reopened.doc[0].get_text().split()))
+        finally:
+            reopened.close()
+
+    def test_a_header_needs_text_and_one_position_holds_one_item_per_page(self):
+        with self.assertRaises(ValueError):
+            self.model.number_pages([0], kind='text', label=' ')
+        mirrored = self.model.number_pages([0, 1], position='bottom-left', mirror=True)
+        # Mirrored onto the right on facing pages, it would share the other item's place.
+        with self.assertRaises(ValueError):
+            self.model.number_pages([0, 1], kind='text', label='Plan', position='bottom-right')
+        self.assertEqual([item['id'] for item in self.model.page_marks()], [mirrored])
+        self.assertTrue(self.model.can_undo)
+
+    def test_undo_restores_an_edited_item(self):
+        item = self.model.number_pages([0], kind='text', label='First', position='top-left')
+        self.model.number_pages([0], kind='text', label='Second', position='top-left')
+        self.assertIn('Second', self.model.doc[0].get_text())
+        self.model.undo()
+        self.assertIn('First', self.model.doc[0].get_text())
+        self.assertEqual(self.model.page_marks()[0]['label'], 'First')
+        self.assertEqual(self.model.page_marks()[0]['id'], item)
+
+    def test_dialog_suggests_a_header_after_a_number_and_joins_a_number_to_a_header(self):
+        self.model.number_pages(range(6), position='bottom-center')
+        dialog = self.dialog()
+        # With a number there, the next item is a header in a free place.
+        self.assertEqual((dialog.kind.currentData(), dialog.position), ('text', 'top-center'))
+        self.assertEqual(dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).text(), '추가')
+        dialog.label_text.setText('Plan')
+        dialog._update_preview()
+        self.model.number_pages(**dialog._options())
+        self.assertEqual(sorted(item['kind'] for item in self.model.page_marks()), ['number', 'text'])
+        # Adding a number where the header is joins the two into one item.
+        dialog = self.dialog()
+        header = next(item for item in dialog.items if item['kind'] == 'text')
+        dialog.kind.setCurrentIndex(dialog.kind.findData('number'))
+        self.assertIn('쪽 번호가 이미 하단 가운데에 있습니다', dialog.item_hint.text())
+        dialog._choose_position(0, 'top-center')
+        self.assertEqual((dialog.editing, dialog.kind.currentData()), (header['id'], 'both'))
+        self.assertEqual(dialog.label_text.text(), 'Plan')
+        self.assertIn('쪽 번호를 붙입니다', dialog.item_hint.text())
+        dialog.label_side.setCurrentIndex(0)
+        dialog._update_preview()
+        self.model.number_pages(**dialog._options())
+        self.assertIn('Plan 1', ' '.join(self.model.doc[0].get_text().split()))
+
     def test_changed_numbers_are_left_alone(self):
         self.model.number_pages([0, 1, 2], prefix='p.', position='bottom-center')
         # Another label now overlaps page 1's number, and page 2's number was edited.
@@ -220,6 +304,14 @@ class NumberingTests(unittest.TestCase):
         dialog = self.dialog(current_page=1, start_right=True)
         dialog.show()
         self.app.processEvents()
+        # The existing number is edited by choosing it in the list.
+        self.assertFalse(dialog.item_list.isHidden())
+        self.assertIsNone(dialog.editing)
+        dialog.item_list.setCurrentRow(0)
+        self.assertIsNotNone(dialog.editing)
+        self.assertEqual(dialog.affix.currentData(), ('p.', ''))
+        self.assertEqual(dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).text(), '수정')
+        dialog.affix.setCurrentIndex(0)
         dialog.start.setValue(40)
         dialog._update_preview()
         expected = {page['index']: page['image'].toImage() for page in dialog.preview.pages}

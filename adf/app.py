@@ -1296,19 +1296,24 @@ class MainWindow(QMainWindow):
             self.edit(lambda: self.document.number_pages(**dialog.options))
 
     def remove_numbers(self):
+        from .dialogs import MarkRemoveDialog
         if not self.resolve_placement():
             return
-        pages = self.document.numbered_pages()
-        if not pages:
+        items = self.document.page_marks()
+        if not items:
             QMessageBox.information(self, '페이지 번호 및 머리말 제거', 'ADF로 넣은 페이지 번호와 머리말이 없습니다.\n'
                                     '이전 버전이나 다른 프로그램에서 넣은 번호·머리말은 지울 수 없습니다.')
             return
+        dialog = MarkRemoveDialog(items, self)
+        if not dialog.exec():
+            return
         outcome = []
-        if self.edit(lambda: outcome.extend(self.document.remove_page_numbers(pages))):
+        if self.edit(lambda: outcome.extend(self.document.remove_marks(dialog.ids))):
             removed, kept = outcome
-            message = f'{len(removed):,}쪽의 페이지 번호와 머리말을 지웠습니다 · Ctrl+Z로 되돌릴 수 있습니다'
+            what = '페이지 번호와 머리말' if len(dialog.ids) == len(items) else '고른 항목'
+            message = f'{len(removed):,}쪽의 {what}을 지웠습니다 · Ctrl+Z로 되돌릴 수 있습니다'
             if kept:
-                message += f' · 번호 주변이 바뀐 {len(kept):,}쪽은 그대로 두었습니다'
+                message += f' · 주변이 바뀐 {len(kept):,}쪽은 그대로 두었습니다'
             self.notice.showMessage(message, 8000)
 
     def compress(self):
