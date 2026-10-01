@@ -5,7 +5,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $pythonPath = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $releaseRoot = Join-Path $repoRoot 'release'
 $verificationRoot = Join-Path $repoRoot '.tools\verification'
-$version = '0.3.36'
+$version = '0.3.37'
 New-Item -ItemType Directory -Path $verificationRoot -Force | Out-Null
 $setupPath = Join-Path $releaseRoot "ADF-Setup-$version.exe"
 if (-not (Test-Path -LiteralPath $setupPath)) { throw 'Build the installer first.' }
@@ -72,7 +72,7 @@ try {
     }
     $report.installed_payload_matches_build = $true
     $report.installed_payload_files = $payloadCount
-    if (-not (Test-Path -LiteralPath (Join-Path $shortcutDirectory 'ADF.lnk'))) { throw 'Start Menu shortcut missing.' }
+    if (-not (Test-Path -LiteralPath (Join-Path $shortcutDirectory 'XDF.lnk'))) { throw 'Start Menu shortcut missing.' }
     if (-not (Test-Path -LiteralPath (Join-Path $installRoot '_internal\LICENSES\AGPL-3.0.txt'))) { throw 'Installed license missing.' }
     $helpTargets = [ordered]@{
         '사용 안내' = '_internal\docs\사용안내.html'

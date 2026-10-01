@@ -67,11 +67,12 @@ def capture():
             page.insert_text((35, 58), '예 시', fontname='ko', fontsize=17, color=(.65, .22, .20))
             page.insert_text((38, 78), '검토용', fontname='ko', fontsize=12, color=(.65, .22, .20))
             stamp_image = page.get_pixmap(matrix=pymupdf.Matrix(2, 2), alpha=True).tobytes('png')
-        window = MainWindow(smoke=True)
-        window.settings = QSettings(str(folder / 'settings.ini'), QSettings.Format.IniFormat)
+        settings = QSettings(str(folder / 'settings.ini'), QSettings.Format.IniFormat)
+        with patch('adf.app.QSettings', return_value=settings):
+            window = MainWindow(smoke=True)
         window.stamp_library = StampLibrary(folder / 'stamps.sqlite3')
         window.stamp_library.add('검토 확인 · 예시', stamp_image, 20)
-        # Wide enough for the toolbar to keep two rows beside the stamp library.
+        # Show the compact top bar and the right-hand floating toolbox.
         window.resize(1640, 1048)
         window.show()
         window.open_path(path)
