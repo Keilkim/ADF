@@ -1,6 +1,6 @@
 #define AppName "XDF"
 #ifndef AppVersion
-  #define AppVersion "0.3.38"
+  #define AppVersion "0.3.39"
 #endif
 #define RepoRoot AddBackslash(SourcePath) + ".."
 #ifndef AppBuildDir
@@ -261,17 +261,24 @@ end;
   its own slot goes with its private registry tree. }
 { The background agent (ADF.exe --background) has no visible window; its hidden
   window takes WM_CLOSE and quits, so its files can be replaced or removed. }
+function FindBackgroundAgent: HWND;
+begin
+  Result := FindWindowByWindowName('ADF Background Agent');
+  if Result = 0 then
+    Result := FindWindowByWindowName('ADF Background Agent - XDF');
+end;
+
 procedure StopBackgroundAgent;
 var
   I: Integer;
   Agent: HWND;
 begin
-  Agent := FindWindowByWindowName('ADF Background Agent');
+  Agent := FindBackgroundAgent;
   if Agent = 0 then
     Exit;
   PostMessage(Agent, 16, 0, 0);
   for I := 1 to 50 do begin
-    if FindWindowByWindowName('ADF Background Agent') = 0 then
+    if FindBackgroundAgent = 0 then
       Exit;
     Sleep(100);
   end;

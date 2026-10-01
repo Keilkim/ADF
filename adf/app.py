@@ -2684,7 +2684,6 @@ class MainWindow(QMainWindow):
         return True
 
     def refresh_update_toast(self):
-        from . import agent
         from .update_toast import toast_content
         toast, service = getattr(self, 'update_toast', None), self.updates
         if toast is None:
@@ -2692,7 +2691,7 @@ class MainWindow(QMainWindow):
         content = toast_content(service) if service is not None else None
         # With XDF running in the background, its notice at the screen's corner is the one to show.
         if (content is None or self.installing_update or self.update_when_ready is not None
-                or self.update_snoozed() or agent.running()):
+                or self.update_snoozed() or self.background_update_notified()):
             toast.dismiss()
         elif self.isVisible():
             toast.present(*content)
@@ -2719,13 +2718,22 @@ class MainWindow(QMainWindow):
         from .update_toast import manual_reason
         return manual_reason(self.updates)
 
+    def background_update_notified(self):
+        """The background notice owns prompts for this version, also after it quits."""
+        from . import agent
+        if agent.running():
+            return True
+        self.settings.sync()
+        package = self.updates.package if self.updates is not None else None
+        return (package is not None
+                and self.settings.value('updates/background_notified', '') == package.version)
+
     def announce_update(self):
         """Windows stacks these with other apps' notifications at the bottom right."""
         service = self.updates
         package = service.package
-        from . import agent
         if (package is None or self.installing_update or self.update_when_ready is not None
-                or self.update_snoozed() or agent.running()):
+                or self.update_snoozed() or self.background_update_notified()):
             return
         if service.state == 'ready' and service.platform == 'darwin':
             self.update_notifier.show('XDF 새 버전 받기 완료',
@@ -2745,14 +2753,17 @@ class MainWindow(QMainWindow):
     def offer_update(self):
         """Ask to install a downloaded update when XDF or a document opens.
 
-        Asked once per version and session. A download that finishes during work
-        only shows the notification and the menu bar button: a dialog appearing
-        while the user types could take an Enter meant for the document.
+        The background agent handles prompts when it runs or already notified
+        this version. Otherwise ask once per version and session. A download
+        that finishes during work only shows the notification and the menu bar
+        button: a dialog appearing while the user types could take an Enter
+        meant for the document.
         """
         service = self.updates
         self.refresh_update_toast()
         if (service is None or service.state != 'ready' or service.package is None or self.installing_update
                 or (self.update_snoozed() and not self.update_now)
+                or (self.background_update_notified() and not self.update_now)
                 or self.update_offered == service.package.version or not self.isVisible()
                 or self.worker is not None or self.loading_dialog is not None
                 or QApplication.activeModalWidget() is not None):
@@ -2773,7 +2784,7 @@ class MainWindow(QMainWindow):
             return
         first, self.update_checked = not self.update_checked, True
         if (not first or service.state not in ('available', 'downloading', 'ready') or self.installing_update
-                or self.update_snoozed()
+                or self.update_snoozed() or self.background_update_notified()
                 or self.update_offered == service.package.version or not self.isVisible()
                 or self.worker is not None or self.loading_dialog is not None
                 or QApplication.activeModalWidget() is not None):
@@ -2810,7 +2821,7 @@ class MainWindow(QMainWindow):
         progress, service = self.update_when_ready, self.updates
         if progress is None:
             return
-        if service.state == 'downloading':
+        if service.state == 'downloading' or (service.state == 'available' and service.download_pending):
             progress.setValue(service.percent)
         elif service.state == 'ready':
             self.stop_following_update()

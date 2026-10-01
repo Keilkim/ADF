@@ -97,7 +97,7 @@ and `shcore.dll`.
 
 ## Build and verify
 
-The shared vermilion X comes from `assets/xdf-mark.svg`. `scripts/make-icon.py`
+The complete vermilion XDF wordmark comes from `assets/xdf-mark.svg`. `scripts/make-icon.py`
 exports real transparent PNG and 32-bit ICO frames, including 20px, 24px and
 40px for common display scales. `shell_icon.h` chooses the small-icon size
 for the menu owner's DPI, then draws with `DrawIconEx` into a cleared 32-bit
