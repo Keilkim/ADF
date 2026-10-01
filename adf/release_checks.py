@@ -414,6 +414,7 @@ def check_printing_and_extraction(window, folder, output):
         def select(dialog):
             dialog.target.setCurrentIndex(dialog.target.findData(mode))
             dialog.ranges.setText('1,3,5-6')
+            dialog.native = True
             dialog.accept()
             return dialog.result()
 
@@ -424,7 +425,8 @@ def check_printing_and_extraction(window, folder, output):
             device.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
             return QDialog.DialogCode.Accepted
 
-        with patch.object(PrintOptionsDialog, 'exec', select), patch.object(QPrintDialog, 'exec', printer):
+        with patch.object(PrintOptionsDialog, 'exec', select), patch.object(QPrintDialog, 'exec', printer), \
+             patch('PySide6.QtPrintSupport.QPrinterInfo.availablePrinterNames', return_value=[]):
             window.print_document()
         with pymupdf.open(printed) as doc:
             assert doc.page_count == expected

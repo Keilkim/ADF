@@ -550,16 +550,39 @@ class PrintOptionsDialog(QDialog):
     def __init__(self, page_count, current, selected, parent=None):
         super().__init__(parent)
         self.page_count, self.current, self.selected = page_count, current, selected
+        self.landscape = False
         self.pages = []
+        self.native = False
+        self.settings = getattr(parent, 'settings', None)
         self.setObjectName('printOptions')
         self.setStyleSheet('QDialog#printOptions QSpinBox:disabled, QDialog#printOptions QLineEdit:disabled '
                           '{ color: #929ba8; background: #f1f3f6; }')
-        self.setWindowTitle('인쇄 설정 — ADF')
+        self.setWindowTitle('인쇄 — ADF')
         self.setMinimumWidth(480)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 20)
         layout.setSpacing(16)
         form = QFormLayout()
+        self.printer = QComboBox()
+        self.printer.setAccessibleName('프린터')
+        form.addRow('프린터', self.printer)
+        self.paper = QComboBox()
+        self.paper.setAccessibleName('용지')
+        form.addRow('용지', self.paper)
+        self.orientation = QComboBox()
+        for title, mode in (('자동', 'auto'), ('세로', 'portrait'), ('가로', 'landscape')):
+            self.orientation.addItem(title, mode)
+        self.orientation.setAccessibleName('용지 방향')
+        form.addRow('방향', self.orientation)
+        self.copies = _spin(1, 999, 1, '부')
+        self.copies.setAccessibleName('인쇄 매수')
+        form.addRow('매수', self.copies)
+        self.duplex = QComboBox()
+        self.duplex.setAccessibleName('양면 인쇄')
+        form.addRow('양면', self.duplex)
+        self.color = QComboBox()
+        self.color.setAccessibleName('색상')
+        form.addRow('색상', self.color)
         self.target = QComboBox()
         for title, mode in (('전체 페이지', 'all'), (f'현재 페이지 ({current + 1}쪽)', 'current'),
                             (f'선택한 페이지 ({len(selected)}쪽)', 'selected'), ('페이지 직접 입력', 'range')):
@@ -583,13 +606,100 @@ class PrintOptionsDialog(QDialog):
         layout.addLayout(form)
         self.summary = _description('')
         layout.addWidget(self.summary)
-        layout.addWidget(_description('다음 단계에서 프린터와 용지, 방향, 인쇄 매수를 선택합니다.'))
-        self.buttons = _buttons(self, '프린터 선택…')
+        self.buttons = _buttons(self, '인쇄')
+        # Driver-only options (trays, stapling, quality) stay in the system
+        # dialog, which opens with everything chosen here already applied.
+        self.system = self.buttons.addButton('프린터 속성…', QDialogButtonBox.ButtonRole.ActionRole)
+        self.system.clicked.connect(self._accept_native)
         layout.addWidget(self.buttons)
+        self._load_printers()
+        self.printer.currentIndexChanged.connect(self._printer_changed)
         for signal in (self.target.currentIndexChanged, self.ranges.textChanged,
                        self.scale.currentIndexChanged, self.percent.valueChanged):
             signal.connect(self._update)
         self._update()
+
+    def _setting(self, key, default=None):
+        return self.settings.value(f'print/{key}', default) if self.settings is not None else default
+
+    def _load_printers(self):
+        from PySide6.QtPrintSupport import QPrinterInfo
+        names = QPrinterInfo.availablePrinterNames()
+        if not names:
+            self.printer.addItem('사용 가능한 프린터 없음')
+            for widget in (self.printer, self.paper, self.duplex, self.color):
+                widget.setEnabled(False)
+            return
+        self.printer.addItems(names)
+        remembered = str(self._setting('printer', '') or '')
+        name = remembered if remembered in names else QPrinterInfo.defaultPrinterName()
+        self.printer.setCurrentIndex(max(0, self.printer.findText(name)))
+        self._printer_changed()
+
+    def _printer_changed(self, *_):
+        from PySide6.QtPrintSupport import QPrinter, QPrinterInfo
+        info = QPrinterInfo.printerInfo(self.printer.currentText())
+        self.paper.clear()
+        # Drivers may list custom sizes, so the QPageSize itself is kept.
+        self.paper_sizes = info.supportedPageSizes()
+        for index, size in enumerate(self.paper_sizes):
+            self.paper.addItem(size.name(), index)
+        keys = [size.key() for size in self.paper_sizes]
+        index = -1
+        for key in (str(self._setting('paper', '') or ''), info.defaultPageSize().key(), 'A4'):
+            if index < 0 and key in keys:
+                index = keys.index(key)
+        self.paper.setCurrentIndex(max(0, index))
+        self.paper.setEnabled(self.paper.count() > 0)
+        modes = info.supportedDuplexModes()
+        self.duplex.clear()
+        self.duplex.addItem('단면', QPrinter.DuplexMode.DuplexNone)
+        for title, mode in (('양면 (긴 쪽으로 넘기기)', QPrinter.DuplexMode.DuplexLongSide),
+                            ('양면 (짧은 쪽으로 넘기기)', QPrinter.DuplexMode.DuplexShortSide)):
+            if mode in modes:
+                self.duplex.addItem(title, mode)
+        self.duplex.setCurrentIndex(max(0, self.duplex.findText(str(self._setting('duplex', '단면')))))
+        self.duplex.setEnabled(self.duplex.count() > 1)
+        colors = info.supportedColorModes()
+        self.color.clear()
+        for title, mode in (('컬러', QPrinter.ColorMode.Color), ('흑백', QPrinter.ColorMode.GrayScale)):
+            if mode in colors or not colors:
+                self.color.addItem(title, mode)
+        index = self.color.findText(str(self._setting('color', '')))
+        if index < 0:
+            index = self.color.findData(info.defaultColorMode())
+        self.color.setCurrentIndex(max(0, index))
+        self.color.setEnabled(self.color.count() > 1)
+
+    def configure(self, printer):
+        """Apply the choices to a QPrinter so printing needs no system dialog."""
+        from PySide6.QtGui import QPageLayout
+        if self.printer.isEnabled():
+            printer.setPrinterName(self.printer.currentText())
+        if self.paper.isEnabled() and self.paper.currentData() is not None:
+            printer.setPageSize(self.paper_sizes[self.paper.currentData()])
+        orientation = self.orientation.currentData()
+        landscape = self.landscape if orientation == 'auto' else orientation == 'landscape'
+        printer.setPageOrientation(QPageLayout.Orientation.Landscape if landscape
+                                   else QPageLayout.Orientation.Portrait)
+        printer.setCopyCount(self.copies.value())
+        if self.duplex.isEnabled():
+            printer.setDuplex(self.duplex.currentData())
+        if self.color.currentData() is not None:
+            printer.setColorMode(self.color.currentData())
+
+    def _remember(self):
+        if self.settings is None or not self.printer.isEnabled():
+            return
+        self.settings.setValue('print/printer', self.printer.currentText())
+        if self.paper.currentData() is not None:
+            self.settings.setValue('print/paper', self.paper_sizes[self.paper.currentData()].key())
+        self.settings.setValue('print/duplex', self.duplex.currentText())
+        self.settings.setValue('print/color', self.color.currentText())
+
+    def _accept_native(self):
+        self.native = True
+        self.accept()
 
     def _update(self, *_):
         from .printing import print_pages
@@ -607,11 +717,17 @@ class PrintOptionsDialog(QDialog):
             self.pages = []
             self.summary.setText(str(error))
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(bool(self.pages))
+        self.system.setEnabled(bool(self.pages))
 
     def accept(self):
         self._update()
-        if self.pages:
-            super().accept()
+        if not self.pages:
+            self.native = False
+            return
+        # Without an installed printer only the system dialog can pick one.
+        self.native = self.native or not self.printer.isEnabled()
+        self._remember()
+        super().accept()
 
 
 class SplitDialog(QDialog):

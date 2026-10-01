@@ -2330,15 +2330,20 @@ class MainWindow(QMainWindow):
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
         printer.setDocName(self.document_name())
         printer.setFullPage(False)
-        dialog = QPrintDialog(printer,self)
-        # The range above supports disjoint pages on every platform. This
-        # native dialog only configures the device, paper and copy options.
-        for option in (QPrintDialog.PrintDialogOption.PrintPageRange,
-                       QPrintDialog.PrintDialogOption.PrintSelection,
-                       QPrintDialog.PrintDialogOption.PrintCurrentPage):
-            dialog.setOption(option, False)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
+        # Automatic orientation follows the first printed page.
+        first = self.document.doc[pages[0]].rect
+        options.landscape = first.width > first.height
+        options.configure(printer)
+        if options.native:
+            dialog = QPrintDialog(printer,self)
+            # The range above supports disjoint pages on every platform. This
+            # native dialog only adds driver options such as trays or quality.
+            for option in (QPrintDialog.PrintDialogOption.PrintPageRange,
+                           QPrintDialog.PrintDialogOption.PrintSelection,
+                           QPrintDialog.PrintDialogOption.PrintCurrentPage):
+                dialog.setOption(option, False)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
         printer.setFullPage(False)
         if printer.pageOrder() == QPrinter.PageOrder.LastPageFirst:
             pages = list(reversed(pages))
