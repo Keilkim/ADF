@@ -89,7 +89,70 @@ def check_pen_and_save(window, folder, output):
                 pen_rotation_handle=True, pen_kinds=True, save_current_file=True,
                 floating_editor_tools=True, sidebar_split_extract=True, footer_rotation_tools=True)
     result.update(check_eraser_and_region_copy(window, folder, output))
+    result.update(check_toolbox_controls(window, folder, output))
     return result
+
+
+def check_toolbox_controls(window, folder, output):
+    """Exercise actual mouse targets inside the installed application."""
+    source = folder/'toolbox-controls.pdf'
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=380, height=480)
+        page.draw_rect((70, 160, 200, 260), color=(1, 0, 0), fill=(0, 1, 0))
+        page.insert_text((80, 210), 'Keep overlapping text')
+        doc.save(source)
+    original = source.read_bytes()
+    assert window.open_path(source)
+    window.set_view_mode('single')
+    QTest.qWait(30)
+    toolbox, view = window.toolbox, window.view
+    targets = [toolbox, toolbox.grip, *toolbox.buttons.values()]
+    targets += [toolbox.buttons[key].options for key in ('pen', 'eraser', 'object_tool')]
+    for target in targets:
+        assert window.change_pointer('pen')
+        QTest.mouseClick(target, Qt.MouseButton.RightButton, pos=target.rect().center())
+        assert window.pointer_mode == 'select_tool' and not view.pen.enabled
+    QTest.mouseClick(toolbox.buttons['text'], Qt.MouseButton.LeftButton)
+    assert view.text_mode
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.RightButton, pos=QPoint(1, 1))
+    assert not view.text_mode
+    options, properties = toolbox.buttons['object_tool'].options, window.shape_properties
+    assert options.isEnabled()
+    QTest.mouseClick(options, Qt.MouseButton.LeftButton)
+    assert properties.isVisible() and view.object_mode and properties.hint.isVisible()
+    assert not properties.fill.isEnabled()
+    point = view.mapFromScene(view.pages[0].mapToScene(QPointF(130, 240)))
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    assert view.object_selection is not None and properties.isVisible()
+    assert properties.fill.isEnabled() and not properties.hint.isVisible()
+    QTest.mouseClick(properties.fill.button, Qt.MouseButton.LeftButton)
+    properties.fill.menu.hex.setText('#4177DE')
+    QTest.mouseClick(properties.fill.menu.apply, Qt.MouseButton.LeftButton)
+    drawing = window.document.doc[0].get_drawings()[0]
+    assert all(abs(a-b) < 1e-6 for a,b in zip(drawing['fill'], (65/255, 119/255, 222/255)))
+    assert 'Keep overlapping text' in window.document.doc[0].get_text()
+    window.grab().save(str(output.with_name(output.stem+'-object-options.png')))
+    saved_path = folder/'toolbox-controls-saved.pdf'
+    window.document.save(saved_path)
+    with pymupdf.open(saved_path) as saved:
+        assert saved[0].get_drawings()[0]['fill'] == drawing['fill']
+        assert 'Keep overlapping text' in saved[0].get_text()
+    QTest.mouseClick(options, Qt.MouseButton.RightButton)
+    assert not properties.isVisible()
+    QTest.mouseClick(options, Qt.MouseButton.RightButton)
+    assert not view.object_mode and view.object_selection is None
+    assert window.change_pointer('object_tool')
+    window.activateWindow()
+    view.setFocus()
+    QTest.qWait(30)
+    QTest.keyClick(view.viewport(), Qt.Key.Key_Escape)
+    assert not view.object_mode and window.pointer_mode == 'select_tool'
+    window.undo()
+    assert window.document.doc[0].get_drawings()[0]['fill'] == (0., 1., 0.)
+    assert source.read_bytes() == original
+    window.document.save(saved_path)
+    return dict(toolbox_right_click_escape=True, object_options_before_selection=True,
+                object_color_mouse_edit=True, object_escape_exit=True)
 
 
 def check_eraser_and_region_copy(window, folder, output):

@@ -25,7 +25,7 @@ from release_common import version as source_version
 ROOT = Path(__file__).resolve().parents[1]
 RELEASES = 'https://github.com/Keilkim/ADF/releases'
 API = 'https://api.github.com/repos/Keilkim/ADF/releases?per_page=30'
-BASES = 4  # Keep direct patches for all supported 0.3.33+ installations in this release.
+BASES = 5  # Keep direct patches for all supported 0.3.33+ installations in this release.
 # Above this share of the full application a patch saves too little to publish.
 MAX_RATIO = 0.4
 VERSION = re.compile(r'\d+\.\d+\.\d+')
