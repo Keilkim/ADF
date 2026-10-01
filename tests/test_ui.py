@@ -1191,6 +1191,13 @@ class DesktopWorkflowTests(unittest.TestCase):
         self.assertEqual(self.window.document.doc[0].get_drawings(), [])
         self.assertFalse(self.window.document.dirty)
 
+    def test_packaged_toolbox_and_shape_checks_match_current_ui(self):
+        from adf.release_checks import check_toolbox_controls
+        result = check_toolbox_controls(self.window, self.root, self.root/'installed-checks.json')
+        self.assertTrue(all(result.values()))
+        self.assertTrue(result['shape_mouse_node_edit'])
+        self.assertTrue(result['shape_drawing_escape_cancel'])
+
     def test_changing_tool_or_reloading_clears_an_unfinished_shape(self):
         for action in ('tool', 'reload'):
             with self.subTest(action=action):
