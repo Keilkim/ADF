@@ -2,10 +2,10 @@ from collections import OrderedDict
 import math
 import time
 import pymupdf
-from PySide6.QtCore import Qt, QRectF, QPointF, QPoint, QSize, QSizeF, QTimer, QElapsedTimer, Signal, QSignalBlocker, QEvent, QMimeData, QByteArray
+from PySide6.QtCore import Qt, QLineF, QRectF, QPointF, QPoint, QSize, QSizeF, QTimer, QElapsedTimer, Signal, QSignalBlocker, QEvent, QMimeData, QByteArray
 from PySide6.QtGui import QColor, QDrag, QFont, QPalette, QPainter, QPixmap, QImage, QPen, QBrush, QCursor, QTransform, QTextCursor, QTextCharFormat, QTextBlockFormat, QInputDevice
 from PySide6.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsItem,
-    QGraphicsObject, QGraphicsProxyWidget, QListWidget, QListWidgetItem, QAbstractItemView, QToolButton, QApplication,
+    QGraphicsObject, QGraphicsPixmapItem, QGraphicsProxyWidget, QListWidget, QListWidgetItem, QAbstractItemView, QToolButton, QApplication,
     QStyledItemDelegate, QStyleOptionViewItem, QStyle)
 
 from . import pinch
@@ -293,7 +293,9 @@ class PdfView(QGraphicsView):
     stampRequested = Signal(int, object)
     stampCanceled = Signal()
     inkTransformed = Signal(int, int, object, object)
-    objectTransformed = Signal(int, int, object)
+    objectTransformed = Signal(int, object, object)
+    nodesChanged = Signal(int, object, object)
+    shapeDrawn = Signal(int, str, object)
     objectDeleteRequested = Signal()
     objectSelectionChanged = Signal(object)
     escapeRequested = Signal()
@@ -326,6 +328,11 @@ class PdfView(QGraphicsView):
         self.text_preview_document = None
         self.ink_selection = None
         self.object_selection = None
+        self.node_editor = None
+        self.object_above = None
+        self.shape_kind = None
+        self.shape_style = dict(fill=None, stroke=(0., 0., 0.), width=.5)
+        self.shape_draft = None
         self.object_preview_document = None
         self.object_preview_pixmaps = {}
         self.object_cache = OrderedDict()
@@ -972,6 +979,16 @@ class PdfView(QGraphicsView):
             scroll.setValue(scroll.minimum() if dy < 0 else scroll.maximum())
             self.page_wheel_turned = pixels or phase != Qt.ScrollPhase.NoScrollPhase
 
+    def scrollContentsBy(self, dx, dy):
+        # QWidget.scroll() also moves the viewport's child widgets. Floating
+        # tool panels stay where the user put them while the pages scroll.
+        floating = [(child, child.pos()) for child in self.viewport().children()
+                    if child.isWidgetType() and child.property('floating')]
+        super().scrollContentsBy(dx, dy)
+        for child, pos in floating:
+            if child.pos() != pos:
+                child.move(pos)
+
     def wheelEvent(self, event):
         if pinch.zooms(event):
             self.reset_page_wheel()
@@ -1149,13 +1166,19 @@ class PdfView(QGraphicsView):
         if self.object_selection is not None and self.object_selection.contains(self.object_selection.mapFromScene(pos)):
             super().mousePressEvent(event)
             return
+        if (self.node_editor is not None and event.button() == Qt.MouseButton.LeftButton
+                and self.node_editor.target_at(self.node_editor.mapFromScene(pos)) is not None):
+            super().mousePressEvent(event)
+            return
         if self.ink_selection is not None and self.ink_selection.contains(self.ink_selection.mapFromScene(pos)):
             super().mousePressEvent(event)
             return
         if self.object_mode and event.button() == Qt.MouseButton.LeftButton:
             self.selectionCleared.emit()
             item = self.page_at(pos)
-            if item is not None:
+            if item is not None and self.shape_kind is not None:
+                self.begin_shape(item, pos)
+            elif item is not None:
                 from .ink_widgets import ink_at
                 xref = ink_at(self,item,pos)
                 if xref is not None:
@@ -1237,6 +1260,11 @@ class PdfView(QGraphicsView):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if self.shape_draft is not None:
+            self.shape_draft.set_end(self.shape_draft.parentItem().mapFromScene(self.mapToScene(event.position().toPoint())),
+                                     event.modifiers())
+            event.accept()
+            return
         if self.stamp_pixmap is not None:
             self.move_stamp_preview(self.mapToScene(event.position().toPoint()), event.modifiers())
             event.accept()
@@ -1261,9 +1289,10 @@ class PdfView(QGraphicsView):
             self.viewport().setCursor(Qt.CursorShape.CrossCursor)
             return
         if self.object_mode:
-            if scene_pos is not None and self.object_selection is not None and self.object_selection.contains(self.object_selection.mapFromScene(scene_pos)):
+            if scene_pos is not None and any(item is not None and item.contains(item.mapFromScene(scene_pos))
+                                             for item in (self.object_selection, self.node_editor)):
                 return
-            self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+            self.viewport().setCursor(Qt.CursorShape.CrossCursor if self.shape_kind else Qt.CursorShape.ArrowCursor)
             return
         if (self.stamp_pixmap is not None or self.placement is not None or self.text_placement is not None
                 or self.dragMode() != QGraphicsView.DragMode.NoDrag):
@@ -1294,6 +1323,11 @@ class PdfView(QGraphicsView):
         self.viewport().setCursor(cursor)
 
     def mouseReleaseEvent(self, event):
+        if self.shape_draft is not None:
+            if event.button() == Qt.MouseButton.LeftButton:
+                self.finish_shape(self.mapToScene(event.position().toPoint()), event.modifiers())
+            event.accept()
+            return
         if self.stamp_pixmap is not None:
             target = self.stamp_target(self.mapToScene(event.position().toPoint()), event.modifiers())
             self.clear_snap_guides()
@@ -1340,16 +1374,26 @@ class PdfView(QGraphicsView):
             return
         super().mouseReleaseEvent(event)
 
-    def page_objects(self, index):
-        from .pdf_objects import page_objects
+    def page_scan(self, index):
+        from .pdf_objects import scan_page
         key = (index,self.document.revision)
         if key not in self.object_cache:
-            self.object_cache[key] = page_objects(self.document.doc[index])
+            self.object_cache[key] = scan_page(self.document.doc[index])
             while len(self.object_cache) > 8:
                 self.object_cache.popitem(last=False)
         return self.object_cache[key]
 
-    def select_object_at(self, item, scene_pos):
+    def page_objects(self, index):
+        return self.page_scan(index)[0]
+
+    def object_target(self, index, ref):
+        objects, groups = self.page_scan(index)
+        if isinstance(ref, tuple):
+            return groups[ref[1]] if ref[0] == 'group' else objects[ref[1]]
+        return objects[ref]
+
+    def select_object_at(self, item, scene_pos, direct=False):
+        """Select the topmost painted object under the pointer, or the clipping group it is in."""
         from .pdf_objects import object_layer
         page = self.document.doc[item.index]
         point = self.page_point(item,scene_pos)
@@ -1366,8 +1410,11 @@ class PdfView(QGraphicsView):
                 pixels = layer[0].get_pixmap(matrix=pymupdf.Matrix(2,2),clip=clip,alpha=True)
                 if not any(pixels.samples[3::4]):
                     continue
-                chosen_layer, layer = layer, None
-                self.select_object(item.index,target['id'],chosen_layer)
+                if target['group'] is not None and not direct:
+                    self.select_object(item.index,('group',target['group']))
+                else:
+                    chosen_layer, layer = layer, None
+                    self.select_object(item.index,target['id'],chosen_layer)
                 return True
             finally:
                 if layer is not None:
@@ -1375,49 +1422,127 @@ class PdfView(QGraphicsView):
         return False
 
     def select_object(self, index, object_id, layer=None):
-        from .pdf_objects import edit_object, object_layer
+        """Show the selection frame; the page keeps rendering in its own paint order."""
+        from .pdf_objects import object_layer
         from .object_widgets import ObjectSelection
         self.clear_object_selection(notify=False)
-        target = self.page_objects(index)[object_id]
+        target = self.object_target(index, object_id)
         page = self.document.doc[index]
         layer = layer if layer is not None else object_layer(page,object_id)
-        background = pymupdf.open()
         try:
-            background.insert_pdf(self.document.doc,from_page=index,to_page=index)
-            edit_object(background[0],object_id)
             shown = pymupdf.Rect(target['rect'])*page.rotation_matrix & page.rect
-            scale = min(3.,max(1.,self.transform().m11()),math.sqrt(8_000_000/max(1,shown.width*shown.height)))
-            pixels = layer[0].get_pixmap(matrix=pymupdf.Matrix(scale,scale),clip=shown,alpha=True)
-            pixmap = QPixmap.fromImage(QImage(pixels.samples,pixels.width,pixels.height,pixels.stride,QImage.Format.Format_RGBA8888_Premultiplied).copy())
-            bounds = QRectF(pixels.x/scale,pixels.y/scale,pixels.width/scale,pixels.height/scale)
+            pixmap, bounds = self.layer_pixmap(layer[0], shown)
             self.object_selection = ObjectSelection(self,self.pages[index],target,pixmap,bounds)
             self.object_selection.committed.connect(self.objectTransformed.emit)
             self.object_selection.deleteRequested.connect(self.objectDeleteRequested.emit)
-            self.object_preview_document = background
-            self.render_visible()
+            self.object_selection.doubleClicked.connect(self.object_double_clicked)
             self.objectSelectionChanged.emit(target)
         except BaseException:
-            background.close()
             self.clear_object_selection()
             raise
         finally:
             layer.close()
 
-    def clear_object_selection(self, notify=True):
-        if self.object_selection is not None:
-            item, self.object_selection = self.object_selection, None
+    def layer_pixmap(self, page, shown):
+        scale = min(3.,max(1.,self.transform().m11()*self.viewport().devicePixelRatioF()),
+                    math.sqrt(8_000_000/max(1,shown.width*shown.height)))
+        pixels = page.get_pixmap(matrix=pymupdf.Matrix(scale,scale),clip=shown,alpha=True)
+        pixmap = QPixmap.fromImage(QImage(pixels.samples,pixels.width,pixels.height,pixels.stride,
+                                          QImage.Format.Format_RGBA8888_Premultiplied).copy())
+        return pixmap, QRectF(pixels.x/scale,pixels.y/scale,pixels.width/scale,pixels.height/scale)
+
+    def begin_object_drag(self):
+        """Lift the selection between what is painted below and above it, keeping its depth."""
+        from .pdf_objects import object_layer
+        selection = self.object_selection
+        if selection is None:
+            return
+        page = self.document.doc[selection.index]
+        below = object_layer(page,selection.object_id,'below')
+        try:
+            with object_layer(page,selection.object_id,'above') as above:
+                pixmap, bounds = self.layer_pixmap(above[0], page.rect)
+        except BaseException:
+            below.close()
+            raise
+        self.object_preview_document = below
+        self.object_preview_pixmaps.clear()
+        self.object_above = QGraphicsPixmapItem(pixmap, self.pages[selection.index])
+        self.object_above.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
+        self.object_above.setOffset(0, 0)
+        self.object_above.setPos(bounds.topLeft())
+        self.object_above.setScale(bounds.width()/max(1, pixmap.width()))
+        self.object_above.setZValue(selection.zValue()+.5)
+        self.object_above.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        self.render_visible()
+
+    def end_object_drag(self):
+        if self.object_above is not None:
+            item, self.object_above = self.object_above, None
             if item.scene() is not None:
                 item.scene().removeItem(item)
-            item.setParentItem(None)
-            item.deleteLater()
         if self.object_preview_document is not None:
             self.object_preview_document.close()
             self.object_preview_document = None
         self.object_preview_pixmaps.clear()
-        self.clear_snap_guides()
         self.schedule_render()
+
+    def object_double_clicked(self, scene_pos):
+        selection = self.object_selection
+        if selection is None:
+            return
+        item = self.pages[selection.index]
+        if selection.target['kind'] == 'group':
+            self.select_object_at(item, scene_pos, direct=True)
+        elif selection.target['kind'] == 'path':
+            self.edit_nodes(selection.index, selection.object_id)
+
+    def edit_nodes(self, index, object_id):
+        from .pdf_objects import path_parts
+        from .object_widgets import NodeEditor
+        target = self.object_target(index, object_id)
+        self.clear_object_selection(notify=False)
+        self.node_editor = NodeEditor(self, self.pages[index], target, path_parts(self.document.doc[index], target))
+        self.node_editor.committed.connect(self.nodesChanged.emit)
+        self.objectSelectionChanged.emit(target)
+
+    def clear_object_selection(self, notify=True):
+        for name in ('object_selection', 'node_editor'):
+            item = getattr(self, name)
+            if item is not None:
+                setattr(self, name, None)
+                if item.scene() is not None:
+                    item.scene().removeItem(item)
+                item.setParentItem(None)
+                item.deleteLater()
+        self.end_object_drag()
+        self.clear_snap_guides()
         if notify:
             self.objectSelectionChanged.emit(None)
+
+    def begin_shape(self, item, scene_pos):
+        from .object_widgets import ShapeDraft
+        self.clear_object_selection()
+        local = item.mapFromScene(scene_pos)
+        self.shape_draft = ShapeDraft(self, item, self.shape_kind, local, self.shape_style)
+
+    def finish_shape(self, scene_pos, modifiers):
+        draft, self.shape_draft = self.shape_draft, None
+        draft.set_end(draft.parentItem().mapFromScene(scene_pos), modifiers)
+        page_item = draft.parentItem()
+        start, end, frame = draft.start, draft.end, draft.frame()
+        if draft.scene() is not None:
+            draft.scene().removeItem(draft)
+        draft.deleteLater()
+        if QLineF(start, end).length() < 2/max(.01, self.transform().m11()):
+            return
+        page = self.document.doc[page_item.index]
+        if draft.kind == 'line':
+            points = (start, end)
+        else:
+            points = (frame.topLeft(), frame.bottomRight())
+        unrotated = [pymupdf.Point(p.x(), p.y())*page.derotation_matrix for p in points]
+        self.shapeDrawn.emit(page_item.index, draft.kind, unrotated)
 
     def select_ink(self, index, xref):
         from .ink_widgets import InkSelection
