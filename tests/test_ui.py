@@ -1566,11 +1566,13 @@ class DesktopWorkflowTests(unittest.TestCase):
         def select_pages(dialog):
             dialog.target.setCurrentIndex(dialog.target.findData('range'))
             dialog.ranges.setText('2-3')
+            dialog.native = True
             dialog.accept()
             return QDialog.DialogCode.Accepted
 
         with patch.object(PrintOptionsDialog, 'exec', select_pages), \
-             patch("adf.app.QPrintDialog.exec", accept_pdf_printer):
+             patch("adf.app.QPrintDialog.exec", accept_pdf_printer), \
+             patch('PySide6.QtPrintSupport.QPrinterInfo.availablePrinterNames', return_value=[]):
             self.window.print_document()
         with pymupdf.open(output) as printed:
             self.assertEqual(printed.page_count, 2)
