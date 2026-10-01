@@ -32,7 +32,7 @@ def guide_articles(root):
 
 def license_articles(root):
     folder = root/'LICENSES'
-    preferred = [('README.md', '라이선스와 소스 제공 안내'), ('AGPL-3.0.txt', 'ADF · PyMuPDF / MuPDF — AGPL'),
+    preferred = [('README.md', '라이선스와 소스 제공 안내'), ('AGPL-3.0.txt', 'XDF · PyMuPDF / MuPDF — AGPL'),
                  ('LGPL-3.0.txt', 'Qt / PySide6 — LGPL'), ('GPL-3.0.txt', 'LGPL이 참조하는 GPL'),
                  ('Python-LICENSE.txt', 'Python'), ('Pillow/licenses/LICENSE', 'Pillow'),
                  ('fonttools/licenses/LICENSE', 'fontTools'),
@@ -101,7 +101,7 @@ class HelpPage(QWidget):
             'h2 { font-size: 19pt; color: #222c3b; margin-bottom: 18px; }'
             'h1 { font-size: 20pt; } p, li { line-height: 155%; }'
             'p { margin-bottom: 12px; } kbd, code { background-color: #eef1f6; }'
-            'a { color: #454950; text-decoration: underline; }')
+            'a { color: #b8321a; text-decoration: underline; }')
         row.addWidget(self.topics)
         row.addWidget(self.browser, 1)
         outer.addLayout(row, 1)
@@ -181,7 +181,7 @@ class HelpDialog(QDialog):
             'licenses': '구성 요소별 고지와 라이선스 원문을 인터넷 연결 없이 읽을 수 있습니다.',
             'sources': '설치 EXE 하나에 프로그램·사용안내·라이선스·소스가 모두 포함되어 있습니다.',
         }
-        self.setWindowTitle('ADF · '+titles[section])
+        self.setWindowTitle('XDF · '+titles[section])
         width, height = (980, 730)
         self.resize(width, height)
         self.setMinimumSize(680, 460)

@@ -1,0 +1,45 @@
+XDF brand research — 2026-10-01
+
+Status: exploratory directions. Existing product files remain separate from this
+research directory. The previous two X designs were rejected by the client.
+
+Official sources inspected:
+Linear — https://linear.app/brand
+Ramp — https://ramp.com/press
+Brex — https://www.brex.com/
+Cursor — https://cursor.com/brand
+Cash App — https://cash.app/press/assets
+Arc / The Browser Company — https://arc.net/
+
+Official logo SVGs were read from those sites and displayed unchanged, scaled
+proportionally for comparison. The six-company comparison is
+us-brand-references.png. These reference marks identify their respective companies.
+
+Visual interpretation for XDF:
+Linear: precise diagonal cuts, regular spacing, compact geometric structure.
+Ramp: a small directional curve paired with quiet typography.
+Brex: angular outline with structural negative space.
+Cursor: a coherent relationship between faceted mark and custom lettering.
+Cash App: distinctive glyph design and the strength of one signature color.
+Arc: a memorable curved gesture inside a recognizable letter.
+
+Decision: retain vermilion #F04B2D; explore a compact angular X, a restrained curved
+X and a typographic X. Design the XDF wordmark alongside the mark so the result is
+a considered identity rather than an isolated letter icon. These are visual
+judgments, not claims that the cited companies endorse XDF.
+
+Concept-sheet mode: built-in image_gen. Reference is us-brand-references.png,
+used for design-quality and composition research only.
+Deliverable: xdf-directions.png.
+Exact prompt:
+Use case: logo-brand.
+Asset type: ONE brand direction comparison sheet for the real desktop document app XDF.
+Input image 1 is a research mood board of existing US technology brands. Its ONLY role is to indicate identity design quality, confident typography, optical proportion, memorable negative space, and restraint. Do not reproduce any of those companies' actual symbols, words, lockups, or graphics in the output.
+Primary request: Design three ORIGINAL, genuinely distinct, art-directed XDF logo identities on one sophisticated landscape editorial sheet. The client rejected generic rounded crossed strokes and flared sports-style X marks. Each proposal must look like a professionally crafted contemporary American software identity, with an ownable letter X AND bespoke XDF lettering considered together. Think thoughtful typography and reduction, not a random X illustration.
+Layout: Landscape approximately 3:2. Pale warm white paper-colored FLAT background, three equal columns separated only by subtle hairline rules. No cards, shadows, mockup props, gradients or decoration. Large well-spaced primary lockup in each column at matching optical scale: an X symbol above its XDF wordmark, never an X symbol next to another redundant X symbol. Below, small real-size identity samples and a very small standalone X to judge app-icon legibility. Plenty of calm negative space.
+Left column label text EXACTLY "01 / CUT". Create a compact monolithic geometric X with distinctive intelligent negative-space cuts. Equal deliberate thick planes, crisp flat terminals, tiny purposeful corner radii only. Its waist must have a specific clean offset/angular opening rather than a conventional crossing of straight strokes. A bold geometric custom XDF wordmark underneath, with compatible angular details, optical kerning and distinctive D/F shapes. Flat and decisive, editorial-tech energy.
+Middle column label text EXACTLY "02 / CURVE". Create a distinctive original X defined by two restrained asymmetric concave curves and a single elegant directional gesture. Rounded quality with compact proportions, smooth taper and controlled terminals, never inflated, bulging, swoosh-like, flared or like a sportswear brand. A bespoke strong neo-grotesque XDF wordmark underneath, matching the symbol's subtle curvature. Welcoming but sophisticated software identity.
+Right column label text EXACTLY "03 / GLYPH". Treat the letter X as custom typographic design: powerful compact slab-like letter architecture, purposeful contrast between diagonals, a precise notch or ink-trap as an ownable detail, striking at tiny size. Design XDF as a unified custom wordmark with this X as its first letter, subtly squared D bowl and F with deliberately resolved horizontal widths. It should have the confident cultural energy of an excellent independent US studio / creative tech brand, not stencil military type, not racing lettering, not a stock font.
+Color: X symbols and all XDF wordmarks are ONE uniform flat vermilion #F04B2D. Small direction labels in dark charcoal. Background warm white. No blue. Show only the three proposals, not the previous designs or reference logos.
+Text: Only the labels "01 / CUT", "02 / CURVE", "03 / GLYPH", and the exact brand name "XDF" below each X. No tagline, no decorative labels, no invented company name. Each main standalone symbol must still clearly be a letter X with four arms.
+Quality: exact contours, considered optical balance, clean negative space, flat vector-like artwork. No 3D, no textures, no lighting, no extra lines, no generic close-button X, no circle or square enclosing the main symbol. The three concepts must differ at the silhouette level, not be slight cosmetic versions of each other.

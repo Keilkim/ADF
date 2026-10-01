@@ -141,7 +141,7 @@ class NumberColor(QWidget):
         self.swatch.clicked.connect(self._choose)
         self.value = QLineEdit('#222222')
         self.value.setAccessibleName('글자 색 HEX 값')
-        self.value.setToolTip('색상 코드 · 예: #2463E8')
+        self.value.setToolTip('색상 코드 · 예: #F04B2D')
         self.value.setFixedWidth(85)
         self.value.setMaxLength(7)
         self.value.textChanged.connect(self._typed)
@@ -162,7 +162,7 @@ class NumberColor(QWidget):
     @property
     def rgb(self):
         if not re.fullmatch(r'#?[0-9a-fA-F]{6}', self.value.text().strip()):
-            raise ValueError('글자 색을 6자리 색상 코드로 입력해 주세요. 예: #2463E8')
+            raise ValueError('글자 색을 6자리 색상 코드로 입력해 주세요. 예: #F04B2D')
         return self.color.redF(), self.color.greenF(), self.color.blueF()
 
     def _choose(self):

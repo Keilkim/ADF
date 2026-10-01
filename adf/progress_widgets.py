@@ -1,5 +1,6 @@
 """Cancelable process progress. Unknown durations never get a fake percent."""
 import time
+from .brand import ACCENT
 from PySide6.QtCore import Qt, QTimer, QRectF, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QProgressBar, QPushButton, QVBoxLayout, QWidget
@@ -29,7 +30,7 @@ class Spinner(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(QPen(QColor('#e4e5e7'), 3))
         painter.drawEllipse(QRectF(4, 4, 20, 20))
-        painter.setPen(QPen(QColor('#797d84'), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.setPen(QPen(QColor(ACCENT), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         angle = -int((time.monotonic()-self.started)*270) if self.timer.isActive() else 90
         painter.drawArc(QRectF(4, 4, 20, 20), angle*16, 105*16)
 

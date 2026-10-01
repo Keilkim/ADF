@@ -1,0 +1,66 @@
+XDF Type image concepts — 2026-10-01
+
+Mode: built-in image_gen.imagegen (imagegen skill). No CLI/API fallback.
+Purpose: rethink readable formal serif and sans-serif type structures before font implementation.
+Reference: ../../xdf-wordmark.png, own brand wordmark. Existing geometric font prototypes were NOT reference inputs.
+
+Selected files:
+  xebatang-serif-v1.png: serif direction, first image generation.
+  xedotum-sans-v2.png: sans direction, after a targeted refinement.
+These are raster ART DIRECTION CONCEPTS. They do not contain usable font glyphs, and are not screenshots of the v0.200 TTF/WOFF2 fonts. Printed annotations inside them are visual design notes, not measurements or guarantees that those shapes were implemented. Generated type designs are not a claim that all glyphs form a completed original typeface.
+The prior v0.200 fonts and PDF remain the earlier implementation experiment; they are not the implementation of these image concepts.
+
+Common design brief:
+Clean familiar Korean/English document structures, institutional tone, balanced proportions and spacing. A serif family with restrained stroke contrast and short serif finishing; a sans-serif family with upright neutral strokes. Own XDF character is sought in subtle inner junction easing and short terminal finishing, rather than logo-like expanded letters.
+
+EXACT FIRST SERIF PROMPT
+Use case: logo-brand.
+Asset type: an original bilingual typeface ART DIRECTION IMAGE for XDF, a Korean company working on official documents. This is an image concept, not a screenshot of an installed font.
+Input image 1 is ONLY our existing XDF brand wordmark, to reproduce small in the header and to inform extremely subtle details. Preserve its design and vermilion color. Do not copy the chunky proportions of the logo into the text font.
+Primary request: Draw a highly polished professional Korean-and-English typeface specimen board, worthy of a serious type design studio. The user rejected square, modular, stencil-like, skeletal and futuristic lettering. They want CLEAN, FORMAL, effortlessly readable ordinary document letter structures with small distinctive XDF details visible only upon closer inspection. This is not a decorative headline alphabet.
+Art direction: accurate familiar letter anatomy, normal compact text proportions, optically balanced spacing, consistent baselines, natural Korean syllable balance, clear separation of initial/vowel/final consonants, open counters, familiar double-storey lowercase a. English and Korean must feel like the same family. Draw a bespoke coherent design rather than reproducing a named existing typeface.
+Brand detail rules: outer silhouettes stay calm and disciplined; a gently concave INSIDE join echoes the waist of X only in selected junctions; internal counters have a barely perceptible soft squaring borrowed from D but the outer o/ㅇ stays a natural oval; horizontal terminal corner finishing is very short and gently eased like the F arm. Keep these modifications around 3–5% of a stroke thickness, subtle and consistent, never a repeating decorative gimmick. Typographic structure and reading clarity dominate.
+Composition: landscape approximately 1536x1024, flat front-facing printed specimen graphic on pure warm white, extremely crisp black text, generous disciplined margins, restrained hairline dividers. Small supplied vermilion XDF logo at upper left; family label and category at upper right. A large Korean sentence, one medium English sentence, a compact alphabet/sample row, and lower down an official-document fragment alongside 3 magnified glyphs that reveal the small custom details. No perspective, no page photography, no shadows, no grey UI cards, no ornamental objects. Do not clutter the board with tiny text.
+Exact text to render, verbatim with correct Hangul:
+Main headline: "문서의 기준을 세우다."
+English line: "Clear documents. Clear decisions."
+Korean specimen: "가나다라마바사아자차카타파하"
+Latin specimen: "Aa Bb Cc Dd Ee Ff 0123456789"
+Document heading: "문서 작성 협조 요청"
+Document body, two lines:
+"1. 귀 기관의 발전을 기원합니다."
+"2. 제출 자료를 확인하여 주시기 바랍니다."
+The magnified glyphs are "ㄱ", "ㅇ", and "D", drawn as members of the SAME font as the main specimen. Place a very small vermilion arc or hairline indicator near their subtle inner junction/counter details, not red coloring applied to the entire glyph.
+Constraints: correct readable Korean, appropriate institutional tone, original coherent glyph design, elegant restraint, consistent design rules, not a tech or gaming font. No missing strokes, no blocky pseudo-Hangul, no disconnected ornamental pieces, no cropped text, no stretched wide letters, no giant logo-like X in body text, no stencil gaps, no bubble lettering, no entirely rounded rectangle o/ㅇ, no font software UI, no invented labels or excessive explanatory copy.
+Family label exact: "Xebatang". Category exact: "SERIF".
+SERIF direction: a refined contemporary book/document serif, formal and calm rather than high-fashion or calligraphic. Korean follows authentic restrained myeongjo/mincho structure with balanced horizontal/vertical stroke contrast, clean diagonal ㅅ, readable multi-stroke finals, short understated triangular/bracketed serifs. Latin follows a sober humanist text serif with medium contrast, a clear vertical D stem and natural round bow, crisp but softened bracket joins, standard familiar anatomy including a double-storey a. Main title semibold; English line regular; Korean sample medium; document heading bold and body regular. Maintain smooth text rhythm and ample internal white space. The tiny softened concave join and subtle inner-counter squaring are the distinctive XDF touch. Avoid slab serifs, exaggerated spikes, ornate flourishes, thin hairlines that would disappear in 11–12 pt text, and round geometric sci-fi forms. The result should look quietly excellent in an official letter.
+
+EXACT FIRST SANS PROMPT
+Use case: logo-brand.
+Asset type: an original bilingual typeface ART DIRECTION IMAGE for XDF, a Korean company working on official documents. This is an image concept, not a screenshot of an installed font.
+Input image 1 is ONLY our existing XDF brand wordmark, to reproduce small in the header and to inform extremely subtle details. Preserve its design and vermilion color. Do not copy the chunky proportions of the logo into the text font.
+Primary request: Draw a highly polished professional Korean-and-English typeface specimen board, worthy of a serious type design studio. The user rejected square, modular, stencil-like, skeletal and futuristic lettering. They want CLEAN, FORMAL, effortlessly readable ordinary document letter structures with small distinctive XDF details visible only upon closer inspection. This is not a decorative headline alphabet.
+Art direction: accurate familiar letter anatomy, normal compact text proportions, optically balanced spacing, consistent baselines, natural Korean syllable balance, clear separation of initial/vowel/final consonants, open counters, familiar double-storey lowercase a. English and Korean must feel like the same family. Draw a bespoke coherent design rather than reproducing a named existing typeface.
+Brand detail rules: outer silhouettes stay calm and disciplined; a gently concave INSIDE join echoes the waist of X only in selected junctions; internal counters have a barely perceptible soft squaring borrowed from D but the outer o/ㅇ stays a natural oval; horizontal terminal corner finishing is very short and gently eased like the F arm. Keep these modifications around 3–5% of a stroke thickness, subtle and consistent, never a repeating decorative gimmick. Typographic structure and reading clarity dominate.
+Composition: landscape approximately 1536x1024, flat front-facing printed specimen graphic on pure warm white, extremely crisp black text, generous disciplined margins, restrained hairline dividers. Small supplied vermilion XDF logo at upper left; family label and category at upper right. A large Korean sentence, one medium English sentence, a compact alphabet/sample row, and lower down an official-document fragment alongside 3 magnified glyphs that reveal the small custom details. No perspective, no page photography, no shadows, no grey UI cards, no ornamental objects. Do not clutter the board with tiny text.
+Exact text to render, verbatim with correct Hangul:
+Main headline: "문서의 기준을 세우다."
+English line: "Clear documents. Clear decisions."
+Korean specimen: "가나다라마바사아자차카타파하"
+Latin specimen: "Aa Bb Cc Dd Ee Ff 0123456789"
+Document heading: "문서 작성 협조 요청"
+Document body, two lines:
+"1. 귀 기관의 발전을 기원합니다."
+"2. 제출 자료를 확인하여 주시기 바랍니다."
+The magnified glyphs are "ㄱ", "ㅇ", and "D", drawn as members of the SAME font as the main specimen. Place a very small vermilion arc or hairline indicator near their subtle inner junction/counter details, not red coloring applied to the entire glyph.
+Constraints: correct readable Korean, appropriate institutional tone, original coherent glyph design, elegant restraint, consistent design rules, not a tech or gaming font. No missing strokes, no blocky pseudo-Hangul, no disconnected ornamental pieces, no cropped text, no stretched wide letters, no giant logo-like X in body text, no stencil gaps, no bubble lettering, no entirely rounded rectangle o/ㅇ, no font software UI, no invented labels or excessive explanatory copy.
+Family label exact: "Xedotum". Category exact: "SANS SERIF".
+SANS direction: a refined neutral contemporary document sans serif, optically humanized neo-grotesque, clean and institutional with a little warmth. Korean follows authentic calm modern gothic structure with normal text widths, naturally oval ㅇ and nearly square ㅁ with small INSIDE corner easing; ㅅ has standard straight balanced diagonals, ㅊ and ㅎ have fully distinct strokes. Latin has upright normal proportions, a genuine D with straight stem and natural bow, a double-storey a, open apertures, balanced medium x-height, restrained curved joins. Stroke thickness is optically near uniform. Main title semibold, English line regular, Korean specimen medium, document heading bold, body regular. Terminals mostly square and level; ONLY their very tips get a minuscule controlled soft cut echoing F. Tiny counter and join changes are the XDF identity. Avoid fully rounded terminals, rounded-rectangle alphabet construction, sci-fi geometry, industrial stencil, excessive width, over-tight kerning, fashion display forms and corporate monotony achieved by ordinary text with no custom detail. The result should look natural and dependable in official letters and tables.
+
+EXACT SANS REFINEMENT PROMPT
+Use case: precise-object-edit / logo-brand.
+Image 1 is the Xedotum SANS SERIF specimen BOARD TO REFINE. Image 2 is our actual XDF logo, supporting brand reference only.
+Preserve the entire board layout, exact readable Korean and English words, all correct Korean letter anatomy, warm white background, black ink, vermilion accents, margin grid, section dividers, and the fact that this is a SANS SERIF document typeface. Keep the small XDF logo faithful to Image 2. Do not add any words or any decoration.
+Make one focused typographic refinement: turn the exceptionally heavy headline and chunky counters into a calm, professional MEDIUM-weight document sans serif while preserving familiar clean letter structures. The headline "문서의 기준을 세우다." should have about 35% thinner strokes than the present headline, with generous open counters, normal text widths, and a quietly confident institutional tone. The title and magnified ㄱ, ㅇ, D should all show the SAME clean medium/semibold design; the other specimen and body rows should match this family's coherent anatomy.
+The tiny custom detail must be a precisely repeatable inner-junction treatment, not globally rounded letters: predominantly square, level outer edges; at a ㄱ inner elbow leave a very short flat-to-concave transition with a small curved easing exactly at the corner; D's inner bowl begins from a straight vertical stem and passes into the bow through that same short flattened-to-curved transition; the inner oval of ㅇ remains round but has a VERY short controlled nearly-flat segment transitioning through a similar gentle curve. The detail should be visible in the three magnifications with one tiny vermilion curve indicator, and almost invisible in the body. This restrained geometry is inspired by XDF, without copying its inflated logo proportions.
+Avoid generic added roundness on every corner, blocky strokes, huge black title weight, futuristic geometry, rounded rectangle o/ㅇ, stencil openings, slanted terminals, thin skeletal strokes, and a new logo. Typography should look perfectly appropriate for official documents. The outer ㄱ and D terminals remain square and crisp; the inner easing is the only tiny customization. Entire board remains flat and clean, no texture or lighting. Keep all text exact and unchanged.

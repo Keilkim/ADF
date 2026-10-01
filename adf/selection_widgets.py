@@ -8,8 +8,12 @@ from PySide6.QtWidgets import QGraphicsObject
 
 from .fullscreen import motion_enabled
 
-HIGHLIGHT = QColor(40, 120, 245, 64)
-HIGHLIGHT_EDGE = QColor(40, 120, 245, 28)
+from .theme import ACCENT
+
+HIGHLIGHT = QColor(ACCENT)
+HIGHLIGHT.setAlpha(64)
+HIGHLIGHT_EDGE = QColor(ACCENT)
+HIGHLIGHT_EDGE.setAlpha(28)
 
 
 @dataclass

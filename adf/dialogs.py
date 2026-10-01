@@ -206,13 +206,13 @@ class FileList(QTreeWidget):
             QTreeWidget#mergeFiles { background: white; border: 1px solid #dce1e8;
                 border-radius: 8px; outline: none; }
             QTreeWidget#mergeFiles::item { padding: 10px 12px; border-bottom: 1px solid #edf0f4; }
-            QTreeWidget#mergeFiles::item:selected { background: #e7e8ea; color: #303238; }
+            QTreeWidget#mergeFiles::item:selected { background: #ffd8cb; color: #b8321a; }
             QTreeWidget#mergeFiles::item:hover:!selected { background: #f5f5f6; }
             QTreeWidget#mergeFiles::item:focus { border-bottom: 1px solid #afb2b8; }
             QTreeWidget#mergeFiles QHeaderView::section { background: #f3f5f8; color: #657083;
                 border: none; border-right: 1px solid #e5e9ef; border-bottom: 1px solid #dce1e8;
                 padding: 11px 12px; font-weight: 600; }
-            QTreeWidget#mergeFiles::drop-indicator { background: #797d84; height: 3px; }
+            QTreeWidget#mergeFiles::drop-indicator { background: #f04b2d; height: 3px; }
         """)
         self.setAccessibleName("병합할 PDF 파일 순서")
 
@@ -313,7 +313,7 @@ class MergeDialog(QDialog):
         self.is_insert = purpose in {"insert", "pages"}
         self.allow_images = purpose == 'pages'
         self.fixed_insert_index = insert_index
-        self.setWindowTitle("페이지 추가 — ADF" if self.is_insert else "PDF 파일 병합 — ADF")
+        self.setWindowTitle("페이지 추가 — XDF" if self.is_insert else "PDF 파일 병합 — XDF")
         self.resize(1020, 610)
         self.setMinimumSize(850, 460)
         self.setAcceptDrops(True)
@@ -550,16 +550,39 @@ class PrintOptionsDialog(QDialog):
     def __init__(self, page_count, current, selected, parent=None):
         super().__init__(parent)
         self.page_count, self.current, self.selected = page_count, current, selected
+        self.landscape = False
         self.pages = []
+        self.native = False
+        self.settings = getattr(parent, 'settings', None)
         self.setObjectName('printOptions')
         self.setStyleSheet('QDialog#printOptions QSpinBox:disabled, QDialog#printOptions QLineEdit:disabled '
                           '{ color: #929ba8; background: #f1f3f6; }')
-        self.setWindowTitle('인쇄 설정 — ADF')
+        self.setWindowTitle('인쇄 — XDF')
         self.setMinimumWidth(480)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 20)
         layout.setSpacing(16)
         form = QFormLayout()
+        self.printer = QComboBox()
+        self.printer.setAccessibleName('프린터')
+        form.addRow('프린터', self.printer)
+        self.paper = QComboBox()
+        self.paper.setAccessibleName('용지')
+        form.addRow('용지', self.paper)
+        self.orientation = QComboBox()
+        for title, mode in (('자동', 'auto'), ('세로', 'portrait'), ('가로', 'landscape')):
+            self.orientation.addItem(title, mode)
+        self.orientation.setAccessibleName('용지 방향')
+        form.addRow('방향', self.orientation)
+        self.copies = _spin(1, 999, 1, '부')
+        self.copies.setAccessibleName('인쇄 매수')
+        form.addRow('매수', self.copies)
+        self.duplex = QComboBox()
+        self.duplex.setAccessibleName('양면 인쇄')
+        form.addRow('양면', self.duplex)
+        self.color = QComboBox()
+        self.color.setAccessibleName('색상')
+        form.addRow('색상', self.color)
         self.target = QComboBox()
         for title, mode in (('전체 페이지', 'all'), (f'현재 페이지 ({current + 1}쪽)', 'current'),
                             (f'선택한 페이지 ({len(selected)}쪽)', 'selected'), ('페이지 직접 입력', 'range')):
@@ -583,13 +606,100 @@ class PrintOptionsDialog(QDialog):
         layout.addLayout(form)
         self.summary = _description('')
         layout.addWidget(self.summary)
-        layout.addWidget(_description('다음 단계에서 프린터와 용지, 방향, 인쇄 매수를 선택합니다.'))
-        self.buttons = _buttons(self, '프린터 선택…')
+        self.buttons = _buttons(self, '인쇄')
+        # Driver-only options (trays, stapling, quality) stay in the system
+        # dialog, which opens with everything chosen here already applied.
+        self.system = self.buttons.addButton('프린터 속성…', QDialogButtonBox.ButtonRole.ActionRole)
+        self.system.clicked.connect(self._accept_native)
         layout.addWidget(self.buttons)
+        self._load_printers()
+        self.printer.currentIndexChanged.connect(self._printer_changed)
         for signal in (self.target.currentIndexChanged, self.ranges.textChanged,
                        self.scale.currentIndexChanged, self.percent.valueChanged):
             signal.connect(self._update)
         self._update()
+
+    def _setting(self, key, default=None):
+        return self.settings.value(f'print/{key}', default) if self.settings is not None else default
+
+    def _load_printers(self):
+        from PySide6.QtPrintSupport import QPrinterInfo
+        names = QPrinterInfo.availablePrinterNames()
+        if not names:
+            self.printer.addItem('사용 가능한 프린터 없음')
+            for widget in (self.printer, self.paper, self.duplex, self.color):
+                widget.setEnabled(False)
+            return
+        self.printer.addItems(names)
+        remembered = str(self._setting('printer', '') or '')
+        name = remembered if remembered in names else QPrinterInfo.defaultPrinterName()
+        self.printer.setCurrentIndex(max(0, self.printer.findText(name)))
+        self._printer_changed()
+
+    def _printer_changed(self, *_):
+        from PySide6.QtPrintSupport import QPrinter, QPrinterInfo
+        info = QPrinterInfo.printerInfo(self.printer.currentText())
+        self.paper.clear()
+        # Drivers may list custom sizes, so the QPageSize itself is kept.
+        self.paper_sizes = info.supportedPageSizes()
+        for index, size in enumerate(self.paper_sizes):
+            self.paper.addItem(size.name(), index)
+        keys = [size.key() for size in self.paper_sizes]
+        index = -1
+        for key in (str(self._setting('paper', '') or ''), info.defaultPageSize().key(), 'A4'):
+            if index < 0 and key in keys:
+                index = keys.index(key)
+        self.paper.setCurrentIndex(max(0, index))
+        self.paper.setEnabled(self.paper.count() > 0)
+        modes = info.supportedDuplexModes()
+        self.duplex.clear()
+        self.duplex.addItem('단면', QPrinter.DuplexMode.DuplexNone)
+        for title, mode in (('양면 (긴 쪽으로 넘기기)', QPrinter.DuplexMode.DuplexLongSide),
+                            ('양면 (짧은 쪽으로 넘기기)', QPrinter.DuplexMode.DuplexShortSide)):
+            if mode in modes:
+                self.duplex.addItem(title, mode)
+        self.duplex.setCurrentIndex(max(0, self.duplex.findText(str(self._setting('duplex', '단면')))))
+        self.duplex.setEnabled(self.duplex.count() > 1)
+        colors = info.supportedColorModes()
+        self.color.clear()
+        for title, mode in (('컬러', QPrinter.ColorMode.Color), ('흑백', QPrinter.ColorMode.GrayScale)):
+            if mode in colors or not colors:
+                self.color.addItem(title, mode)
+        index = self.color.findText(str(self._setting('color', '')))
+        if index < 0:
+            index = self.color.findData(info.defaultColorMode())
+        self.color.setCurrentIndex(max(0, index))
+        self.color.setEnabled(self.color.count() > 1)
+
+    def configure(self, printer):
+        """Apply the choices to a QPrinter so printing needs no system dialog."""
+        from PySide6.QtGui import QPageLayout
+        if self.printer.isEnabled():
+            printer.setPrinterName(self.printer.currentText())
+        if self.paper.isEnabled() and self.paper.currentData() is not None:
+            printer.setPageSize(self.paper_sizes[self.paper.currentData()])
+        orientation = self.orientation.currentData()
+        landscape = self.landscape if orientation == 'auto' else orientation == 'landscape'
+        printer.setPageOrientation(QPageLayout.Orientation.Landscape if landscape
+                                   else QPageLayout.Orientation.Portrait)
+        printer.setCopyCount(self.copies.value())
+        if self.duplex.isEnabled():
+            printer.setDuplex(self.duplex.currentData())
+        if self.color.currentData() is not None:
+            printer.setColorMode(self.color.currentData())
+
+    def _remember(self):
+        if self.settings is None or not self.printer.isEnabled():
+            return
+        self.settings.setValue('print/printer', self.printer.currentText())
+        if self.paper.currentData() is not None:
+            self.settings.setValue('print/paper', self.paper_sizes[self.paper.currentData()].key())
+        self.settings.setValue('print/duplex', self.duplex.currentText())
+        self.settings.setValue('print/color', self.color.currentText())
+
+    def _accept_native(self):
+        self.native = True
+        self.accept()
 
     def _update(self, *_):
         from .printing import print_pages
@@ -607,11 +717,17 @@ class PrintOptionsDialog(QDialog):
             self.pages = []
             self.summary.setText(str(error))
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(bool(self.pages))
+        self.system.setEnabled(bool(self.pages))
 
     def accept(self):
         self._update()
-        if self.pages:
-            super().accept()
+        if not self.pages:
+            self.native = False
+            return
+        # Without an installed printer only the system dialog can pick one.
+        self.native = self.native or not self.printer.isEnabled()
+        self._remember()
+        super().accept()
 
 
 class SplitDialog(QDialog):
@@ -622,7 +738,7 @@ class SplitDialog(QDialog):
         self.groups: list[list[int]] = []
         self.include_remaining = False
         self.submit_handler = None
-        self.setWindowTitle('페이지 추출 — ADF' if extract else "PDF 분할 — ADF")
+        self.setWindowTitle('페이지 추출 — XDF' if extract else "PDF 분할 — XDF")
         self.resize(890, 710)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 20)
@@ -881,8 +997,9 @@ class NumberingDialog(QDialog):
         self.document = document
         self.options = {}
         self.position = 'bottom-center'
+        self.remove_ids = []
         self.anchor_page = current_page
-        self.setWindowTitle("페이지 번호 및 머리말 추가")
+        self.setWindowTitle("페이지 번호 및 머리말 편집")
         self.resize(1260, 780)
         self.setMinimumSize(1060, 650)
         layout = QVBoxLayout(self)
@@ -1093,6 +1210,11 @@ class NumberingDialog(QDialog):
         self.preview_status = _description("")
         layout.addWidget(self.preview_status)
         self.buttons = _buttons(self, "번호 적용")
+        self.remove_button = QPushButton('항목 제거…')
+        self.remove_button.setToolTip('넣은 페이지 번호와 머리말 중 지울 항목을 고릅니다')
+        self.remove_button.setEnabled(bool(self.items))
+        self.remove_button.clicked.connect(self._remove_items)
+        self.buttons.addButton(self.remove_button, QDialogButtonBox.ButtonRole.ActionRole)
         layout.addWidget(self.buttons)
         self._preview_timer = QTimer(self)
         self._preview_timer.setSingleShot(True)
@@ -1117,6 +1239,13 @@ class NumberingDialog(QDialog):
         self.font_picker.changed.connect(self._schedule_preview)
         self.color_button.changed.connect(self._schedule_preview)
         self._start_new_item()
+
+    def _remove_items(self):
+        dialog = MarkRemoveDialog(self.items, self)
+        if dialog.exec():
+            self.remove_ids = dialog.ids
+            self._preview_timer.stop()
+            super().accept()
 
     def _schedule_preview(self, *_):
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
@@ -1318,7 +1447,7 @@ class NumberingDialog(QDialog):
         with fitz.open() as preview_doc:
             for index in shown:
                 preview_doc.insert_pdf(self.document.doc, from_page=index, to_page=index)
-                # The preview replaces an existing ADF number just as applying does.
+                # The preview replaces an existing XDF number just as applying does.
                 copy_page_number_record(self.document.doc[index], preview_doc[-1])
             error = None
             try:
@@ -1398,7 +1527,7 @@ class MarkRemoveDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 18)
         layout.setSpacing(12)
-        layout.addWidget(_description('지울 항목을 고르세요. ADF가 넣은 번호와 머리말만 지우며 Ctrl+Z로 되돌릴 수 있습니다.'))
+        layout.addWidget(_description('지울 항목을 고르세요. XDF가 넣은 번호와 머리말만 지우며 Ctrl+Z로 되돌릴 수 있습니다.'))
         self.checks = []
         for item in items:
             check = QCheckBox(mark_title(item))
@@ -1559,7 +1688,7 @@ class MergePageRangeDialog(PagePickerDialog):
         super().__init__(path, parent=parent)
         if not self.valid:
             return
-        self.setWindowTitle("병합할 페이지 선택 — ADF")
+        self.setWindowTitle("병합할 페이지 선택 — XDF")
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("페이지 적용")
         self.range_input = QLineEdit("전체" if selected_pages is None else _page_range_text(selected_pages))
         self.range_input.setPlaceholderText("예: 전체 또는 1-3, 7, 12-끝")

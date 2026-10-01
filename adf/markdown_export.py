@@ -112,7 +112,7 @@ class LayoutOcrEngine:
         models = Path(models)
         missing = [entry['name'] for entry in MODELS if not (models/entry['name']).is_file()]
         if missing:
-            raise FileNotFoundError('OCR 모델이 없습니다. 모델이 포함된 ADF 설치 파일로 다시 설치해 주세요.\n'+', '.join(missing))
+            raise FileNotFoundError('OCR 모델이 없습니다. 모델이 포함된 XDF 설치 파일로 다시 설치해 주세요.\n'+', '.join(missing))
         progress('인식 엔진 준비', 0, 3, '한글·영어 OCR을 준비합니다.')
         from rapidocr import RapidOCR, OCRVersion, ModelType, LangRec
         from rapid_layout import RapidLayout, ModelType as LayoutType

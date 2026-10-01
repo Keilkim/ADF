@@ -55,7 +55,7 @@ class ToolWindowController(QWidget):
             self.dialog = SplitDialog(self.document, parent=None)
         else:
             raise ValueError('PDF 병합 또는 한 파일의 분할만 시작할 수 있습니다.')
-        self.dialog.setWindowIcon(QIcon(str(resource_path('assets/adf.ico'))))
+        self.dialog.setWindowIcon(QIcon(str(resource_path('assets/xdf.ico'))))
         self.dialog.setWindowModality(Qt.WindowModality.NonModal)
         self.dialog.submit_handler = self.start_export
         self.dialog.rejected.connect(self.close_tool)

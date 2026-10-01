@@ -97,6 +97,7 @@ class PrintAndExtractTests(unittest.TestCase):
             dialog.ranges.setText(ranges)
             dialog.scale.setCurrentIndex(dialog.scale.findData(scale))
             dialog.percent.setValue(percent)
+            dialog.native = True
             dialog.accept()
             return dialog.result()
 
@@ -110,7 +111,9 @@ class PrintAndExtractTests(unittest.TestCase):
                 device.setPageOrder(QPrinter.PageOrder.LastPageFirst)
             return QDialog.DialogCode.Accepted
 
-        with patch.object(PrintOptionsDialog, 'exec', choose), patch('adf.app.QPrintDialog.exec', printer):
+        # Installed printers (and their colour defaults) must not leak in.
+        with patch.object(PrintOptionsDialog, 'exec', choose), patch('adf.app.QPrintDialog.exec', printer), \
+             patch('PySide6.QtPrintSupport.QPrinterInfo.availablePrinterNames', return_value=[]):
             self.window.print_document()
         return output
 
@@ -178,6 +181,37 @@ class PrintAndExtractTests(unittest.TestCase):
              patch('adf.app.QPrintDialog.exec') as native:
             self.window.print_document()
             native.assert_not_called()
+
+    def test_print_choices_apply_without_the_system_dialog(self):
+        output = self.root/'direct.pdf'
+        configure = PrintOptionsDialog.configure
+        applied = {}
+
+        def choose(dialog):
+            dialog.target.setCurrentIndex(dialog.target.findData('current'))
+            dialog.orientation.setCurrentIndex(dialog.orientation.findData('landscape'))
+            dialog.copies.setValue(3)
+            dialog.accept()
+            return dialog.result()
+
+        def redirect(dialog, printer):
+            configure(dialog, printer)
+            applied.update(copies=printer.copyCount(), orientation=printer.pageLayout().orientation())
+            # Stand in for a real device; the chosen layout must survive.
+            printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+            printer.setOutputFileName(str(output))
+            printer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+            printer.setPageOrientation(applied['orientation'])
+
+        with patch.object(PrintOptionsDialog, 'exec', choose), \
+             patch.object(PrintOptionsDialog, 'configure', redirect), \
+             patch('adf.app.QPrintDialog.exec') as native, \
+             patch('PySide6.QtPrintSupport.QPrinterInfo.availablePrinterNames', return_value=['Test printer']):
+            self.window.print_document()
+            native.assert_not_called()
+        self.assertEqual(applied, dict(copies=3, orientation=QPageLayout.Orientation.Landscape))
+        with pymupdf.open(output) as doc:
+            self.assertGreater(doc[0].rect.width, doc[0].rect.height)
 
     def test_navigation_grows_to_fit_large_page_numbers(self):
         spin = self.window.page_spin

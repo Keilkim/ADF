@@ -20,7 +20,7 @@ def request_directory() -> Path:
 
 
 def read_shell_request(path: str | Path) -> tuple[str, list[str]]:
-    """Consume only a named request in ADF's private request directory.
+    """Consume only a named request in XDF's private request directory.
 
     No arbitrary command-line file is removed. The extension supplies only
     operation and filenames; passwords and PDF contents are never in requests.
@@ -30,7 +30,7 @@ def read_shell_request(path: str | Path) -> tuple[str, list[str]]:
         raise ValueError('탐색기 요청 파일 이름이 올바르지 않습니다.')
     expected = request_directory().resolve()
     if request.parent.resolve() != expected or request.is_symlink():
-        raise ValueError('ADF 탐색기 요청 폴더의 파일만 열 수 있습니다.')
+        raise ValueError('XDF 탐색기 요청 폴더의 파일만 열 수 있습니다.')
     if not request.is_file() or request.stat().st_size > MAX_REQUEST_BYTES:
         raise ValueError('탐색기 요청 파일을 읽을 수 없습니다.')
     try:

@@ -572,6 +572,25 @@ class PdfDocument:
                     doc.insert_pdf(source, start_at=cursor)
                     cursor += source.page_count
 
+    def page_bytes(self, indices: Iterable[int]) -> bytes:
+        """Return the chosen pages, in the given order, as a standalone PDF."""
+        doc = self._require_doc()
+        pages = _indices(indices, doc.page_count)
+        _require_permission(doc, pymupdf.PDF_PERM_COPY)
+        with pymupdf.open() as out:
+            for index in pages:
+                out.insert_pdf(doc, from_page=index, to_page=index)
+            return out.tobytes(garbage=3, deflate=True)
+
+    def insert_page_bytes(self, data: bytes, index: int) -> int:
+        """Insert every page of an in-memory PDF at one slot; return the page count added."""
+        if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index <= self.page_count:
+            raise ValueError('페이지를 넣을 위치가 잘못되었습니다.')
+        with _open_pdf(bytes(data)) as source:
+            with self._edit() as doc:
+                doc.insert_pdf(source, start_at=index)
+            return source.page_count
+
     def insert_image_page(self, data, index):
         if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index <= self.page_count:
             raise ValueError('페이지를 넣을 위치가 잘못되었습니다.')
@@ -701,6 +720,24 @@ class PdfDocument:
         with self._edit() as doc:
             return doc[page_index].insert_image(target, stream=data, rotate=rotate % 360,
                                                 keep_proportion=True, overlay=True)
+
+    def move_object(self, page_index, object_id, delta):
+        from .pdf_objects import edit_object
+        _indices([page_index], self.page_count)
+        with self._edit() as doc:
+            return edit_object(doc[page_index], object_id, delta)
+
+    def remove_object(self, page_index, object_id):
+        from .pdf_objects import edit_object
+        _indices([page_index], self.page_count)
+        with self._edit() as doc:
+            return edit_object(doc[page_index], object_id)
+
+    def style_object(self, page_index, object_id, **changes):
+        from .pdf_objects import style_object
+        _indices([page_index], self.page_count)
+        with self._edit() as doc:
+            return style_object(doc[page_index], object_id, **changes)
 
     def remove_image(self, page_index: int, xref: int) -> None:
         """Remove all uses of an image on this page, leaving other pages intact."""
@@ -1170,7 +1207,7 @@ def merge_pdfs(paths: Iterable[str | Path], output: str | Path, passwords=None, 
                         toc.append([merged_level, title, offset + page])
                         last_level = merged_level
         result.set_toc(toc)
-        result.set_metadata({"producer": "ADF · PyMuPDF", "title": target.stem})
+        result.set_metadata({"producer": "XDF · PyMuPDF", "title": target.stem})
         return _atomic_save(result, target, overwrite=False)
 
 

@@ -1,4 +1,4 @@
-#define AppName "ADF"
+#define AppName "XDF"
 #ifndef AppVersion
   #define AppVersion "0.3.35"
 #endif
@@ -11,10 +11,11 @@
 AppId={code:GetAppId}
 AppName={#AppName}
 AppVersion={#AppVersion}
-AppPublisher=ADF
+AppPublisher=XDF
 AppComments=로컬에서 사용하는 PDF 편집기
 DefaultDirName={code:GetDefaultDirName}
 DefaultGroupName={code:GetGroupName}
+UsePreviousGroup=no
 UsePreviousLanguage=no
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
@@ -29,7 +30,7 @@ OutputBaseFilename=ADF-Update-{#PatchFrom}-to-{#AppVersion}
 #else
 OutputBaseFilename=ADF-Setup-{#AppVersion}
 #endif
-SetupIconFile={#RepoRoot}\assets\adf.ico
+SetupIconFile={#RepoRoot}\assets\xdf.ico
 UninstallDisplayIcon={app}\ADF.exe
 Compression=lzma2/fast
 SolidCompression=yes
@@ -41,7 +42,7 @@ CloseApplications=yes
 CloseApplicationsFilter=ADF.exe
 RestartApplications=no
 AllowNoIcons=yes
-UninstallDisplayName=ADF PDF 편집기
+UninstallDisplayName=XDF PDF 편집기
 VersionInfoVersion={#AppVersion}
 
 [Languages]
@@ -49,9 +50,9 @@ Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Messages]
-korean.WelcomeLabel1=ADF 설치
+korean.WelcomeLabel1=XDF 설치
 korean.WelcomeLabel2=PDF를 읽고, 페이지를 정리하고, 새 파일로 저장하세요.%n%n사용안내, 오픈소스 라이선스 원문과 해당 버전의 소스코드를 함께 설치합니다. 앱의 도움말에서 확인할 수 있습니다.%n%nPython 설치나 계정이 필요하지 않습니다.
-korean.FinishedLabel=ADF 설치가 완료되었습니다.%n%nPDF를 ADF에서 항상 열려면 Windows 설정 > 앱 > 기본 앱에서 ADF를 선택하세요.
+korean.FinishedLabel=XDF 설치가 완료되었습니다.%n%nPDF를 XDF에서 항상 열려면 Windows 설정 > 앱 > 기본 앱에서 XDF를 선택하세요.
 
 [Tasks]
 Name: "desktopicon"; Description: "바탕 화면에 바로가기 만들기"; Flags: unchecked
@@ -69,18 +70,18 @@ Source: "{#AppBuildDir}\*"; DestDir: "{app}"; Excludes: "ADFShell-*.dll"; Flags:
 Source: "{#AppBuildDir}\ADFShell-{#AppVersion}.dll"; DestDir: "{app}"
 
 [Icons]
-Name: "{group}\ADF"; Filename: "{app}\ADF.exe"; AppUserModelID: "ADF.PDF.Editor"
+Name: "{group}\XDF"; Filename: "{app}\ADF.exe"; AppUserModelID: "ADF.PDF.Editor"
 Name: "{group}\사용 안내"; Filename: "{app}\ADF.exe"; Parameters: "--help-section guide"
 Name: "{group}\오픈소스 라이선스"; Filename: "{app}\ADF.exe"; Parameters: "--help-section licenses"
 Name: "{group}\소스코드"; Filename: "{app}\ADF.exe"; Parameters: "--help-section sources"
-Name: "{autodesktop}\ADF"; Filename: "{app}\ADF.exe"; Tasks: desktopicon; AppUserModelID: "ADF.PDF.Editor"; Check: not IsIsolatedTest
+Name: "{autodesktop}\XDF"; Filename: "{app}\ADF.exe"; Tasks: desktopicon; AppUserModelID: "ADF.PDF.Editor"; Check: not IsIsolatedTest
 
 [Registry]
 ; Normal installation expands GetRegistryPrefix to empty. Isolated installer
 ; verification uses the SAME executable with a private HKCU namespace.
 ; Never set .pdf's default value or UserChoice, or replace a Windows shell CLSID.
 Root: HKCU; Subkey: "{code:GetPrivateTestRoot}"; Flags: uninsdeletekey; Check: IsIsolatedTest
-Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\ADF.Document"; ValueType: string; ValueName: ""; ValueData: "ADF PDF 문서"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\ADF.Document"; ValueType: string; ValueName: ""; ValueData: "XDF PDF 문서"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\ADF.Document\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\ADF.exe"",0"
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\ADF.Document\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\ADF.exe"" ""%1"""
 ; When ADF opens PDFs, Explorer would draw ADF's icon over the thumbnail's
@@ -89,21 +90,21 @@ Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\ADF.Document"; Val
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\.pdf\OpenWithProgids"; ValueType: none; ValueName: "ADF.Document"; Flags: uninsdeletevalue
 ; ADF writes its own sign-in start for the background agent (adf/agent.py); uninstalling removes it.
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "ADF"; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\Applications\ADF.exe"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "ADF"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\Applications\ADF.exe"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "XDF"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\Applications\ADF.exe\SupportedTypes"; ValueType: string; ValueName: ".pdf"; ValueData: ""
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\Applications\ADF.exe\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\ADF.exe"" ""%1"""
-Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\ADF\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "ADF"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\ADF\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "XDF"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\ADF\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "로컬 PDF 보기, 페이지 편집, 병합 및 분리"
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\ADF\Capabilities"; ValueType: string; ValueName: "ApplicationIcon"; ValueData: """{app}\ADF.exe"",0"
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\ADF\Capabilities\FileAssociations"; ValueType: string; ValueName: ".pdf"; ValueData: "ADF.Document"
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\RegisteredApplications"; ValueType: string; ValueName: "ADF"; ValueData: "{code:GetRegistryPrefix}Software\ADF\Capabilities"; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\SystemFileAssociations\.pdf\shell\ADF.Open"; ValueType: string; ValueName: ""; ValueData: "ADF로 열기"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\SystemFileAssociations\.pdf\shell\ADF.Open"; ValueType: string; ValueName: ""; ValueData: "XDF로 열기"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\SystemFileAssociations\.pdf\shell\ADF.Open"; ValueType: string; ValueName: "Icon"; ValueData: """{app}\ADF.exe"",0"
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\SystemFileAssociations\.pdf\shell\ADF.Open"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Single"
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\SystemFileAssociations\.pdf\shell\ADF.Open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\ADF.exe"" ""%1"""
 ; Remove 0.1's static split verb when upgrading; native selection logic owns it.
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\SystemFileAssociations\.pdf\shell\ADF.Split"; Flags: deletekey dontcreatekey
-Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{8093F936-820B-4CDB-A64B-7A39EC807A11}"; ValueType: string; ValueName: ""; ValueData: "ADF PDF Explorer commands"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{8093F936-820B-4CDB-A64B-7A39EC807A11}"; ValueType: string; ValueName: ""; ValueData: "XDF PDF Explorer commands"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{8093F936-820B-4CDB-A64B-7A39EC807A11}\InprocServer32"; ValueType: string; ValueName: ""; ValueData: "{app}\ADFShell-{#AppVersion}.dll"
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{8093F936-820B-4CDB-A64B-7A39EC807A11}\InprocServer32"; ValueType: string; ValueName: "ThreadingModel"; ValueData: "Apartment"
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\SystemFileAssociations\.pdf\shellex\ContextMenuHandlers\ADF"; ValueType: string; ValueName: ""; ValueData: "{{8093F936-820B-4CDB-A64B-7A39EC807A11}"; Flags: uninsdeletekey
@@ -111,7 +112,7 @@ Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\SystemFileAssociat
 ; thumbnail handler that another program registered here, for this user or for
 ; all users, keeps its place. Uninstalling removes the slot only while it still
 ; names ADF (CurUninstallStepChanged), so it has no uninsdeletekey flag.
-Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}"; ValueType: string; ValueName: ""; ValueData: "ADF PDF thumbnails"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}"; ValueType: string; ValueName: ""; ValueData: "XDF PDF thumbnails"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}\InprocServer32"; ValueType: string; ValueName: ""; ValueData: "{app}\ADFShell-{#AppVersion}.dll"
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\CLSID\{{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}\InprocServer32"; ValueType: string; ValueName: "ThreadingModel"; ValueData: "Apartment"
 Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\SystemFileAssociations\.pdf\shellex\{{E357FCCD-A995-4576-B01F-234630154E96}"; ValueType: string; ValueName: ""; ValueData: "{{A96AE73F-5DB5-4CF1-80EF-9A44D2B3D84D}"; Check: ThumbnailSlotAvailable
@@ -123,7 +124,7 @@ Root: HKCU; Subkey: "{code:GetRegistryPrefix}Software\Classes\SystemFileAssociat
 Type: filesandordirs; Name: "{localappdata}\ADF\ADF\updates"; Check: not IsIsolatedTest
 
 [Run]
-Filename: "{app}\ADF.exe"; Description: "ADF 시작"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\ADF.exe"; Description: "XDF 시작"; Flags: nowait postinstall skipifsilent
 
 [Code]
 var
@@ -133,12 +134,12 @@ function NoticeText: String;
 begin
   if ActiveLanguage = 'korean' then
     Result := '무단 배포 금지 · 라이선스 조건 확인' + #13#10#13#10 +
-      'ADF는 GNU AGPL v3 이상과 각 구성 요소의 오픈소스 라이선스에 따라 제공됩니다.' + #13#10#13#10 +
+      'XDF는 GNU AGPL v3 이상과 각 구성 요소의 오픈소스 라이선스에 따라 제공됩니다.' + #13#10#13#10 +
       '재배포할 때는 각 라이선스가 요구하는 저작권 고지, 라이선스 원문과 대응 소스를 함께 제공해야 합니다. 이러한 조건을 위반한 무단 배포를 하지 마세요.' + #13#10#13#10 +
       '오픈소스 라이선스가 허용하는 사용·수정·재배포 권리는 그대로 유지됩니다. 설치 후 도움말에서 원문과 소스를 확인할 수 있습니다.'
   else
     Result := 'Redistribution and license notice' + #13#10#13#10 +
-      'ADF is provided under GNU AGPL v3 or later and the open-source licenses of its components.' + #13#10#13#10 +
+      'XDF is provided under GNU AGPL v3 or later and the open-source licenses of its components.' + #13#10#13#10 +
       'Redistribution must include the copyright notices, license texts and corresponding source required by those licenses. Do not distribute in violation of these conditions.' + #13#10#13#10 +
       'The rights to use, modify and redistribute granted by the open-source licenses remain in effect. License texts and sources are available from Help after installation.';
 end;
@@ -206,7 +207,7 @@ begin
   if IsIsolatedTest then
     Result := 'ADF installer test ' + TestToken
   else
-    Result := 'ADF';
+    Result := 'XDF';
 end;
 
 function GetDefaultDirName(Param: String): String;
@@ -335,7 +336,7 @@ function PatchBaseProblem: String;
 begin
   Result := '';
   if InstalledVersion <> '{#PatchFrom}' then begin
-    Result := 'This update requires ADF {#PatchFrom}. Installed: ' + InstalledVersion;
+    Result := 'This update requires XDF {#PatchFrom}. Installed: ' + InstalledVersion;
     Exit;
   end;
 #include AddBackslash(PatchDir) + "checks.iss"

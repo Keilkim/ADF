@@ -2,13 +2,14 @@ from collections import OrderedDict
 import math
 import time
 import pymupdf
-from PySide6.QtCore import Qt, QRectF, QPointF, QSize, QSizeF, QTimer, QElapsedTimer, Signal, QSignalBlocker, QEvent
-from PySide6.QtGui import QColor, QFont, QPalette, QPainter, QPixmap, QImage, QPen, QBrush, QCursor, QTransform, QTextCursor, QTextCharFormat, QTextBlockFormat, QInputDevice
+from PySide6.QtCore import Qt, QRectF, QPointF, QPoint, QSize, QSizeF, QTimer, QElapsedTimer, Signal, QSignalBlocker, QEvent, QMimeData, QByteArray
+from PySide6.QtGui import QColor, QDrag, QFont, QPalette, QPainter, QPixmap, QImage, QPen, QBrush, QCursor, QTransform, QTextCursor, QTextCharFormat, QTextBlockFormat, QInputDevice
 from PySide6.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsItem,
     QGraphicsObject, QGraphicsProxyWidget, QListWidget, QListWidgetItem, QAbstractItemView, QToolButton, QApplication,
     QStyledItemDelegate, QStyleOptionViewItem, QStyle)
 
 from . import pinch
+from .theme import ACCENT, ACCENT_TEXT, ACCENT_SOFT, ACCENT_SELECTED, WORKSPACE
 from .text_groups import new_text_box, text_group_at
 from .page_layout import spread_groups
 from .snapping import SnapIndex
@@ -18,6 +19,8 @@ RENDER_OVERSAMPLE = 1.5
 PAGE_CACHE_BYTES = 96 * 1024 * 1024
 THUMB_CACHE_BYTES = 24 * 1024 * 1024
 THUMB_PIXMAP_ROLE = Qt.ItemDataRole.UserRole + 6
+# Pages dragged out of a thumbnail list, as a standalone PDF another XDF window can insert.
+PAGES_MIME = 'application/x-xdf-pages'
 
 
 def page_raster(page, scale, clip=None, max_pixels=16_000_000):
@@ -89,7 +92,7 @@ class ImagePlacement(QGraphicsObject):
     def paint(self, painter, option, widget=None):
         r = QRectF(0, 0, self.size.width(), self.size.height())
         painter.drawPixmap(r, self.pm, QRectF(self.pm.rect()))
-        painter.setPen(QPen(QColor('#62656b'), 1.4))
+        painter.setPen(QPen(QColor(ACCENT), 1.4))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(r)
         painter.setBrush(QColor('white'))
@@ -206,7 +209,7 @@ class TextPlacement(QGraphicsObject):
 
     def paint(self, painter, option, widget=None):
         rect = QRectF(0, 0, self.size.width(), self.size.height())
-        painter.setPen(QPen(QColor('#62656b'), 1.5, Qt.PenStyle.SolidLine))
+        painter.setPen(QPen(QColor(ACCENT), 1.5, Qt.PenStyle.SolidLine))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(rect, 2, 2)
         painter.setBrush(QColor('white'))
@@ -290,12 +293,15 @@ class PdfView(QGraphicsView):
     stampRequested = Signal(int, object)
     stampCanceled = Signal()
     inkTransformed = Signal(int, int, object, object)
+    objectTransformed = Signal(int, int, object)
+    objectDeleteRequested = Signal()
+    objectSelectionChanged = Signal(object)
     regionCopied = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setScene(QGraphicsScene(self))
-        self.setBackgroundBrush(QColor('#e8ebef'))
+        self.setBackgroundBrush(QColor(WORKSPACE))
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         self.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         self.setDragMode(QGraphicsView.DragMode.NoDrag)
@@ -318,6 +324,10 @@ class PdfView(QGraphicsView):
         self.text_preview_source = None
         self.text_preview_document = None
         self.ink_selection = None
+        self.object_selection = None
+        self.object_preview_document = None
+        self.object_preview_pixmaps = {}
+        self.object_cache = OrderedDict()
         self.ink_preview_document = None
         self.ink_preview_pixmaps = {}
         self.text_preview_values = None
@@ -326,6 +336,7 @@ class PdfView(QGraphicsView):
         self.text_preview_timer.setSingleShot(True)
         self.text_preview_timer.timeout.connect(self.render_text_preview)
         self.image_mode = False
+        self.object_mode = False
         self.copy_region_mode = False
         self.stamp_pixmap = None
         self.stamp_width_mm = 20
@@ -370,6 +381,8 @@ class PdfView(QGraphicsView):
         self.reset_page_wheel()
         self.pen.cancel()
         self.clear_ink_selection()
+        self.clear_object_selection()
+        self.object_cache.clear()
         self.clear_text_selection()
         self.clear_region_selection()
         self.snap_cache.clear()
@@ -417,6 +430,8 @@ class PdfView(QGraphicsView):
     def snap_index(self, page_item):
         exclusion = (tuple(self.text_selection_data['bbox'])
                      if self.text_selection_data and self.text_page == page_item.index else None)
+        if self.object_selection is not None and self.object_selection.index == page_item.index:
+            exclusion = self.object_selection.target['rect']
         key = (page_item.index, self.document.revision, exclusion)
         if key not in self.snap_cache:
             page = self.document.doc[page_item.index]
@@ -446,9 +461,11 @@ class PdfView(QGraphicsView):
                 if not block_rect.is_empty:
                     add(block_rect)
             for info in page.get_image_info():
-                add(info['bbox'])
+                if not excluded or not excluded.contains(pymupdf.Rect(info['bbox']).tl):
+                    add(info['bbox'])
             for drawing in page.get_drawings():
-                add(drawing['rect'])
+                if not excluded or not excluded.contains(drawing['rect'].tl):
+                    add(drawing['rect'])
             for annotation in page.annots() or ():
                 add(annotation.rect)
             self.snap_cache[key] = SnapIndex(page_item.rect, objects)
@@ -817,6 +834,16 @@ class PdfView(QGraphicsView):
                     continue
             region = tuple(clip) if clip is not None else None
             key = (p.index, scale, region)
+            if self.object_selection is not None and p.index == self.object_selection.index and self.object_preview_document is not None:
+                try:
+                    preview_key = (scale, region)
+                    if preview_key not in self.object_preview_pixmaps:
+                        self.object_preview_pixmaps = {preview_key: page_raster(self.object_preview_document[0], scale, clip)}
+                    p.pixmap, p.pixmap_rect = self.object_preview_pixmaps[preview_key]
+                    p.update()
+                except Exception as error:
+                    self.renderError.emit(str(error))
+                continue
             if self.ink_selection is not None and p.index == self.ink_selection.index and self.ink_preview_document is not None:
                 try:
                     preview_key = (scale, region)
@@ -1013,7 +1040,7 @@ class PdfView(QGraphicsView):
 
     def selects_text(self, event):
         return (event.button() == Qt.MouseButton.LeftButton and not self.copy_region_mode and not self.text_mode
-                and not self.image_mode and not self.placement and self.stamp_pixmap is None
+                and not self.image_mode and not self.object_mode and not self.placement and self.stamp_pixmap is None
                 and self.dragMode() == QGraphicsView.DragMode.NoDrag)
 
     def page_text(self, index):
@@ -1111,8 +1138,23 @@ class PdfView(QGraphicsView):
 
     def mousePressEvent(self, event):
         pos = self.mapToScene(event.position().toPoint())
+        if self.object_selection is not None and self.object_selection.contains(self.object_selection.mapFromScene(pos)):
+            super().mousePressEvent(event)
+            return
         if self.ink_selection is not None and self.ink_selection.contains(self.ink_selection.mapFromScene(pos)):
             super().mousePressEvent(event)
+            return
+        if self.object_mode and event.button() == Qt.MouseButton.LeftButton:
+            self.selectionCleared.emit()
+            item = self.page_at(pos)
+            if item is not None:
+                from .ink_widgets import ink_at
+                xref = ink_at(self,item,pos)
+                if xref is not None:
+                    self.select_ink(item.index,xref)
+                elif self.select_object_at(item,pos):
+                    super().mousePressEvent(event)
+            event.accept()
             return
         if (not self.copy_region_mode and not self.text_mode and not self.image_mode and not self.placement and self.stamp_pixmap is None
                 and self.dragMode() == QGraphicsView.DragMode.NoDrag and event.button() == Qt.MouseButton.LeftButton):
@@ -1167,7 +1209,9 @@ class PdfView(QGraphicsView):
                 page = self.document.doc[item.index]
                 local = item.mapFromScene(pos)
                 point = pymupdf.Point(local.x(), local.y()) * page.derotation_matrix
-                group = new_text_box(page, point, self.new_text_size) if self.text_add_mode else text_group_at(page, point)
+                group = None if self.text_add_mode else text_group_at(page, point)
+                if group is None:
+                    group = new_text_box(page, point, self.new_text_size)
                 if group:
                     group['click_point'] = (point.x, point.y)
                     self.textRequested.emit(item.index, group)
@@ -1207,6 +1251,11 @@ class PdfView(QGraphicsView):
             return
         if self.copy_region_mode:
             self.viewport().setCursor(Qt.CursorShape.CrossCursor)
+            return
+        if self.object_mode:
+            if scene_pos is not None and self.object_selection is not None and self.object_selection.contains(self.object_selection.mapFromScene(scene_pos)):
+                return
+            self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
             return
         if (self.stamp_pixmap is not None or self.placement is not None or self.text_placement is not None
                 or self.dragMode() != QGraphicsView.DragMode.NoDrag):
@@ -1282,6 +1331,85 @@ class PdfView(QGraphicsView):
             event.accept()
             return
         super().mouseReleaseEvent(event)
+
+    def page_objects(self, index):
+        from .pdf_objects import page_objects
+        key = (index,self.document.revision)
+        if key not in self.object_cache:
+            self.object_cache[key] = page_objects(self.document.doc[index])
+            while len(self.object_cache) > 8:
+                self.object_cache.popitem(last=False)
+        return self.object_cache[key]
+
+    def select_object_at(self, item, scene_pos):
+        from .pdf_objects import object_layer
+        page = self.document.doc[item.index]
+        point = self.page_point(item,scene_pos)
+        radius = 6/max(.01,self.transform().m11())
+        for target in reversed(self.page_objects(item.index)):
+            if point not in pymupdf.Rect(target['rect'])+(-radius,-radius,radius,radius):
+                continue
+            layer = object_layer(page,target['id'])
+            try:
+                shown_point = point*page.rotation_matrix
+                clip = pymupdf.Rect(shown_point.x-radius,shown_point.y-radius,shown_point.x+radius,shown_point.y+radius)&page.rect
+                if clip.is_empty:
+                    continue
+                pixels = layer[0].get_pixmap(matrix=pymupdf.Matrix(2,2),clip=clip,alpha=True)
+                if not any(pixels.samples[3::4]):
+                    continue
+                chosen_layer, layer = layer, None
+                self.select_object(item.index,target['id'],chosen_layer)
+                return True
+            finally:
+                if layer is not None:
+                    layer.close()
+        return False
+
+    def select_object(self, index, object_id, layer=None):
+        from .pdf_objects import edit_object, object_layer
+        from .object_widgets import ObjectSelection
+        self.clear_object_selection(notify=False)
+        target = self.page_objects(index)[object_id]
+        page = self.document.doc[index]
+        layer = layer if layer is not None else object_layer(page,object_id)
+        background = pymupdf.open()
+        try:
+            background.insert_pdf(self.document.doc,from_page=index,to_page=index)
+            edit_object(background[0],object_id)
+            shown = pymupdf.Rect(target['rect'])*page.rotation_matrix & page.rect
+            scale = min(3.,max(1.,self.transform().m11()),math.sqrt(8_000_000/max(1,shown.width*shown.height)))
+            pixels = layer[0].get_pixmap(matrix=pymupdf.Matrix(scale,scale),clip=shown,alpha=True)
+            pixmap = QPixmap.fromImage(QImage(pixels.samples,pixels.width,pixels.height,pixels.stride,QImage.Format.Format_RGBA8888_Premultiplied).copy())
+            bounds = QRectF(pixels.x/scale,pixels.y/scale,pixels.width/scale,pixels.height/scale)
+            self.object_selection = ObjectSelection(self,self.pages[index],target,pixmap,bounds)
+            self.object_selection.committed.connect(self.objectTransformed.emit)
+            self.object_selection.deleteRequested.connect(self.objectDeleteRequested.emit)
+            self.object_preview_document = background
+            self.render_visible()
+            self.objectSelectionChanged.emit(target)
+        except BaseException:
+            background.close()
+            self.clear_object_selection()
+            raise
+        finally:
+            layer.close()
+
+    def clear_object_selection(self, notify=True):
+        if self.object_selection is not None:
+            item, self.object_selection = self.object_selection, None
+            if item.scene() is not None:
+                item.scene().removeItem(item)
+            item.setParentItem(None)
+            item.deleteLater()
+        if self.object_preview_document is not None:
+            self.object_preview_document.close()
+            self.object_preview_document = None
+        self.object_preview_pixmaps.clear()
+        self.clear_snap_guides()
+        self.schedule_render()
+        if notify:
+            self.objectSelectionChanged.emit(None)
 
     def select_ink(self, index, xref):
         from .ink_widgets import InkSelection
@@ -1541,16 +1669,22 @@ class ThumbnailDelegate(QStyledItemDelegate):
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
-        if selected or hovered:
+        if hovered:
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor('#d5d5d8' if selected else '#ececee'))
+            painter.setBrush(QColor(ACCENT_SOFT))
             painter.drawRoundedRect(body.adjusted(5, 3, -5, -3), 12, 12)
         painter.fillRect(page.translated(1, 2), QColor(0, 0, 0, 24))
         painter.fillRect(page, Qt.GlobalColor.white)
         pm = index.data(THUMB_PIXMAP_ROLE)
         if isinstance(pm, QPixmap) and not pm.isNull():
             painter.drawPixmap(page, pm, QRectF(pm.rect()))
-        painter.setPen(QColor('#62656b' if selected else '#697586'))
+        if selected and not hovered:
+            outline = QColor(ACCENT)
+            outline.setAlpha(110)
+            painter.setPen(QPen(outline, 1.5))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(page.adjusted(-2, -2, 2, 2), 2, 2)
+        painter.setPen(QColor(ACCENT_TEXT if selected else '#697586'))
         painter.drawText(QRectF(body.left(), page.bottom()+6, body.width(), 22),
                          Qt.AlignmentFlag.AlignCenter, str(index.data(Qt.ItemDataRole.DisplayRole)))
         painter.restore()
@@ -1564,6 +1698,7 @@ class ThumbnailList(QListWidget):
     HOVER_OPEN_DELAY = 120
     HOVER_CLOSE_DELAY = 250
     reordered = Signal(list)
+    pagesMovedOut = Signal(list)
     filesDropped = Signal(list)
     filesInserted = Signal(list, int)
     insertionRequested = Signal(int, object)
@@ -1600,9 +1735,12 @@ class ThumbnailList(QListWidget):
         self.gap_timer.setInterval(15)
         self.gap_timer.timeout.connect(self.step_gaps)
         self.drag_active = False
+        self.dropped_here = False
+        # Called with (pdf_bytes, index) for pages dropped from another document; returns whether they were added.
+        self.page_drop_handler = None
         self.insert_button = QToolButton(self.viewport())
         from .theme import icon
-        self.insert_button.setIcon(icon('plus', '#62656b'))
+        self.insert_button.setIcon(icon('plus', ACCENT))
         self.insert_button.setToolTip('페이지 추가')
         self.insert_button.setAccessibleName('이 위치에 페이지 추가')
         self.insert_button.setFixedSize(30, 30)
@@ -1844,15 +1982,68 @@ class ThumbnailList(QListWidget):
         super().wheelEvent(event)
 
     def startDrag(self, actions):
-        self.drag_active = True
-        self.set_hover_slot(None)
+        rows = sorted(self.row(item) for item in self.selectedItems())
+        if not rows or not self.document or not self.document.doc:
+            return
+        pages = [self.item(row).data(Qt.ItemDataRole.UserRole) for row in rows]
+        mime = QMimeData()
         try:
-            super().startDrag(actions)
+            mime.setData(PAGES_MIME, QByteArray(self.document.page_bytes(pages)))
+        except Exception:
+            pass  # Copy-protected pages can still be reordered within this list.
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        pixmap = self.drag_pixmap(rows)
+        drag.setPixmap(pixmap)
+        drag.setHotSpot(QPoint(pixmap.width() // 2, pixmap.height() // 2))
+        self.drag_active = True
+        self.dropped_here = False
+        self.set_hover_slot(None)
+        allowed = Qt.DropAction.CopyAction | (Qt.DropAction.MoveAction if self.document.editable else Qt.DropAction.IgnoreAction)
+        try:
+            result = drag.exec(allowed, Qt.DropAction.MoveAction if self.document.editable else Qt.DropAction.CopyAction)
         finally:
             self.drag_active = False
             self.drop_y = None
             self.drop_line = None
             self.viewport().update()
+        # Another document took the pages; a move removes them here (Ctrl+drag copies).
+        if not self.dropped_here and result == Qt.DropAction.MoveAction and mime.hasFormat(PAGES_MIME):
+            self.pagesMovedOut.emit(pages)
+
+    def drag_pixmap(self, rows):
+        source = self.item(rows[0]).data(THUMB_PIXMAP_ROLE)
+        size = self.thumbnail_size(rows[0]).scaled(QSizeF(96, 128), Qt.AspectRatioMode.KeepAspectRatio).toSize()
+        ratio = self.devicePixelRatioF()
+        pixmap = QPixmap(round((size.width() + 16) * ratio), round((size.height() + 16) * ratio))
+        pixmap.setDevicePixelRatio(ratio)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        page = QRectF(4, 10, size.width(), size.height())
+        if len(rows) > 1:
+            # A second sheet behind the first shows that several pages travel together.
+            painter.fillRect(page.translated(6, -6), QColor('#e3e5e8'))
+        painter.fillRect(page.translated(1, 2), QColor(0, 0, 0, 40))
+        painter.fillRect(page, Qt.GlobalColor.white)
+        if isinstance(source, QPixmap) and not source.isNull():
+            painter.drawPixmap(page, source, QRectF(source.rect()))
+        painter.setPen(QPen(QColor(ACCENT), 1.5))
+        painter.drawRect(page)
+        if len(rows) > 1:
+            badge = QRectF(page.right() - 14, page.top() - 6, 26, 20)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(ACCENT))
+            painter.drawRoundedRect(badge, 10, 10)
+            painter.setPen(Qt.GlobalColor.white)
+            painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, str(len(rows)))
+        painter.end()
+        return pixmap
+
+    def accepts_drag(self, event):
+        mime = event.mimeData()
+        return mime.hasUrls() or event.source() is self or mime.hasFormat(PAGES_MIME)
 
     def insertion_index_at(self, point):
         item = self.itemAt(point.toPoint())
@@ -1884,6 +2075,16 @@ class ThumbnailList(QListWidget):
                 self.filesInserted.emit(paths, target)
             event.acceptProposedAction()
             return
+        if event.source() is not self and event.mimeData().hasFormat(PAGES_MIME):
+            data = bytes(event.mimeData().data(PAGES_MIME))
+            if self.page_drop_handler is not None and self.page_drop_handler(data, target):
+                event.acceptProposedAction()
+            else:
+                # The source keeps its pages when this document could not take them.
+                event.setDropAction(Qt.DropAction.IgnoreAction)
+                event.ignore()
+            return
+        self.dropped_here = True
         # Explicit ordering avoids QListWidget IconMode's visual-only move semantics.
         selected = sorted(self.row(i) for i in self.selectedItems())
         rest = [i for i in range(self.count()) if i not in selected]
@@ -1898,8 +2099,10 @@ class ThumbnailList(QListWidget):
         self.set_hover_slot(None)
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
-        else:
-            super().dragEnterEvent(event)
+            return
+        super().dragEnterEvent(event)
+        if self.accepts_drag(event):
+            event.acceptProposedAction()
 
     def dragMoveEvent(self, event):
         self.drag_active = True
@@ -1921,6 +2124,8 @@ class ThumbnailList(QListWidget):
             event.acceptProposedAction()
         else:
             super().dragMoveEvent(event)
+            if self.accepts_drag(event):
+                event.acceptProposedAction()
         self.viewport().update()
 
     def dragLeaveEvent(self, event):
@@ -1935,7 +2140,7 @@ class ThumbnailList(QListWidget):
         if self.drop_line is not None:
             painter = QPainter(self.viewport())
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            painter.setPen(QPen(QColor('#62656b'),3))
+            painter.setPen(QPen(QColor(ACCENT),3))
             painter.drawLine(*self.drop_line)
             painter.end()
 

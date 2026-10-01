@@ -44,7 +44,7 @@ def windows_icon_pixels(size):
     gdi.SelectObject.restype = handle
     gdi.DeleteObject.argtypes = [handle]
     gdi.DeleteDC.argtypes = [handle]
-    icon = user.LoadImageW(None, str(ROOT / 'assets' / 'adf.ico'), 1, size, size, 0x10)
+    icon = user.LoadImageW(None, str(ROOT / 'assets' / 'xdf.ico'), 1, size, size, 0x10)
     if not icon:
         raise ctypes.WinError(ctypes.get_last_error())
     bitmap = dc = previous = None
@@ -81,27 +81,31 @@ class IconTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
-    def test_shipped_frames_have_transparent_background_and_blue_mark(self):
-        with Image.open(ROOT / 'assets' / 'adf.ico') as ico:
+    def test_shipped_frames_have_transparent_background_and_vermilion_x(self):
+        with Image.open(ROOT / 'assets' / 'xdf.ico') as ico:
             self.assertEqual(ico.ico.sizes(), {(s, s) for s in SIZES})
             images = [ico.ico.getimage((s, s)).convert('RGBA') for s in SIZES]
-        with Image.open(ROOT / 'assets' / 'adf.png') as png:
+        with Image.open(ROOT / 'assets' / 'xdf.png') as png:
             self.assertEqual(png.mode, 'RGBA')
             images.append(png.copy())
         for image in images:
             with self.subTest(size=image.width):
                 self.assertEqual(image.getpixel((0, 0))[3], 0)
-                # A small resampling fringe can reach into the 16px counter.
-                self.assertLess(image.getpixel((image.width // 2, image.height // 2))[3], 10)
+                # Counterforms may pass through the center; the background is clear.
+                self.assertEqual(image.getpixel((image.width - 1, image.height - 1))[3], 0)
                 pixels = image.get_flattened_data()
                 self.assertTrue(any(0 < p[3] < 255 for p in pixels))
                 opaque = [p for p in pixels if p[3] == 255]
                 self.assertTrue(opaque)
                 self.assertGreater(sum(p[3] == 0 for p in pixels), image.width * image.height // 3)
-                self.assertTrue(all(b > g > r for r, g, b, a in opaque))
+                self.assertTrue(all(r > g > b for r, g, b, a in opaque))
+                # Flat brand fill stays consistent even at narrow counter edges.
+                self.assertTrue(all(abs(actual - expected) <= 3
+                                    for pixel in opaque
+                                    for actual, expected in zip(pixel[:3], (240, 75, 45))))
 
     def test_qt_loads_all_menu_sizes_with_alpha(self):
-        for name in ('adf.png', 'adf.ico'):
+        for name in ('xdf.png', 'xdf.ico'):
             icon = QIcon(str(ROOT / 'assets' / name))
             for size in SIZES[:7]:
                 with self.subTest(asset=name, size=size):
@@ -121,7 +125,7 @@ class IconTests(unittest.TestCase):
                 self.assertTrue(any(p[3] == 255 for p in pixels))
                 self.assertTrue(any(0 < p[3] < 255 for p in pixels))
                 self.assertTrue(all(max(b, g, r) <= a for b, g, r, a in pixels))
-                self.assertTrue(all(b > g > r for b, g, r, a in pixels if a == 255))
+                self.assertTrue(all(r > g > b for b, g, r, a in pixels if a == 255))
 
 
 if __name__ == '__main__':

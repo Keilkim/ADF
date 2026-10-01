@@ -9,6 +9,11 @@
   color: #232323;
   background: #f7f7f5;
   font-synthesis: none;
+  --accent: #f04b2d;
+  --accent-strong: #d83c20;
+  --accent-text: #b8321a;
+  --accent-soft: #fff0eb;
+  --accent-selected: #ffd8cb;
   --muted: #636360;
   --paper: #fff;
   --radius: 28px;
@@ -38,7 +43,7 @@ summary {
 }
 a:focus-visible,
 summary:focus-visible {
-  outline: 3px solid #646462;
+  outline: 3px solid var(--accent);
   outline-offset: 6px;
   border-radius: 5px;
 }
@@ -113,10 +118,7 @@ h3 {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  font-size: 1.35rem;
-  letter-spacing: -0.06em;
-  font-weight: 750;
+  color: var(--accent);
 }
 .nav-links {
   display: flex;
@@ -131,19 +133,20 @@ h3 {
     background 0.15s;
 }
 .nav-links > a:hover {
-  color: #777;
+  color: var(--accent-text);
 }
 .nav-download {
+  color: var(--accent-text);
   padding: 10px 18px;
   border-radius: 30px;
-  background: #e8e8e5;
+  background: var(--accent-soft);
 }
 .nav-download:hover {
-  background: #dededb;
-  color: #232323 !important;
+  background: var(--accent-selected);
+  color: var(--accent-text) !important;
 }
 .nav-download:active {
-  background: #cfcfcc;
+  background: var(--accent-selected);
 }
 .hero {
   text-align: center;
@@ -160,7 +163,7 @@ h3 {
   display: inline-block;
   width: 6px;
   height: 6px;
-  background: #77786b;
+  background: var(--accent);
   border-radius: 50%;
   margin: 0 7px 2px 0;
 }
@@ -172,7 +175,7 @@ h1 {
   margin: 26px 0 25px;
 }
 h1 span {
-  color: #686864;
+  color: var(--accent);
 }
 .hero-description {
   font-size: 1.08rem;
@@ -224,20 +227,20 @@ h1 span {
   transition-duration: 70ms;
 }
 .primary {
-  background: #282827;
+  background: var(--accent-strong);
 }
 .primary:hover {
-  background: #444442;
+  background: var(--accent-text);
 }
 .primary:active {
-  background: #171716;
+  background: #972a17;
 }
 .secondary {
-  background: #e7e7e3;
-  color: #282827;
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 .secondary:hover {
-  background: #d9d9d5;
+  background: var(--accent-selected);
 }
 .button:disabled {
   color: #70706a;
@@ -246,6 +249,7 @@ h1 span {
   transform: none;
 }
 .text-link {
+  color: var(--accent-text);
   font-size: 0.88rem;
   font-weight: 550;
   display: inline-block;
@@ -265,7 +269,7 @@ h1 span {
 .app-preview {
   margin: 55px 0 0;
   padding: 14px 14px 0;
-  background: #e8e8e4;
+  background: #f4e5df;
   border-radius: 25px 25px 0 0;
 }
 .app-preview > img {
@@ -292,7 +296,7 @@ h1 span {
   margin-bottom: 25px;
 }
 .local-visual {
-  background: #eeeee9;
+  background: var(--accent-soft);
   border-radius: var(--radius);
   min-height: 360px;
   display: flex;
@@ -305,7 +309,7 @@ h1 span {
   width: 100px;
   height: 100px;
   stroke-width: 2.5;
-  color: #77786b;
+  color: var(--accent);
   margin-bottom: 18px;
 }
 .local-visual > p {
@@ -349,7 +353,7 @@ h1 span {
 .feature-card > svg {
   width: 30px;
   height: 30px;
-  color: #6b6c62;
+  color: var(--accent);
   margin-bottom: 5px;
 }
 .feature-card h3 {
@@ -371,7 +375,7 @@ h1 span {
   padding-top: 120px;
 }
 .download-card {
-  background: #eeeee9;
+  background: var(--accent-soft);
   border-radius: 34px;
   text-align: center;
   padding: 58px 48px 42px;
@@ -404,7 +408,7 @@ h1 span {
 .platform-icon {
   width: 32px;
   height: 32px;
-  color: #65665d;
+  color: var(--accent);
 }
 .platform-card h3 {
   margin: 18px 0 5px;
@@ -425,7 +429,7 @@ h1 span {
   width: 100%;
   margin: 0 0 24px;
   padding: 18px;
-  background: #eeeee9;
+  background: #faf4f0;
   font-size: 0.74rem;
 }
 .platform-action {
@@ -528,14 +532,15 @@ h1 span {
   color: #75756e;
 }
 .faq-list details[open] summary::after {
+  color: var(--accent-text);
   content: "−";
 }
 .faq-list summary:hover,
 .faq-list details[open] summary {
-  background: #e4e4df;
+  background: var(--accent-soft);
 }
 .faq-list summary:active {
-  background: #d9d9d3;
+  background: var(--accent-selected);
 }
 .faq-list details p {
   padding: 0 24px 23px;
@@ -571,7 +576,7 @@ h1 span {
 }
 .footer .brand {
   font-size: 1.1rem;
-  color: #343430;
+  color: var(--accent);
 }
 .footer p {
   margin: 0;

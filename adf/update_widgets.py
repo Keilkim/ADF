@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 
 class UpdateNotifier(QObject):
-    """Notify through the system, which queues ADF's notice with other apps' notices.
+    """Notify through the system, which queues XDF's notice with other apps' notices.
 
     Windows shows it at the bottom right and keeps it in the notification centre.
     The tray icon exists only while an update waits, so the notice stays clickable.
@@ -30,7 +30,7 @@ class UpdateNotifier(QObject):
             self.menu.addAction('알림 아이콘 숨기기', self.hide)
             self.tray.setContextMenu(self.menu)
         self.primary.setText(action)
-        self.tray.setToolTip('ADF · '+title)
+        self.tray.setToolTip('XDF · '+title)
         self.tray.show()
         self.tray.showMessage(title, text, self.icon, 15000)
         return True

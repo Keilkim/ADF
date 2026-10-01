@@ -37,8 +37,8 @@ integration with the Windows 11 abbreviated first menu.
 
 | Complete Explorer selection | ADF command |
 | --- | --- |
-| One existing PDF file | ADF로 PDF 분할… |
-| Two or more existing PDF files | ADF로 PDF 병합… |
+| One existing PDF file | XDF로 PDF 분할… |
+| Two or more existing PDF files | XDF로 PDF 병합… |
 | Mixed non-PDF files, directories, missing files or empty selection | None |
 | Default-only invocation (e.g. normal file opening) | None |
 
@@ -58,7 +58,7 @@ process. The handler copies the stream into memory (at most 1 GiB), so the
 renderer's threads never call the stream Explorer handed to the calling
 thread. ADF parses no PDF here: Windows' own `Windows.Data.Pdf` renders the
 first page, rotation included, to fit the requested size (at most 2560
-pixels), and WIC decodes the result into an opaque 32-bit DIB. The blue ADF
+pixels), and WIC decodes the result into an opaque 32-bit DIB. The vermilion XDF
 mark sits in the bottom-right corner, about 15% of the thumbnail's longer
 side and at least 12 pixels, so the desktop's 48-pixel thumbnails show it too;
 thumbnails under 40 pixels stay plain. Explorer draws the default PDF app's
@@ -97,7 +97,7 @@ and `shcore.dll`.
 
 ## Build and verify
 
-The shared blue A comes from `assets/adf-mark.svg`. `scripts/make-icon.py`
+The shared vermilion X comes from `assets/xdf-mark.svg`. `scripts/make-icon.py`
 exports real transparent PNG and 32-bit ICO frames, including 20px, 24px and
 40px for common display scales. `shell_icon.h` chooses the small-icon size
 for the menu owner's DPI, then draws with `DrawIconEx` into a cleared 32-bit

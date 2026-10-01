@@ -1,12 +1,12 @@
-"""ADF in the background: a tray icon that keeps an eye on updates while no window is open.
+"""XDF in the background: a tray icon that keeps an eye on updates while no window is open.
 
 Windows starts it at sign-in with --background (the Run key below). It has no
 document window: its icon sits at the bottom right of the taskbar, a click
-opens ADF and a right click opens its menu. When a new version waits it drops
+opens XDF and a right click opens its menu. When a new version waits it drops
 the update notice at the corner of the screen.
 
-It owns a hidden window titled TITLE so that ADF and the installer find it and
-close it with WM_CLOSE before replacing ADF's files.
+It owns a hidden window titled TITLE so that XDF and the installer find it and
+close it with WM_CLOSE before replacing XDF's files.
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ WM_CLOSE = 0x0010
 
 
 def supported():
-    """Only an installed Windows ADF runs in the background; it is what updates itself."""
+    """Only an installed Windows XDF runs in the background; it is what updates itself."""
     return (sys.platform == 'win32' and getattr(sys, 'frozen', False)
             and (Path(sys.executable).parent/'unins000.exe').is_file())
 
@@ -41,7 +41,7 @@ def running():
 
 
 def stop():
-    """Ask the background agent to quit, as before an update replaces ADF's files."""
+    """Ask the background agent to quit, as before an update replaces XDF's files."""
     hwnd = _find()
     if hwnd:
         import ctypes
@@ -87,13 +87,13 @@ class Agent(QWidget):
         self.settings = settings
         self.setWindowTitle(TITLE)
         self.winId()  # A native, never shown window that WM_CLOSE reaches.
-        icon = QIcon(str(Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent.parent))/'assets/adf.ico'))
+        icon = QIcon(str(Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent.parent))/'assets/xdf.ico'))
         self.install_when_ready = False
         self.tray = QSystemTrayIcon(icon, self)
-        self.tray.setToolTip('ADF')
+        self.tray.setToolTip('XDF')
         self.tray.activated.connect(self.activated)
         self.menu = QMenu()
-        self.menu.addAction('ADF 열기', lambda: open_adf())
+        self.menu.addAction('XDF 열기', lambda: open_adf())
         self.menu.addAction('지금 업데이트 확인', self.check_now)
         self.menu.addSeparator()
         self.autostart = self.menu.addAction('로그인할 때 자동 실행', self.toggle_autostart)
@@ -138,7 +138,7 @@ class Agent(QWidget):
     def check_now(self):
         self.updates.start()
         self.updates.check()
-        self.tray.showMessage('ADF', '새 버전이 있는지 확인하고 있습니다.', self.tray.icon(), 3000)
+        self.tray.showMessage('XDF', '새 버전이 있는지 확인하고 있습니다.', self.tray.icon(), 3000)
 
     def toggle_autostart(self):
         checked = self.autostart.isChecked()
@@ -171,10 +171,10 @@ class Agent(QWidget):
             content = None
         if content is None:
             self.toast.dismiss()
-            self.tray.setToolTip('ADF')
+            self.tray.setToolTip('XDF')
         else:
             self.toast.present(*content)
-            self.tray.setToolTip('ADF · ' + content[0])
+            self.tray.setToolTip('XDF · ' + content[0])
 
     def update_requested(self):
         service = self.updates
@@ -193,7 +193,7 @@ class Agent(QWidget):
             self.refresh()
 
     def install(self):
-        """ADF installs from a window: it asks about unsaved work and closes the other windows first."""
+        """XDF installs from a window: it asks about unsaved work and closes the other windows first."""
         open_adf('--update-now')
 
     def later(self):
@@ -201,10 +201,10 @@ class Agent(QWidget):
         snooze(self.settings)
         self.toast.dismiss()
         self.refresh()
-        self.tray.showMessage('ADF', '내일 아침 9시에 다시 알려 드립니다.', self.tray.icon(), 3000)
+        self.tray.showMessage('XDF', '내일 아침 9시에 다시 알려 드립니다.', self.tray.icon(), 3000)
 
     def closeEvent(self, event):
-        # ADF or the installer asked the agent to quit.
+        # XDF or the installer asked the agent to quit.
         self.updates.shutdown()
         self.tray.hide()
         QApplication.instance().quit()
@@ -215,6 +215,7 @@ def main():
     app = QApplication(sys.argv[:1])
     app.setApplicationName('ADF')
     app.setOrganizationName('ADF')
+    app.setApplicationDisplayName('XDF')
     app.setQuitOnLastWindowClosed(False)
     if running():
         return 0

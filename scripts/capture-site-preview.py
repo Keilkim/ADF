@@ -1,4 +1,4 @@
-"""Capture a real ADF window with synthetic documents and an isolated stamp store."""
+"""Capture a real XDF window with synthetic documents and an isolated stamp store."""
 import os
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 from pathlib import Path
@@ -17,6 +17,7 @@ from adf.app import MainWindow
 from adf.stamps import StampLibrary
 from adf.system_fonts import resolve_font_file
 from adf.theme import apply_theme
+from adf.brand import ACCENT_PDF
 
 
 def capture():
@@ -38,7 +39,7 @@ def capture():
                 page.insert_font(fontname='ko', fontfile=korean)
                 def label(x, y, value, size=11, color=(.2, .22, .23)):
                     page.insert_text((x, y), value, fontname='ko', fontsize=size, color=color)
-                label(50, 58, 'ADF  /  WORKSPACE', 9, (.5, .51, .48))
+                label(50, 58, 'XDF  /  WORKSPACE', 9, ACCENT_PDF)
                 label(50, 112, ['분기 운영 계획', '프로젝트 일정', '검토 및 승인'][index], 25)
                 label(50, 140, '2026년 4분기  ·  예시 문서', 10, (.5, .51, .48))
                 page.draw_line((50, 165), (545, 165), color=(.83, .84, .81), width=.6)
@@ -56,7 +57,7 @@ def capture():
                 label(50, 570, '변경 사항을 확인하고 필요한 의견을 기록해 주세요.')
                 label(50, 590, '이 문서는 화면 안내를 위해 만든 가상의 예시입니다.')
                 label(400, 665, '검토 확인', 10)
-                label(50, 796, f'ADF · 예시 문서                                      {index + 1} / 3', 9, (.5, .51, .48))
+                label(50, 796, f'XDF · 예시 문서                                      {index + 1} / 3', 9, (.5, .51, .48))
             doc.save(path)
         with pymupdf.open() as seal:
             page = seal.new_page(width=120, height=120)
