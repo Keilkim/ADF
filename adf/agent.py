@@ -33,7 +33,13 @@ def _find():
     if sys.platform != 'win32':
         return 0
     import ctypes
-    return ctypes.windll.user32.FindWindowW(None, TITLE) or 0
+    # Qt's Windows window title includes QApplication.applicationDisplayName,
+    # although QWidget.windowTitle() still returns TITLE without that suffix.
+    for title in (TITLE, TITLE + ' - XDF'):
+        hwnd = ctypes.windll.user32.FindWindowW(None, title)
+        if hwnd:
+            return hwnd
+    return 0
 
 
 def running():
@@ -174,6 +180,9 @@ class Agent(QWidget):
             self.tray.setToolTip('XDF')
         else:
             self.toast.present(*content)
+            if self.settings.value('updates/background_notified', '') != service.package.version:
+                self.settings.setValue('updates/background_notified', service.package.version)
+                self.settings.sync()
             self.tray.setToolTip('XDF · ' + content[0])
 
     def update_requested(self):

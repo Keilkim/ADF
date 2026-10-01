@@ -81,7 +81,7 @@ class IconTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
-    def test_shipped_frames_have_transparent_background_and_vermilion_x(self):
+    def test_shipped_frames_have_transparent_background_and_vermilion_wordmark(self):
         with Image.open(ROOT / 'assets' / 'xdf.ico') as ico:
             self.assertEqual(ico.ico.sizes(), {(s, s) for s in SIZES})
             images = [ico.ico.getimage((s, s)).convert('RGBA') for s in SIZES]

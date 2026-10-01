@@ -1,9 +1,9 @@
-XDF primary wordmark and compact X — 2026-10-01
+XDF full wordmark across all sizes — 2026-10-02
 
 Mode: built-in image_gen.imagegen, transparent RGBA. No API / CLI fallback.
 User-selected final design: the FIRST generated XDF concept, not the later
-refinement. Main branding spells XDF as one custom wordmark;
-compact X is reserved for application icons and favicons. Vermilion #F04B2D.
+refinement. Every production logo spells XDF as one custom wordmark,
+including app, tray, installer and favicon icons. Vermilion #F04B2D.
 Reference board: brand-exploration/xdf-wordmark-style-reference.png.
 Primary research: https://brand.webflow.com/brand-assets and https://skims.com/
 References informed weight, curve quality and terminal treatment; their exact
@@ -19,18 +19,18 @@ Generated texture and detached speckles are omitted from the production
 vector; the fill is uniformly #F04B2D. The second concept is archived as
 brand-exploration/xdf-wordmark-refined.png and xdf-wordmark-refined.svg.
 
-scripts/make-icon.py extracts the SAME X path from the primary wordmark and
-derives square clear space from its vector bounds; there is no separately
-drawn icon. It exports xdf-mark.svg, xdf.png, xdf.ico, xdf.icns and the transparent
-1536px-wide xdf-wordmark.png, and copies both production vectors to site/assets.
+scripts/make-icon.py keeps all three XDF paths from the primary wordmark
+and derives a square canvas from their combined bounds. The letters retain
+their original proportions, spacing and curves with transparent clear space. It exports xdf-mark.svg, xdf.png, xdf.ico, xdf.icns and the transparent
+1536px-wide xdf-wordmark.png, and copies the production vectors to site/assets and the icon to assets/fonts.
 Raster exports resample alpha coverage while preserving the exact flat fill.
 Fully transparent pixels have zero RGB for native decoders and previews.
 
 Application home displays the full wordmark. Website navigation, footer and
-download branding use the full wordmark; all favicons use the compact X.
+download branding, app icons, tray icons and all favicons use the full wordmark.
 Preview: xdf-logo-preview.html and xdf-logo-preview.png.
 
-Validation:
+Historical validation of the 2026-10-01 version, before the full-icon correction:
 tests/test_icons.py: 3 passed, 31 subtests passed (Qt / Windows ICO decoding).
 Native shell component checks: 14701 assertions passed, including PDF thumbnails.
 App home: full XDF wordmark visible with alpha at DPR 1 and DPR 2.
@@ -39,8 +39,8 @@ Published website: all 10 desktop / mobile checks passed; both SVG assets
 match the local production masters byte for byte.
 Production site: https://adf-desktop.vercel.app
 Selected first design deployment: https://adf-desktop-67s3fregw-lloa9000-6635s-projects.vercel.app
-The production reference matches the first concept byte for byte. The compact
-icon's X path matches the primary wordmark's X path exactly.
+The production reference matched the first concept byte for byte. That
+revision used an X-only compact icon, superseded by the full XDF icon above.
 Public installer files remain the existing Windows 0.3.35 / macOS 0.3.30 releases.
 
 Exact initial generation prompt:
