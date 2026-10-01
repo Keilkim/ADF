@@ -6,7 +6,8 @@ import unittest
 import pymupdf
 from PIL import Image
 from adf.document import PdfDocument
-from adf.pdf_objects import edit_object, object_layer, operations, page_objects, style_object
+from adf.pdf_objects import (delete_object, edit_object, object_layer, operations, page_objects, path_parts,
+    reshape_path, scan_page, style_object, transform_object)
 
 
 class ObjectDocumentTests(unittest.TestCase):
@@ -237,3 +238,92 @@ class ObjectDocumentTests(unittest.TestCase):
                 self.assertFalse(self.document.dirty)
                 self.assertFalse(self.document.can_undo)
                 self.assertEqual(self.document.doc[0].get_drawings(),before)
+
+
+class ClippingAndTransformTests(unittest.TestCase):
+    """Clipping groups move as one, resizing keeps strokes, and layers keep paint order."""
+
+    def page_with_mask(self, doc):
+        page = doc.new_page(width=400, height=500)
+        image = io.BytesIO()
+        Image.new('RGB', (30, 20), (200, 10, 20)).save(image, format='PNG')
+        page.insert_image((0, 0, 1, 1), stream=image.getvalue())
+        name = page.get_images()[0][7]
+        # An image larger than its mask, a frame along the mask, text and a shape after it.
+        doc.update_stream(page.get_contents()[0], (
+            f'q 0 0 400 500 re W n q 50 300 100 100 re W n q 200 0 0 150 20 280 cm /{name} Do Q '
+            f'0 0 1 RG 2 w 50 300 100 100 re S Q 0 1 0 rg 300 300 40 40 re f Q').encode())
+        page.insert_text((70, 150), 'front text')
+        return page
+
+    def test_mask_image_and_frame_move_together_and_delete_as_one(self):
+        with pymupdf.open() as doc:
+            page = self.page_with_mask(doc)
+            objects, groups = scan_page(page)
+            masks = [g for g in groups if g['mask']]
+            # The full-page artboard clip is not a mask; the 100 pt square is.
+            self.assertEqual(len(masks), 1)
+            self.assertEqual(masks[0]['members'], [0, 1])
+            self.assertEqual([o['group'] for o in objects], [masks[0]['id']]*2+[None])
+            self.assertEqual(tuple(masks[0]['rect']), (50, 100, 150, 200))
+            transform_object(page, ('group', masks[0]['id']), (120, 40))
+            self.assertEqual(tuple(page.get_image_info()[0]['bbox']), (140, 110, 340, 260))
+            pixels = page.get_pixmap()
+            # The image still shows inside the moved mask and stays cut outside it.
+            self.assertEqual(pixels.pixel(220, 190), (200, 10, 20))
+            self.assertEqual(pixels.pixel(300, 120), (255, 255, 255))
+            self.assertEqual(tuple(page.get_drawings()[0]['rect']), (170, 140, 270, 240))
+            self.assertEqual(tuple(page.get_drawings()[1]['rect']), (300, 160, 340, 200))
+            self.assertIn('front text', page.get_text())
+            delete_object(page, ('group', masks[0]['id']))
+            self.assertEqual(page.get_image_info(), [])
+            self.assertEqual(len(page.get_drawings()), 1)
+            self.assertIn('front text', page.get_text())
+
+    def test_layers_split_paint_order_around_the_selection(self):
+        with pymupdf.open() as doc:
+            page = self.page_with_mask(doc)
+            group = ('group', next(g['id'] for g in scan_page(page)[1] if g['mask']))
+            with object_layer(page, group, 'below') as below:
+                self.assertEqual(page_objects(below[0]), [])
+            with object_layer(page, group, 'object') as layer:
+                self.assertEqual([o['kind'] for o in page_objects(layer[0])], ['image', 'path'])
+                self.assertEqual(layer[0].get_text(), '')
+            with object_layer(page, group, 'above') as above:
+                self.assertEqual([o['kind'] for o in page_objects(above[0])], ['path'])
+                self.assertIn('front text', above[0].get_text())
+            with object_layer(page, 2, 'below') as below:
+                self.assertEqual(len(page_objects(below[0])), 2)
+                self.assertEqual(below[0].get_text(), '')
+
+    def test_resize_keeps_stroke_width_on_plain_and_rotated_pages(self):
+        for rotation in (0, 90):
+            with self.subTest(rotation=rotation), pymupdf.open() as doc:
+                page = doc.new_page(width=300, height=300)
+                page.draw_rect((50, 60, 90, 80), color=(0, 0, 0), width=3)
+                page.set_rotation(rotation)
+                # Twice as wide and three times as tall, anchored at the top left (50, 60).
+                transform_object(page, 0, pymupdf.Matrix(2, 0, 0, 3, -50, -120))
+                drawing = page.get_drawings()[0]
+                self.assertEqual(tuple(drawing['rect']), (50, 60, 130, 120))
+                self.assertAlmostEqual(drawing['width'], 3.)
+
+    def test_nodes_move_anchors_and_curve_handles(self):
+        with pymupdf.open() as doc:
+            page = doc.new_page(width=300, height=300)
+            page.draw_circle((100, 100), 40, color=(0, 0, 0))
+            page.draw_rect((150, 150, 200, 200), color=(0, 0, 0))
+            circle = page_objects(page)[0]
+            parts = path_parts(page, circle)
+            self.assertEqual({name for name, _ in parts} - {'h'}, {'m', 'c'})
+            top = min((i for i, (name, _) in enumerate(parts) if name == 'c'), key=lambda i: parts[i][1][2].y)
+            parts[top] = ('c', [parts[top][1][0], parts[top][1][1], parts[top][1][2] + (0, -30)])
+            reshape_path(page, 0, parts)
+            self.assertAlmostEqual(page.get_drawings()[0]['rect'].y0, 30, delta=.5)
+            square = path_parts(page, page_objects(page)[1])
+            self.assertEqual([name for name, _ in square][:5], ['m', 'l', 'l', 'l', 'h'])
+            corner = max(range(4), key=lambda i: square[i][1][0].x+square[i][1][0].y)
+            square[corner] = (square[corner][0], [square[corner][1][0] + (25, 25)])
+            reshape_path(page, 1, square)
+            self.assertEqual(tuple(page.get_drawings()[1]['rect']), (150, 150, 225, 225))
+            self.assertRaises(ValueError, reshape_path, page, 1, square[:-1])

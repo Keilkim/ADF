@@ -646,8 +646,11 @@ class MainWindow(QMainWindow):
         from .toolbox_widgets import FloatingToolbox
         self.toolbox = FloatingToolbox(self.view, self.actions, self.settings, self.show_pen_options)
         from .shape_widgets import ShapeProperties
-        self.shape_properties = ShapeProperties(self.view, self.toolbox)
+        self.shape_properties = ShapeProperties(self.view, self.toolbox, self.shape_defaults())
+        self.view.shape_style = dict(self.shape_properties.defaults)
         self.shape_properties.changed.connect(self.style_selected_object)
+        self.shape_properties.defaultsChanged.connect(self.save_shape_defaults)
+        self.shape_properties.drawKindChanged.connect(self.choose_shape_kind)
         self.view.objectSelectionChanged.connect(self.shape_properties.set_target)
         self.toolbox.objectOptionsRequested.connect(self.show_shape_options)
         self.toolbox.cancelRequested.connect(self.escape)
@@ -678,6 +681,8 @@ class MainWindow(QMainWindow):
         self.view.pan.changed.connect(self.show_temporary_pan)
         self.view.inkTransformed.connect(self.transform_ink)
         self.view.objectTransformed.connect(self.transform_object)
+        self.view.nodesChanged.connect(self.reshape_object)
+        self.view.shapeDrawn.connect(self.draw_shape)
         self.view.objectDeleteRequested.connect(self.delete_selection)
         reader_pane = QWidget()
         reader_layout = QVBoxLayout(reader_pane)
@@ -1122,8 +1127,8 @@ class MainWindow(QMainWindow):
         menu.exec(self.thumbnails.mapToGlobal(pos))
 
     def delete_selection(self):
-        if self.view.object_selection is not None:
-            selection = self.view.object_selection
+        selection = self.view.object_selection or self.view.node_editor
+        if selection is not None:
             index, object_id = selection.index, selection.object_id
             self.edit(lambda: self.document.remove_object(index,object_id))
             return
@@ -1984,6 +1989,9 @@ class MainWindow(QMainWindow):
         self.view.text_mode = False
         self.view.image_mode = False
         self.view.object_mode = mode == 'object_tool'
+        if mode != 'object_tool':
+            self.view.shape_kind = None
+            self.shape_properties.set_draw_kind(None)
         self.view.copy_region_mode = mode == 'region_tool'
         self.actions['text'].setChecked(False)
         self.actions['text_add'].setChecked(False)
@@ -1995,7 +2003,7 @@ class MainWindow(QMainWindow):
         if mode == 'region_tool':
             self.notice.showMessage('복사할 영역을 드래그하세요 · 표·그래프·글을 함께 이미지로 복사 · Esc 종료', 6000)
         elif mode == 'object_tool':
-            self.notice.showMessage('도형·이미지·필기를 클릭하세요 · 끌어서 이동 · Delete로 삭제 · Esc로 해제', 6000)
+            self.notice.showMessage('도형·이미지·필기를 클릭하세요 · 끌어서 이동 · 모서리로 크기 조절 · 더블클릭 노드 편집 · Delete 삭제', 6000)
         return True
 
     def toggle_hand_tool(self):
@@ -2093,19 +2101,85 @@ class MainWindow(QMainWindow):
             self.view.clear_ink_selection()
             self.error(error)
 
-    def transform_object(self, index, object_id, delta):
+    def transform_object(self, index, object_id, transform):
         if self.worker or not self.document.editable:
             self.view.clear_object_selection()
             return
         try:
-            self.document.move_object(index,object_id,delta)
+            self.document.move_object(index,object_id,transform)
             self.view.invalidate_page(index)
             self.thumbnails.invalidate_page(index)
             self.view.select_object(index,object_id)
             self.refresh_actions()
-            self.notice.showMessage('객체를 이동했습니다 · Delete로 삭제 · Ctrl+Z 취소 · Ctrl+S 저장', 4000)
+            moved = (transform.a, transform.b, transform.c, transform.d) == (1, 0, 0, 1)
+            self.notice.showMessage(('객체를 이동했습니다' if moved else '크기를 바꿨습니다')
+                                    +' · Delete로 삭제 · Ctrl+Z 취소 · Ctrl+S 저장', 4000)
         except Exception as error:
             self.view.clear_object_selection()
+            self.error(error)
+
+    def reshape_object(self, index, object_id, parts):
+        if self.worker or not self.document.editable:
+            self.view.clear_object_selection()
+            return
+        try:
+            self.document.reshape_object(index,object_id,parts)
+            self.view.invalidate_page(index)
+            self.thumbnails.invalidate_page(index)
+            self.view.edit_nodes(index,object_id)
+            self.refresh_actions()
+            self.notice.showMessage('노드를 옮겼습니다 · Esc로 노드 편집 끝내기 · Ctrl+Z 취소', 4000)
+        except Exception as error:
+            self.view.clear_object_selection()
+            self.error(error)
+
+    def shape_defaults(self):
+        """New shapes: no fill and a thin black outline unless the user chose otherwise."""
+        style = dict(fill=None, stroke=(0., 0., 0.), width=.5)
+        try:
+            values = json.loads(self.settings.value('shape_defaults', '') or '{}')
+            for field in ('fill', 'stroke'):
+                color = values.get(field, style[field])
+                style[field] = None if color is None else tuple(max(0., min(1., float(v))) for v in color)
+                if style[field] is not None and len(style[field]) != 3:
+                    raise ValueError
+            style['width'] = max(0., min(1000., float(values.get('width', .5))))
+            if style['fill'] is None and style['stroke'] is None:
+                raise ValueError
+            return style
+        except (TypeError, ValueError, AttributeError):
+            return dict(fill=None, stroke=(0., 0., 0.), width=.5)
+
+    def save_shape_defaults(self, style):
+        self.view.shape_style = dict(style)
+        self.settings.setValue('shape_defaults', json.dumps(style))
+
+    def choose_shape_kind(self, kind):
+        self.view.cancel_shape()
+        if kind is not None and self.pointer_mode != 'object_tool' and not self.change_pointer('object_tool'):
+            self.shape_properties.set_draw_kind(None)
+            return
+        self.view.shape_kind = kind
+        self.shape_properties.set_draw_kind(kind)
+        self.view.update_content_cursor()
+        if kind is not None:
+            self.view.clear_object_selection()
+            name = {'rect': '사각형', 'ellipse': '타원', 'line': '선'}[kind]
+            self.notice.showMessage(name+'을 페이지에서 끌어 그리세요 · Shift 정비율 · Esc로 그리기 끝내기', 6000)
+
+    def draw_shape(self, index, kind, points):
+        if self.worker or not self.document.editable:
+            return
+        style = self.view.shape_style
+        try:
+            object_id = self.document.draw_shape(index, kind, *points, fill=style['fill'],
+                                                 stroke=style['stroke'], width=style['width'])
+            self.view.invalidate_page(index)
+            self.thumbnails.invalidate_page(index)
+            self.view.select_object(index, object_id)
+            self.refresh_actions()
+            self.notice.showMessage('도형을 그렸습니다 · 계속 끌어 더 그리기 · Esc로 그리기 끝내기 · Ctrl+Z 취소', 4000)
+        except Exception as error:
             self.error(error)
 
     def clear_content_selection(self):
@@ -2126,14 +2200,14 @@ class MainWindow(QMainWindow):
             return
         if self.pointer_mode != 'object_tool' and not self.change_pointer('object_tool'):
             return
-        selection = self.view.object_selection
+        selection = self.view.object_selection or self.view.node_editor
         if hasattr(self, 'pen_menu'):
             self.pen_menu.hide()
         self.shape_properties.set_target(selection.target if selection is not None else None)
         self.shape_properties.popup()
 
     def style_selected_object(self, changes):
-        selection = self.view.object_selection
+        selection = self.view.object_selection or self.view.node_editor
         if selection is None or self.worker or not self.document.editable:
             return
         target = selection.target
@@ -2154,7 +2228,10 @@ class MainWindow(QMainWindow):
             self.document.style_object(index,object_id,**changes)
             self.view.invalidate_page(index)
             self.thumbnails.invalidate_page(index)
-            self.view.select_object(index,object_id)
+            if self.view.node_editor is selection:
+                self.view.edit_nodes(index,object_id)
+            else:
+                self.view.select_object(index,object_id)
             self.refresh_actions()
             self.notice.showMessage('도형 속성을 바꿨습니다 · Ctrl+Z 취소 · Ctrl+S 저장',4000)
         except Exception as error:
@@ -2248,7 +2325,9 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, self.fullscreen.exit)
 
     def escape(self):
-        if self.shape_properties.isVisible():
+        if self.view.shape_draft is not None:
+            self.view.cancel_shape()
+        elif self.shape_properties.isVisible():
             self.shape_properties.hide()
             self.view.setFocus()
         elif hasattr(self, 'pen_menu') and self.pen_menu.isVisible():
@@ -2259,6 +2338,11 @@ class MainWindow(QMainWindow):
             self.fullscreen.exit()
         elif self.view.pen.enabled:
             self.change_pointer('select_tool')
+        elif self.view.node_editor is not None:
+            editor = self.view.node_editor
+            self.view.select_object(editor.index, editor.object_id)
+        elif self.view.shape_kind is not None:
+            self.choose_shape_kind(None)
         elif self.view.copy_region_mode or self.view.object_mode or self.view.image_mode:
             self.change_pointer('select_tool')
         elif self.pointer_mode == 'hand_tool':

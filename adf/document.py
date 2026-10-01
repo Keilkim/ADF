@@ -721,17 +721,57 @@ class PdfDocument:
             return doc[page_index].insert_image(target, stream=data, rotate=rotate % 360,
                                                 keep_proportion=True, overlay=True)
 
-    def move_object(self, page_index, object_id, delta):
-        from .pdf_objects import edit_object
+    def move_object(self, page_index, object_id, transform):
+        """Move or resize an object or clipping group: (dx, dy) or a page-space Matrix."""
+        from .pdf_objects import transform_object
         _indices([page_index], self.page_count)
         with self._edit() as doc:
-            return edit_object(doc[page_index], object_id, delta)
+            return transform_object(doc[page_index], object_id, transform)
+
+    def reshape_object(self, page_index, object_id, parts):
+        from .pdf_objects import reshape_path
+        _indices([page_index], self.page_count)
+        with self._edit() as doc:
+            return reshape_path(doc[page_index], object_id, parts)
 
     def remove_object(self, page_index, object_id):
-        from .pdf_objects import edit_object
+        from .pdf_objects import delete_object
         _indices([page_index], self.page_count)
         with self._edit() as doc:
-            return edit_object(doc[page_index], object_id)
+            return delete_object(doc[page_index], object_id)
+
+    def draw_shape(self, page_index, kind, start, end, fill=None, stroke=(0., 0., 0.), width=.5):
+        """Draw a rectangle, ellipse or line between two unrotated page points; returns its object id."""
+        from .pdf_objects import page_objects
+        _indices([page_index], self.page_count)
+        if kind not in ("rect", "ellipse", "line"):
+            raise ValueError("그릴 도형 종류가 올바르지 않습니다.")
+        start, end = pymupdf.Point(start), pymupdf.Point(end)
+        if kind == "line":
+            fill = None
+        if stroke is None and fill is None:
+            raise ValueError("채움색 또는 외곽선 중 하나는 지정해 주세요.")
+        width = float(width)
+        if not math.isfinite(width) or width < 0 or not all(map(math.isfinite, (*start, *end))):
+            raise ValueError("도형 좌표나 선 두께가 올바르지 않습니다.")
+        with self._edit() as doc:
+            page = doc[page_index]
+            shape = page.new_shape()
+            if kind == "line":
+                shape.draw_line(start, end)
+            elif kind == "ellipse":
+                shape.draw_oval(pymupdf.Rect(start, end).normalize())
+            else:
+                shape.draw_rect(pymupdf.Rect(start, end).normalize())
+            shape.finish(color=stroke, fill=fill, width=width if stroke is not None else 0,
+                         closePath=kind != "line")
+            shape.commit(overlay=True)
+            object_id = len(page_objects(page)) - 1
+            if stroke is not None and width == 0:
+                # PyMuPDF leaves width 0 at PDF's default of 1; 0 is the thinnest line.
+                from .pdf_objects import style_object
+                style_object(page, object_id, width=0.)
+            return object_id
 
     def style_object(self, page_index, object_id, **changes):
         from .pdf_objects import style_object

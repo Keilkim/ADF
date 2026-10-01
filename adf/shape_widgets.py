@@ -23,6 +23,22 @@ COLOR_ROWS = (
 )
 
 
+def shape_icon(kind):
+    pixmap = QPixmap(20,20)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(QPen(QColor('#465064'),1.6))
+    if kind == 'rect':
+        painter.drawRect(QRectF(3.5,4.5,13,11))
+    elif kind == 'ellipse':
+        painter.drawEllipse(QRectF(3,4,14,12))
+    else:
+        painter.drawLine(4,16,16,4)
+    painter.end()
+    return QIcon(pixmap)
+
+
 def color_icon(color):
     pixmap = QPixmap(24,24)
     pixmap.fill(Qt.GlobalColor.transparent)
@@ -273,14 +289,24 @@ class ShapeColorPalette(QWidget):
         self.changed.emit(rgb)
 
 
-class ShapeProperties(QFrame):
-    changed = Signal(object)
+SHAPE_KINDS = (('rect','사각형'),('ellipse','타원'),('line','선'))
+DEFAULT_STYLE = dict(fill=None, stroke=(0.,0.,0.), width=.5)
 
-    def __init__(self, view, toolbox):
+
+class ShapeProperties(QFrame):
+    """Style of the selected shape, or of new shapes when nothing is selected."""
+    changed = Signal(object)
+    defaultsChanged = Signal(object)
+    drawKindChanged = Signal(object)
+
+    def __init__(self, view, toolbox, defaults=None):
         super().__init__(view.viewport())
         self.view = view
         self.toolbox = toolbox
         self.target = None
+        self.selected = None
+        self.defaults = dict(DEFAULT_STYLE, **(defaults or {}))
+        self.setProperty('floating', True)
         self.options = toolbox.buttons['object_tool'].options
         self.setObjectName('shapeProperties')
         self.setAccessibleName('도형 속성')
@@ -305,6 +331,23 @@ class ShapeProperties(QFrame):
         title = QLabel('도형 속성')
         title.setStyleSheet('font-weight: 600;')
         layout.addWidget(title)
+        draw = QHBoxLayout()
+        draw.setSpacing(4)
+        draw.addWidget(QLabel('그리기'))
+        draw.addStretch()
+        self.draw_buttons = {}
+        for kind, name in SHAPE_KINDS:
+            button = QToolButton()
+            button.setCheckable(True)
+            button.setIcon(shape_icon(kind))
+            button.setIconSize(QSize(20,20))
+            button.setFixedSize(30,30)
+            button.setToolTip(name+' 그리기 · 끌어서 그리기, Shift는 정사각형·원·45°')
+            button.setAccessibleName(name+' 그리기')
+            button.clicked.connect(lambda checked, value=kind: self.set_draw_kind(value if checked else None, notify=True))
+            draw.addWidget(button)
+            self.draw_buttons[kind] = button
+        layout.addLayout(draw)
         self.hint = QLabel()
         self.hint.setWordWrap(True)
         self.hint.setStyleSheet('color: #64748b;')
@@ -313,9 +356,11 @@ class ShapeProperties(QFrame):
         self.stroke = ShapeColorPalette('외곽선색')
         layout.addWidget(self.fill)
         layout.addWidget(self.stroke)
-        self.fill.changed.connect(lambda color: self.changed.emit(dict(fill=color)))
-        self.stroke.changed.connect(lambda color: self.changed.emit(dict(stroke=color)))
-        width = QHBoxLayout()
+        self.fill.changed.connect(lambda color: self.change(fill=color))
+        self.stroke.changed.connect(lambda color: self.change(stroke=color))
+        self.width_row = QWidget()
+        width = QHBoxLayout(self.width_row)
+        width.setContentsMargins(0,0,0,0)
         width.addWidget(QLabel('선 두께'))
         width.addStretch()
         self.stroke_width = QDoubleSpinBox()
@@ -327,47 +372,82 @@ class ShapeProperties(QFrame):
         self.stroke_width.setFixedWidth(100)
         self.stroke_width.setAccessibleName('도형 외곽선 두께')
         self.stroke_width.setToolTip('0 pt는 확대 배율과 관계없이 가장 가는 선입니다')
-        self.stroke_width.valueChanged.connect(lambda value: self.changed.emit(dict(width=value)))
+        self.stroke_width.valueChanged.connect(lambda value: self.change(width=value))
         width.addWidget(self.stroke_width)
-        layout.addLayout(width)
+        layout.addWidget(self.width_row)
         self.adjustSize()
         self.hide()
         self.set_target(None)
         toolbox.positionChanged.connect(self.position)
         self.parentWidget().installEventFilter(self)
 
+    def set_draw_kind(self, kind, notify=False):
+        for value, button in self.draw_buttons.items():
+            button.setChecked(value == kind)
+        if notify:
+            self.drawKindChanged.emit(kind)
+
+    def change(self, **changes):
+        if self.target is not None:
+            self.changed.emit(changes)
+            return
+        if self.selected is not None:
+            return
+        # With nothing selected the palette sets the style of new shapes.
+        style = dict(self.defaults, **changes)
+        if style['fill'] is None and style['stroke'] is None:
+            self.set_target(None)
+            return
+        self.defaults = style
+        self.defaultsChanged.emit(dict(style))
+        self.set_target(None)
+
     def set_target(self, target):
+        self.selected = target
         self.target = target if target is not None and target['kind'] == 'path' else None
-        editable_shape = self.target is not None
-        self.fill.setEnabled(editable_shape)
-        self.stroke.setEnabled(editable_shape)
-        self.stroke_width.setEnabled(editable_shape)
-        self.hint.setVisible(not editable_shape)
-        if self.target is None:
+        editable = self.target is not None or target is None
+        style = self.target if self.target is not None else dict(
+            fill=self.defaults['fill'], stroke=self.defaults['stroke'], width=self.defaults['width'],
+            has_fill=self.defaults['fill'] is not None, has_stroke=self.defaults['stroke'] is not None)
+        self.fill.setEnabled(editable)
+        self.stroke.setEnabled(editable)
+        # Images and clipping groups have no single color to show.
+        for row in (self.fill, self.stroke, self.width_row):
+            row.setVisible(editable)
+        if not editable:
             self.fill.menu.hide()
             self.stroke.menu.hide()
-            self.hint.setText('이미지는 이동·삭제할 수 있습니다. 색과 선 두께를 바꾸려면 문서의 도형을 선택하세요.'
-                              if target is not None else
-                              '문서의 도형을 클릭하세요. 선택한 도형의 채움색·외곽선색·선 두께를 바꿀 수 있습니다.')
-            if not self.view.object_mode:
-                self.hide()
-            return
-        self.fill.set_color(target['fill'],target['has_fill'])
-        self.stroke.set_color(target['stroke'],target['has_stroke'])
-        # Removing both would make the object impossible to select again.
-        self.fill.none_button.setEnabled(target['has_stroke'])
-        self.stroke.none_button.setEnabled(target['has_fill'])
+            self.hint.setText('클리핑 그룹은 마스크와 내용이 함께 이동·크기 조절·삭제됩니다. 더블클릭하면 안쪽 객체를 선택합니다.'
+                              if target['kind'] == 'group' else
+                              '이미지는 이동·크기 조절·삭제할 수 있습니다. 색과 선 두께는 도형에서 바꿀 수 있습니다.')
+        else:
+            self.hint.setText('새 도형 기본값 · 도형을 클릭하면 그 도형을 바꿉니다'
+                              if target is None else
+                              '더블클릭하면 노드 편집 · 모서리 핸들로 크기 조절')
+        self.fill.set_color(style['fill'],style['has_fill'])
+        self.stroke.set_color(style['stroke'],style['has_stroke'])
+        # Removing both would make the shape invisible and impossible to select again.
+        self.fill.none_button.setEnabled(style['has_stroke'])
+        self.stroke.none_button.setEnabled(style['has_fill'])
         self.stroke_width.blockSignals(True)
-        self.stroke_width.setValue(target['width'])
-        self.stroke_width.setEnabled(target['has_stroke'])
+        self.stroke_width.setValue(style['width'])
+        self.stroke_width.setEnabled(editable and style['has_stroke'])
         self.stroke_width.blockSignals(False)
+        if target is None and not self.view.object_mode:
+            self.hide()
+            return
         if self.isVisible():
-            self.position()
+            self.fit()
+
+    def fit(self):
+        self.layout().activate()
+        self.setFixedHeight(self.layout().totalHeightForWidth(self.width()))
+        self.position()
 
     def popup(self):
         self.show()
-        self.position()
-        if self.target is not None:
+        self.fit()
+        if self.fill.isEnabled():
             self.fill.button.setFocus()
         else:
             self.view.setFocus()
@@ -400,7 +480,10 @@ class ShapeProperties(QFrame):
             if child_window in (self.fill.menu,self.stroke.menu) or child_window is not None and self.isAncestorOf(child_window):
                 return False
             if kind == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
-                self.hide()
+                if self.view.shape_draft is not None:
+                    self.view.cancel_shape()
+                else:
+                    self.hide()
                 self.view.setFocus()
                 event.accept()
                 return True
