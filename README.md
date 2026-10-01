@@ -1,6 +1,6 @@
 # XDF
 
-ADF의 새 이름입니다. 메인 로고는 XDF 전체 워드마크이며, 앱 아이콘과 파비콘에는 같은 로고의 X를 사용합니다. 시그니처 컬러는 주홍색 `#F04B2D`입니다. Windows 0.3.37부터 새 이름과 편집 화면을 제공하며, macOS 0.3.30은 기존 ADF 이름과 디자인입니다. 기존 사용자 설정·도장 보관함·PDF 편집 기록과 업데이트 채널은 이어집니다.
+ADF의 새 이름입니다. 메인 로고, 앱·트레이·탐색기 아이콘과 파비콘 모두 XDF 세 글자 전체 워드마크를 사용합니다. 시그니처 컬러는 주홍색 `#F04B2D`입니다. Windows 0.3.37부터 새 이름과 편집 화면을 제공하며, macOS 0.3.30은 기존 ADF 이름과 디자인입니다. 기존 사용자 설정·도장 보관함·PDF 편집 기록과 업데이트 채널은 이어집니다.
 
 [공식 사이트·다운로드](https://adf-desktop.vercel.app) · [소스코드](https://github.com/Keilkim/ADF) · [최신 릴리즈](https://github.com/Keilkim/ADF/releases/tag/v0.3.38) · [기여 안내](CONTRIBUTING.md) · [코드 서명 현황](CODE_SIGNING.md)
 
