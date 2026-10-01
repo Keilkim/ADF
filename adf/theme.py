@@ -1,7 +1,16 @@
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt
 from pathlib import Path
 import sys
-from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
+
+# Keep the signature vermilion for emphasis; use cool neutrals around it.
+from .brand import ACCENT
+ACCENT_HOVER = '#d63e50'
+ACCENT_TEXT = '#9f3548'
+ACCENT_SOFT = '#faf1f3'
+ACCENT_SELECTED = '#f7e3e6'
+SURFACE = '#f8fafc'
+WORKSPACE = '#e9edf3'
 
 
 def apply_theme(app):
@@ -10,13 +19,13 @@ def apply_theme(app):
     app.setStyle('Fusion')
     palette = QPalette()
     colors = {
-        'Window': '#f7f7f8', 'WindowText': '#303238', 'Base': '#ffffff',
+        'Window': SURFACE, 'WindowText': '#303238', 'Base': '#ffffff',
         'AlternateBase': '#f4f4f5', 'Text': '#303238', 'Button': '#ffffff',
         'ButtonText': '#303238', 'BrightText': '#ffffff', 'Light': '#ffffff',
         'Midlight': '#eeeeef', 'Mid': '#c7c8cb', 'Dark': '#8b8d92',
-        'Shadow': '#62656b', 'Highlight': '#dedfe2', 'HighlightedText': '#303238',
-        'Link': '#454950', 'LinkVisited': '#62656b', 'ToolTipBase': '#ffffff',
-        'ToolTipText': '#303238', 'PlaceholderText': '#797d84', 'Accent': '#62656b',
+        'Shadow': '#62656b', 'Highlight': ACCENT_SELECTED, 'HighlightedText': '#303238',
+        'Link': ACCENT_TEXT, 'LinkVisited': ACCENT_TEXT, 'ToolTipBase': '#ffffff',
+        'ToolTipText': '#303238', 'PlaceholderText': '#797d84', 'Accent': ACCENT,
     }
     for role, color in colors.items():
         palette.setColor(getattr(QPalette.ColorRole, role), QColor(color))
@@ -49,6 +58,11 @@ def icon(name, color='#525b6a'):
         'capture': [(8,3,3,3),(3,3,3,8),(16,3,21,3),(21,3,21,8),(3,16,3,21),(3,21,8,21),(21,16,21,21),(21,21,16,21),(8,12,16,12),(12,8,12,16)],
         'merge': [(4,4,8,4),(8,4,12,11),(20,4,16,4),(16,4,12,11),(12,11,12,21),(8,17,12,21),(12,21,16,17)],
         'split': [(12,3,12,11),(12,11,5,18),(12,11,19,18),(5,13,5,18),(5,18,10,18),(14,18,19,18),(19,18,19,13)],
+        'extract': [(3,3,12,3),(12,3,15,6),(15,6,15,10),(3,3,3,21),(3,21,12,21),
+                    (12,3,12,6),(12,6,15,6),(10,15,22,15),(18,11,22,15),(22,15,18,19)],
+        'object_select': [(3,3,9,3),(3,3,3,9),(15,3,21,3),(21,3,21,9),(3,15,3,21),(3,21,9,21),
+                          (10,9,10,20),(10,20,13,17),(13,17,16,22),(16,22,19,20),(19,20,16,15),(16,15,21,15),(21,15,10,9)],
+        'number_edit': [(15,11,13.5,22),(20,11,18.5,22),(11,15,22,15),(10.5,19,21.5,19)],
         'rotate': [(5,9,5,3),(5,9,11,9),(5,8,10,4),(10,4,17,5),(17,5,21,11),(21,11,19,18),(19,18,12,21),(12,21,6,18)],
         'trash': [(4,6,20,6),(9,6,9,3),(9,3,15,3),(15,3,15,6),(6,6,7,21),(7,21,17,21),(17,21,18,6),(10,10,10,17),(14,10,14,17)],
         'plus': [(12,5,12,19),(5,12,19,12)],
@@ -96,6 +110,12 @@ def icon(name, color='#525b6a'):
         p.drawEllipse(3,3,13,13)
     if name == 'image':
         p.drawEllipse(14,6,3,3)
+    if name == 'number_edit':
+        font = QFont('Segoe UI')
+        font.setPixelSize(8)
+        font.setWeight(QFont.Weight.DemiBold)
+        p.setFont(font)
+        p.drawText(QRectF(1, 0, 22, 11), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, '1·2·3')
     if name == 'magnet':
         p.translate(12, 12)
         p.rotate(-30)
@@ -137,35 +157,35 @@ def icon(name, color='#525b6a'):
 
 STYLE = '''
 QWidget { color: #28313e; font-family: "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo"; font-size: 10pt; }
-QMainWindow, QDialog { background: #f7f7f8; }
-QMenuBar { background: #f6f7f9; padding: 3px 9px; }
+QMainWindow, QDialog { background: #f8fafc; }
+QMenuBar { background: #f8fafc; padding: 3px 9px; }
 QMenuBar::item { padding: 4px 9px; border-radius: 4px; }
-QMenuBar::item:selected { background: #e8ebef; }
+QMenuBar::item:selected { background: #e9edf3; }
 QMenu { background: #fafafa; border: none; border-radius: 12px; padding: 7px; }
 QMenu::item { padding: 9px 25px; border: none; border-radius: 8px; }
-QMenu::item:selected { background: #d9d9dc; color: #303238; }
+QMenu::item:selected { background: @ACCENT_SOFT@; color: #303238; }
 QMenu::item:disabled { color: #a2a8b1; }
-QToolBar { background: #f6f7f9; border: none; spacing: 4px; padding: 9px 15px; }
+QToolBar { background: #f8fafc; border: none; spacing: 4px; padding: 9px 15px; }
 QToolBar::separator { background: #dfe3e9; width: 1px; margin: 7px 10px; }
 QToolButton { border: 1px solid transparent; border-radius: 9px; padding: 6px 9px; background: transparent; }
 QToolButton:hover { background: #e8e8ea; }
-QToolButton:pressed, QToolButton:checked { background: #d5d5d8; color: #303238; }
+QToolButton:pressed, QToolButton:checked { background: @ACCENT_SELECTED@; color: @ACCENT_TEXT@; }
 QPushButton { background: #eeeeef; border: 1px solid transparent; border-radius: 9px; padding: 7px 15px; min-height: 18px; }
 QPushButton:hover { background: #e5e5e8; }
-QPushButton:pressed, QPushButton:checked { background: #d5d5d8; }
-QPushButton:default, QPushButton#primary { background: #dedee1; color: #303238; font-weight: 600; }
-QPushButton#primary:hover, QPushButton:default:hover { background: #eeeeef; }
+QPushButton:pressed, QPushButton:checked { background: @ACCENT_SELECTED@; }
+QPushButton:default, QPushButton#primary { background: @ACCENT_HOVER@; color: white; font-weight: 600; }
+QPushButton#primary:hover, QPushButton:default:hover { background: @ACCENT_TEXT@; }
 QPushButton:disabled, QToolButton:disabled { color: #a1a8b4; background: transparent; }
-QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QTextEdit, QPlainTextEdit { background: #eeeeef; border: none; border-radius: 9px; padding: 6px 8px; selection-background-color: #dedfe2; selection-color: #303238; }
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QTextEdit, QPlainTextEdit { background: #eeeeef; border: none; border-radius: 9px; padding: 6px 8px; selection-background-color: @ACCENT_SELECTED@; selection-color: #303238; }
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QTextEdit:focus, QPlainTextEdit:focus { background: #e2e2e5; border: none; }
 QComboBox::drop-down { border: none; width: 23px; }
-QComboBox QAbstractItemView { background: #fafafa; border: none; outline: none; selection-background-color: #d5d5d8; selection-color: #303238; }
+QComboBox QAbstractItemView { background: #fafafa; border: none; outline: none; selection-background-color: @ACCENT_SELECTED@; selection-color: #303238; }
 QListWidget { background: transparent; border: none; outline: none; }
 QListWidget::item { padding: 8px; margin: 3px 8px; border: none; border-radius: 10px; }
 QListWidget::item:hover { background: #ececee; }
-QListWidget::item:selected { background: #d5d5d8; border: none; color: #303238; }
-QListWidget::item:focus { background: #d5d5d8; border: none; }
-QScrollArea, QGraphicsView { border: none; background: #e8ebef; }
+QListWidget::item:selected { background: @ACCENT_SELECTED@; border: none; color: #303238; }
+QListWidget::item:focus { background: @ACCENT_SELECTED@; border: none; }
+QScrollArea, QGraphicsView { border: none; background: #e9edf3; }
 QScrollBar:vertical { background: transparent; width: 11px; margin: 2px; }
 QScrollBar::handle:vertical { background: #bdc4cf; border-radius: 4px; min-height: 35px; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
@@ -173,43 +193,43 @@ QScrollBar:horizontal { background: transparent; height: 11px; margin: 2px; }
 QScrollBar::handle:horizontal { background: #bdc4cf; border-radius: 4px; min-width: 35px; }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
-QPushButton#updateButton { background: #39393d; color: white; border: none; border-radius: 9px; padding: 2px 12px; margin-left: 8px; font-size: 9pt; font-weight: 600; min-height: 16px; }
-QPushButton#updateButton:hover { background: #4a4a50; }
+QPushButton#updateButton { background: @ACCENT_HOVER@; color: white; border: none; border-radius: 9px; padding: 2px 12px; margin-left: 8px; font-size: 9pt; font-weight: 600; min-height: 16px; }
+QPushButton#updateButton:hover { background: @ACCENT_TEXT@; }
 QPushButton#updateButton:disabled { background: transparent; color: #707988; font-weight: 400; }
 QLabel#muted { color: #77808e; }
 QLabel#notice { background: rgba(40, 40, 44, 0.92); color: white; border-radius: 8px; padding: 7px 14px; font-size: 9pt; }
 QLabel#saveState { color: #77808e; font-size: 9pt; padding: 0 6px; }
 QLabel#saveState[unsaved="true"] { color: #d93025; font-weight: 600; }
-QWidget#emptyWorkspace { background: #e8ebef; }
+QWidget#emptyWorkspace { background: #e9edf3; }
 QLabel#emptyTitle { font-size: 13pt; font-weight: 600; color: #667180; }
 QLabel#title { font-size: 27pt; font-weight: 650; color: #222c3b; }
-QLabel#eyebrow { color: #62656b; font-size: 9pt; font-weight: 600; }
-QLabel#introBrand { color: #62656b; font-size: 13pt; font-weight: 700; }
+QLabel#eyebrow { color: @ACCENT_TEXT@; font-size: 9pt; font-weight: 600; }
+QLabel#introBrand { color: @ACCENT@; font-size: 13pt; font-weight: 700; }
 QLabel#introTitle { color: #222c3b; font-size: 20pt; font-weight: 650; }
 QLabel#introSection { font-weight: 600; }
 QLabel#introDescription { color: #667180; }
 QFrame#introCard { background: white; border: 1px solid #e1e5ec; border-radius: 9px; }
 QFrame#card { background: white; border: 1px solid #e2e6ed; border-radius: 12px; }
-QFrame#sidebar { background: #f4f5f8; border: none; }
-QFrame#pageSidebarRail { background: #f4f5f8; border: none; }
+QFrame#sidebar { background: #f1f5f9; border: none; }
+QFrame#pageSidebarRail { background: #f1f5f9; border: none; }
 QToolButton#pageSidebarToggle {
     background: #e8e8ea; border: 1px solid transparent; border-radius: 10px; padding: 0;
 }
 QToolButton#pageSidebarToggle:hover { background: #dddddf; }
 QToolButton#pageSidebarToggle:pressed { background: #e0e1e4; }
-QWidget#fullscreenStage { background: #e8ebef; }
-QFrame#fullscreenPanel { background: #f8f9fb; border: none; }
+QWidget#fullscreenStage { background: #e9edf3; }
+QFrame#fullscreenPanel { background: #f8fafc; border: none; }
 QGroupBox { border: 1px solid #dfe3ea; border-radius: 8px; margin-top: 14px; padding: 15px; }
 QGroupBox::title { subcontrol-origin: margin; left: 13px; padding: 0 5px; }
 QCheckBox { spacing: 8px; padding: 5px 0; }
 QCheckBox::indicator { width: 16px; height: 16px; }
 QProgressBar { border: none; background: #e4e5e7; border-radius: 4px; text-align: center; }
-QProgressBar::chunk { background: #797d84; border-radius: 4px; }
+QProgressBar::chunk { background: @ACCENT@; border-radius: 4px; }
 QSplitter::handle { background: #e0e4ea; width: 1px; }
 QToolTip { background: white; color: #303238; border: 1px solid #d7d8dc; padding: 6px 9px; }
-QToolBar#readerToolbar { padding: 5px 14px; background: #f8f9fb; }
-QToolBar#pdfTools { padding: 5px 14px; background: #f0f2f6; border: none; }
-QFrame#unifiedToolbar { background: #f8f9fb; border: none; }
+QToolBar#readerToolbar { padding: 5px 14px; background: #f8fafc; }
+QToolBar#pdfTools { padding: 5px 14px; background: #f1f5f9; border: none; }
+QFrame#unifiedToolbar { background: #f8fafc; border: none; }
 QFrame#unifiedToolbar QToolButton { font-size: 9pt; padding: 5px 7px; }
 QFrame#unifiedToolbar QComboBox { font-size: 9pt; padding-top: 5px; padding-bottom: 5px; }
 QFrame#toolbarSeparator { color: #dfe3e9; max-width: 1px; margin: 6px; }
@@ -237,19 +257,19 @@ QFrame#exportResult { background: #eaf4ed; border: 1px solid #cee1d4; border-rad
 QWidget#numberSettings { border: 1px solid #dfe3ea; border-radius: 10px; }
 QToolButton#numberPosition { background: #eeeeef; border: 1px solid transparent; border-radius: 9px; padding: 1px; }
 QToolButton#numberPosition:hover { background: #eeeeef; }
-QToolButton#numberPosition:checked { background: #d5d5d8; }
+QToolButton#numberPosition:checked { background: @ACCENT_SELECTED@; }
 QLabel#numberExample { background: #f0f0f2; color: #454950; border-radius: 7px; padding: 12px; font-size: 12pt; }
 /* Focus gets a ring; only checked/pressed buttons get the active fill. */
 QPushButton:focus, QToolButton:focus,
-QToolButton#pageSidebarToggle:focus, QToolButton#numberPosition:focus { border-color: #8793a5; }
+QToolButton#pageSidebarToggle:focus, QToolButton#numberPosition:focus { border-color: @ACCENT@; }
 '''
 
 _asset_dir = (Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent.parent)) / 'assets').as_posix()
 STYLE += '''
 QDialog#compressionDialog QCheckBox::indicator { background: white; border: 1px solid #bfc1c6; border-radius: 4px; }
-QDialog#compressionDialog QCheckBox::indicator:checked { background: #62656b; border-color: #62656b; image: url("ASSETS/check-white.svg"); }
+QDialog#compressionDialog QCheckBox::indicator:checked { background: @ACCENT_HOVER@; border-color: @ACCENT_HOVER@; image: url("ASSETS/check-white.svg"); }
 QWidget#numberSettings QCheckBox::indicator { background: white; border: 1px solid #bfc1c6; border-radius: 4px; }
-QWidget#numberSettings QCheckBox::indicator:checked { background: #62656b; border-color: #62656b; image: url("ASSETS/check-white.svg"); }
+QWidget#numberSettings QCheckBox::indicator:checked { background: @ACCENT_HOVER@; border-color: @ACCENT_HOVER@; image: url("ASSETS/check-white.svg"); }
 QComboBox::down-arrow { image: url("ASSETS/arrow-down.svg"); width: 12px; height: 8px; }
 QSpinBox, QDoubleSpinBox { padding-right: 22px; }
 QSpinBox::up-button, QDoubleSpinBox::up-button { subcontrol-origin: border; subcontrol-position: top right; width: 22px; border: none; margin: 2px; }
@@ -257,3 +277,10 @@ QSpinBox::down-button, QDoubleSpinBox::down-button { subcontrol-origin: border; 
 QSpinBox::up-arrow, QDoubleSpinBox::up-arrow { image: url("ASSETS/arrow-up.svg"); width: 10px; height: 6px; }
 QSpinBox::down-arrow, QDoubleSpinBox::down-arrow { image: url("ASSETS/arrow-down.svg"); width: 10px; height: 6px; }
 '''.replace('ASSETS',_asset_dir)
+
+for _token, _color in {
+    '@ACCENT@': ACCENT, '@ACCENT_HOVER@': ACCENT_HOVER,
+    '@ACCENT_TEXT@': ACCENT_TEXT, '@ACCENT_SOFT@': ACCENT_SOFT,
+    '@ACCENT_SELECTED@': ACCENT_SELECTED,
+}.items():
+    STYLE = STYLE.replace(_token, _color)

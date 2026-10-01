@@ -117,7 +117,7 @@ class CompareView(QGraphicsView):
 class CompareDialog(QDialog):
     def __init__(self, parent=None, initial_path=''):
         super().__init__(parent)
-        self.setWindowTitle('PDF 두 버전 비교 — ADF')
+        self.setWindowTitle('PDF 두 버전 비교 — XDF')
         self.resize(1320, 860)
         self.setMinimumSize(940, 640)
         self.documents = []

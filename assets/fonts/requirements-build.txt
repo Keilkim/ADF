@@ -1,0 +1,4 @@
+fonttools==4.64.0
+brotli==1.2.0
+uharfbuzz==0.56.2
+shapely==2.1.2

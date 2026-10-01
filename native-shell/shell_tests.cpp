@@ -43,10 +43,10 @@ void CheckMenuIcon(HBITMAP bitmap, UINT dpi) {
         if (!p[3]) transparent = true;
         else if (p[3] == 255) {
             opaque = true;
-            Check(p[0] > p[1] && p[1] > p[2], "Logo interior is blue, without background artifacts");
+            Check(p[2] > p[1] && p[1] > p[0], "Logo interior is vermilion, without background artifacts");
         } else translucent = true;
     }
-    Check(opaque && translucent && transparent, "Menu icon has solid A, antialiased edges and transparent background");
+    Check(opaque && translucent && transparent, "Menu icon has solid X, antialiased edges and transparent background");
     Check(bytes[3] == 0, "Menu icon corner remains transparent");
 }
 
@@ -251,11 +251,19 @@ struct Thumbnail {
     const BYTE* At(int x, int y) const { return pixels.data() + (y * width + x) * 4; }
     bool Red(int x, int y) const { const BYTE* p = At(x, y); return p[2] > 200 && p[1] < 60 && p[0] < 60; }
     bool White(int x, int y) const { const BYTE* p = At(x, y); return p[2] > 240 && p[1] > 240 && p[0] > 240; }
-    // Pixels of the ADF mark's blue within a region.
-    int Blue(int left, int top, int right, int bottom) const {
+    // Vermilion over the white plate, including pixels with at least 40%
+    // coverage. Small open counters leave few completely solid pixels.
+    // Its two channel ratios exclude the test PDF's pure red and plate gray.
+    int Vermilion(int left, int top, int right, int bottom) const {
         int count = 0;
         for (int y = std::max(0, top); y < std::min(height, bottom); ++y)
-            for (int x = std::max(0, left); x < std::min(width, right); ++x) { const BYTE* p = At(x, y); count += p[0] > 180 && p[2] < 110 && p[1] < 150; }
+            for (int x = std::max(0, left); x < std::min(width, right); ++x) {
+                const BYTE* p = At(x, y);
+                const int from_white = 255 - p[0];
+                count += from_white >= 84
+                    && std::abs((255 - p[1]) * 210 - from_white * 180) <= 840
+                    && std::abs((255 - p[2]) * 210 - from_white * 15) <= 840;
+            }
         return count;
     }
 };
@@ -472,7 +480,7 @@ void HandlerSourceTests() {
     stuck.back()->Finish(Canceled);
     const Thumbnail plain = SourceThumbnail(file, 256);
     CheckHr(plain.result, "Thumbnails render again once an abandoned render ends");
-    Check(plain.width == 128 && plain.height == 256 && plain.Red(10, 128) && plain.Blue(0, 0, 128, 256) == 0,
+    Check(plain.width == 128 && plain.height == 256 && plain.Red(10, 128) && plain.Vermilion(0, 0, 128, 256) == 0,
           "Without the logo the page is shown unmarked instead of failing");
     for (auto* action : stuck) { action->Finish(Canceled); action->Release(); }
     Check(adf::g_abandoned == 0 && adf::g_objects == 0, "All renders ended; no handler objects remain");
@@ -522,8 +530,8 @@ void ThumbnailTests(const std::wstring& dll, const std::wstring& fixture) {
     Check(page.Red(10, 128) && page.White(118, 128), "Thumbnail shows the first page, red on the left third");
     const bool right = AdfOpensPdf();
     std::printf("PDF default app is %s: the mark goes %s.\n", right ? "ADF" : "another program", right ? "bottom-right" : "bottom-left");
-    Check(right ? page.Blue(88, 216, 128, 256) > 60 : page.Blue(0, 216, 40, 256) > 60, "ADF mark sits in its bottom corner");
-    Check(page.Blue(0, 0, 128, 180) == 0 && (right ? page.Blue(0, 180, 56, 256) : page.Blue(72, 180, 128, 256)) == 0,
+    Check(right ? page.Vermilion(88, 216, 128, 256) > 60 : page.Vermilion(0, 216, 40, 256) > 60, "XDF mark sits in its bottom corner");
+    Check(page.Vermilion(0, 0, 128, 180) == 0 && (right ? page.Vermilion(0, 180, 56, 256) : page.Vermilion(72, 180, 128, 256)) == 0,
           "ADF mark covers only its corner, not the page");
     // A 64-pixel plate, 6 pixels from the edges: its top edge is light gray, its inside white.
     const BYTE* plate_edge = page.At(right ? 90 : 38, 186);
@@ -532,16 +540,16 @@ void ThumbnailTests(const std::wstring& dll, const std::wstring& fixture) {
     Check(page.White(right ? 64 : 12, 234), "The plate around the mark is white");
     Thumbnail desktop = FileThumbnail(factory, portrait, 48);
     CheckHr(desktop.result, "Render a desktop-size thumbnail");
-    Check(desktop.width == 24 && desktop.height == 48 && (right ? desktop.Blue(12, 34, 24, 48) : desktop.Blue(0, 34, 12, 48)) > 4
-          && desktop.Blue(0, 0, 24, 32) == 0,
+    Check(desktop.width == 24 && desktop.height == 48 && (right ? desktop.Vermilion(12, 34, 24, 48) : desktop.Vermilion(0, 34, 12, 48)) > 4
+          && desktop.Vermilion(0, 0, 24, 32) == 0,
           "Desktop-size thumbnail shows a small mark in its corner");
     Thumbnail tiny = FileThumbnail(factory, portrait, 32);
     CheckHr(tiny.result, "Render a tiny thumbnail");
-    Check(tiny.width == 16 && tiny.height == 32 && tiny.Blue(0, 0, 16, 32) == 0, "A thumbnail too small for the mark stays plain");
+    Check(tiny.width == 16 && tiny.height == 32 && tiny.Vermilion(0, 0, 16, 32) == 0, "A thumbnail too small for the mark stays plain");
     Thumbnail large = FileThumbnail(factory, portrait, 1024);
     CheckHr(large.result, "Render an extra-large thumbnail");
     Check(large.width == 512 && large.height == 1024 && large.Red(40, 512) && large.White(480, 512), "Extra-large thumbnail renders at full resolution");
-    Check((right ? large.Blue(340, 850, 512, 1024) : large.Blue(0, 850, 170, 1024)) > 1000 && large.Blue(0, 0, 512, 730) == 0,
+    Check((right ? large.Vermilion(340, 850, 512, 1024) : large.Vermilion(0, 850, 170, 1024)) > 1000 && large.Vermilion(0, 0, 512, 730) == 0,
           "ADF mark scales with the thumbnail");
     // Each mark loads and destroys the logo icon; the harness deletes each bitmap.
     const DWORD users = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS), graphics = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
@@ -553,7 +561,7 @@ void ThumbnailTests(const std::wstring& dll, const std::wstring& fixture) {
     CheckHr(turned.result, "Render a rotated page");
     Check(turned.width == 256 && turned.height == 128, "Page rotation turns the thumbnail");
     Check(turned.Red(128, 10) && turned.White(128, 118), "Rotated page's left third is at the top");
-    Check((right ? turned.Blue(200, 80, 256, 128) : turned.Blue(0, 80, 56, 128)) > 60, "Landscape thumbnail keeps the mark in its bottom corner");
+    Check((right ? turned.Vermilion(200, 80, 256, 128) : turned.Vermilion(0, 80, 56, 128)) > 60, "Landscape thumbnail keeps the mark in its bottom corner");
 
     for (UINT size : {0U, 2561U}) Check(FAILED(FileThumbnail(factory, portrait, size).result), "Thumbnail rejects sizes Explorer never requests");
     for (const auto& path : {corrupt, empty}) Check(FAILED(FileThumbnail(factory, path, 256).result), "Corrupt or empty PDF fails without a bitmap");
@@ -713,7 +721,7 @@ int wmain(int argc, wchar_t** argv) {
             for (int index = 3; index < argc; ++index) paths.emplace_back(argv[index]);
             Selection selection(library, paths);
             CheckHr(selection.initialization, "Initialize actual app handoff selection");
-            selection.Expect(paths.size() == 1 ? L"ADF로 PDF 분할…" : L"ADF로 PDF 병합…");
+            selection.Expect(paths.size() == 1 ? L"XDF로 PDF 분할…" : L"XDF로 PDF 병합…");
             CheckHr(selection.Invoke(), "Invoke actual app via production DLL");
             std::printf("PASS actual app handoff (%zu PDFs)\n", paths.size());
             return 0;
@@ -737,8 +745,8 @@ int wmain(int argc, wchar_t** argv) {
         if (componentOnly) {
             std::printf("SCOPE: component tests only; Windows-assembled Explorer menus are not checked in this invocation.\n");
         } else {
-            ShellAssembledMenu(testDll, fixture, {one.substr(fixture.size() + 1)}, L"ADF로 PDF 분할…");
-            ShellAssembledMenu(testDll, fixture, {two.substr(fixture.size() + 1), one.substr(fixture.size() + 1)}, L"ADF로 PDF 병합…");
+            ShellAssembledMenu(testDll, fixture, {one.substr(fixture.size() + 1)}, L"XDF로 PDF 분할…");
+            ShellAssembledMenu(testDll, fixture, {two.substr(fixture.size() + 1), one.substr(fixture.size() + 1)}, L"XDF로 PDF 병합…");
             ShellAssembledMenu(testDll, fixture, {one.substr(fixture.size() + 1), text.substr(fixture.size() + 1)}, nullptr);
         }
         ThumbnailTests(testDll, fixture);
@@ -748,7 +756,7 @@ int wmain(int argc, wchar_t** argv) {
             {
                 Selection selection(library, {one});
                 CheckHr(selection.initialization, "Single PDF accepted");
-                selection.Expect(L"ADF로 PDF 분할…");
+                selection.Expect(L"XDF로 PDF 분할…");
                 wchar_t verb[64]{};
                 CheckHr(selection.menu->GetCommandString(0, GCS_VERBW, nullptr, reinterpret_cast<LPSTR>(verb), 64), "Unicode canonical verb");
                 Check(wcscmp(verb, L"ADF.Split") == 0, "Split canonical verb");
@@ -759,7 +767,7 @@ int wmain(int argc, wchar_t** argv) {
             {
                 Selection selection(library, {two, one});
                 CheckHr(selection.initialization, "Multiple PDFs accepted");
-                selection.Expect(L"ADF로 PDF 병합…");
+                selection.Expect(L"XDF로 PDF 병합…");
                 Check(FAILED(selection.Invoke(L"ADF.Split")), "Split verb rejected for multiple PDFs");
                 CheckHr(selection.Invoke(L"ADF.Merge"), "Invoke merge by Unicode canonical verb");
                 CheckCaptured(fixture, {two, one}, "merge");
@@ -786,7 +794,7 @@ int wmain(int argc, wchar_t** argv) {
             }
             { Selection selection(library, {one}); selection.Expect(nullptr, CMF_DEFAULTONLY); Check(FAILED(selection.Invoke()), "Default PDF open never invokes split"); }
             { Selection selection(library, {one}); selection.Expect(nullptr, CMF_NORMAL, 100, 99); }
-            { Selection selection(library, {one, two}); selection.Expect(L"ADF로 PDF 병합…", CMF_NODEFAULT); }
+            { Selection selection(library, {one, two}); selection.Expect(L"XDF로 PDF 병합…", CMF_NODEFAULT); }
             std::vector<std::wstring> many;
             for (int index = 0; index < 512; ++index) {
                 const auto file = fixture + L"\\긴 선택 문서 " + std::to_wstring(index) + L".pdf";
@@ -795,14 +803,14 @@ int wmain(int argc, wchar_t** argv) {
             {
                 Selection selection(library, many);
                 CheckHr(selection.initialization, "512-file selection accepted");
-                selection.Expect(L"ADF로 PDF 병합…");
+                selection.Expect(L"XDF로 PDF 병합…");
                 CheckHr(selection.Invoke(), "Long selection invokes in one process beyond command line limit");
                 CheckCaptured(fixture, many, "merge");
             }
             { Selection selection(library, std::vector<std::wstring>(4097, one)); Check(FAILED(selection.initialization), "4096-file bound enforced"); selection.Expect(nullptr); }
             {
                 Selection selection(library, {one});
-                selection.Expect(L"ADF로 PDF 분할…");
+                selection.Expect(L"XDF로 PDF 분할…");
                 auto* changed = new DropData({text});
                 Check(FAILED(selection.init->Initialize(nullptr, changed, nullptr)), "Reinitialization rejects changed selection");
                 changed->Release();

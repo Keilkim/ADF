@@ -1,0 +1,20 @@
+XDF — US company logo study, 2026-10-01
+Actual SVG artwork from official company sites. Graza design account by its identity studio Gander.
+Captions are our visual interpretation for the XDF design discussion.
+No logo was generated or redrawn. Inherited CSS paint was resolved to its computed value, and missing viewBoxes were supplied from the intrinsic viewport to display the original geometry proportionally.
+Research comparison only; all marks belong to their respective owners.
+
+Webflow: https://brand.webflow.com/brand-assets
+Retool: https://retool.com/
+Mercury: https://mercury.com/
+Figma: https://www.figma.com/using-the-figma-brand/
+SKIMS: https://skims.com/
+Gumroad: https://gumroad.com/
+Graza: https://takeagander.com/project/graza
+Liquid Death: https://liquiddeath.com/
+
+XDF constraints: capital X; name XDF; vermilion #F04B2D; sophistication comparable to the earlier A; app and homepage usage.
+Research deliverables: us-logo-reference-library.html (standalone, with official source links) and us-logo-reference-library.png (1360px comparison sheet).
+Display verification: all eight reference images loaded at 1360px, 768px and 390px; no horizontal overflow. The prior A artwork was also reviewed to retain its substantial silhouette and controlled curve quality in the design brief.
+Rejected directions: simple crossed strokes; swept ribbon X; four hollow loops with a central diamond.
+Visual recommendation: explore a compact, heavy custom X with deliberate clipped terminals; resolve XDF as one logotype. Use Webflow for directional geometry and SKIMS for weight / compact spacing, not their exact artwork.

@@ -1,4 +1,4 @@
-"""A skippable first-run tour that points to the real toolbar controls."""
+"""A skippable tour of visible controls, with icon previews before a PDF opens."""
 from PySide6.QtCore import QEvent, QPoint, QRectF, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
@@ -9,10 +9,10 @@ STEPS = (
      '폴더 아이콘이나 Ctrl+O로 PDF를 여세요. 파일을 화면에 끌어 놓아도 됩니다.\n\nCtrl+S는 현재 파일에 저장하고, 겹친 디스크 아이콘은 다른 이름으로 저장합니다.'),
     (('pen', 'eraser'), '펜과 지우개를 바로 켜세요',
      '버튼 본체는 켜기·끄기, 오른쪽 아래 작은 화살표는 옵션입니다. 굵기와 지우개 크기는 미리 보며 고르세요.\n\n선을 그린 뒤 누른 채 잠시 멈추면 직선으로 정리됩니다. Ctrl+Z로 되돌릴 수 있어요.'),
-    (('region_tool',), '글자도, 표와 그래프도 복사하세요',
-     '글자를 드래그하면 파란색으로 선택됩니다. Ctrl+C로 복사하세요.\n\n표·그래프·그림은 캡처로 영역을 잡거나 Ctrl+Shift+C를 누르세요. 복사 완료 알림이 뜨면 Ctrl+V로 붙여넣습니다.'),
+    (('object_tool',), '객체를 선택하고 옮기세요',
+     '페이지 오른쪽 위 도구함에서 도형 선택을 누른 뒤 도형·이미지·필기를 클릭하세요. 끌어서 옮기고 Delete 또는 ×로 삭제합니다. 도형을 선택한 뒤 버튼 오른쪽 아래 화살표를 누르면 채움색·외곽선색·두께를 바꿉니다.\n\n텍스트는 기존 글을 클릭해 고치거나 빈 곳에 새로 씁니다.'),
     (('split', 'extract', 'rotate'), '페이지를 원하는 순서로',
-     'PDF를 열면 왼쪽에 페이지 미리보기가 나타납니다. 끌어서 순서를 바꾸고, Ctrl·Shift로 여러 장을 고르세요.\n\n상단에서 분할·추출·회전하고, 왼쪽의 + 버튼으로 페이지를 추가할 수 있습니다.'),
+     'PDF를 열면 왼쪽에 페이지 미리보기가 나타납니다. 끌어서 순서를 바꾸고, Ctrl·Shift로 여러 장을 고르세요.\n\n왼쪽 아래에서 분할·추출하고, 페이지 아래 손 도구 오른쪽에서 회전합니다. 왼쪽의 + 버튼으로 페이지를 추가하세요.'),
     (('snap', 'stamps'), '맞춰 놓고, 반복해서 찍으세요',
      '자석 모양의 스냅을 켜면 글·이미지·도장이 가까운 정렬 위치에 붙습니다. Alt를 누르면 잠시 해제됩니다.\n\n자주 쓰는 도장은 보관함에 등록해 두고 문서를 클릭할 때마다 찍으세요.'),
     (('compare', 'markdown'), '비교하고, 문서로 내보내세요',
@@ -28,7 +28,7 @@ class IntroDialog(QDialog):
         self.window = parent
         self.index = 0
         self.highlights = []
-        self.setWindowTitle('ADF 시작 안내' if first_run else 'ADF 기능 둘러보기')
+        self.setWindowTitle('XDF 시작 안내' if first_run else 'XDF 기능 둘러보기')
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.panel = QFrame(self)
@@ -54,6 +54,11 @@ class IntroDialog(QDialog):
         self.description = QLabel()
         self.description.setWordWrap(True)
         layout.addWidget(self.description)
+        self.tool_preview = QFrame()
+        self.tool_preview_row = QHBoxLayout(self.tool_preview)
+        self.tool_preview_row.setContentsMargins(0,0,0,0)
+        self.preview_icons = []
+        layout.addWidget(self.tool_preview)
         bottom = QHBoxLayout()
         self.help_button = QPushButton('사용 안내')
         self.help_button.setAutoDefault(False)
@@ -78,8 +83,8 @@ class IntroDialog(QDialog):
             QPushButton { color: #626268; background: transparent; border: none; border-radius: 8px; padding: 7px 10px; }
             QPushButton:hover, QPushButton:focus { background: #e5e5e8; }
             QPushButton:pressed { background: #ceced2; }
-            QPushButton#tourNext { background: #dedee2; color: #252528; font-weight: 600; }
-            QPushButton#tourNext:hover, QPushButton#tourNext:focus { background: #ceced2; }
+            QPushButton#tourNext { background: #d83c20; color: white; font-weight: 600; }
+            QPushButton#tourNext:hover, QPushButton#tourNext:focus { background: #b8321a; }
         ''')
         self.window.installEventFilter(self)
         self.window.toolbar.installEventFilter(self)
@@ -90,7 +95,22 @@ class IntroDialog(QDialog):
         _, title, description = STEPS[self.index]
         self.title.setText(title)
         self.description.setText(description)
-        self.counter.setText(f'ADF 둘러보기  ·  {self.index+1} / {len(STEPS)}')
+        while self.tool_preview_row.count():
+            item = self.tool_preview_row.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.preview_icons = []
+        hint = QLabel('PDF를 열면 사용할 도구')
+        self.tool_preview_row.addWidget(hint)
+        for key in STEPS[self.index][0]:
+            label = QLabel()
+            label.setPixmap(self.window.actions[key].icon().pixmap(24,24))
+            label.setToolTip(self.window.actions[key].text())
+            label.setAccessibleName(self.window.actions[key].text())
+            self.tool_preview_row.addWidget(label)
+            self.preview_icons.append(label)
+        self.tool_preview_row.addStretch()
+        self.counter.setText(f'XDF 둘러보기  ·  {self.index+1} / {len(STEPS)}')
         self.setAccessibleName(f'{self.index+1} / {len(STEPS)} · {title}')
         self.back_button.setVisible(self.index > 0)
         self.start_button.setText('시작하기' if self.index == len(STEPS)-1 else '다음')
@@ -107,9 +127,13 @@ class IntroDialog(QDialog):
         self.setGeometry(self.window.rect().translated(self.window.mapToGlobal(QPoint())))
         toolbar = self.window.toolbar
         targets = {self.window.actions[key] for key in STEPS[self.index][0]}
+        buttons = (toolbar.file_items+toolbar.edit_items+toolbar.tail_items +
+                   list(self.window.toolbox.buttons.values()) + list(self.window.side_buttons.values()) +
+                   list(self.window.rotation_buttons.values()))
         self.highlights = [QRectF(button.rect().translated(button.mapToGlobal(QPoint())-self.pos())).adjusted(-4, -4, 4, 4)
-                           for button in toolbar.file_items+toolbar.edit_items+toolbar.tail_items
+                           for button in buttons
                            if hasattr(button, 'defaultAction') and button.defaultAction() in targets and button.isVisible()]
+        self.tool_preview.setVisible(not self.highlights)
         self.panel.setFixedWidth(min(376, max(260, self.width()-32)))
         text_width = self.panel.width()-44
         self.title.setFixedHeight(self.title.heightForWidth(text_width))
@@ -121,6 +145,9 @@ class IntroDialog(QDialog):
         y = max((r.bottom() for r in self.highlights), default=80)+18
         y = max(16, min(round(y), self.height()-self.panel.height()-16))
         self.panel.move(x, y)
+        if not self.tool_preview.isHidden():
+            self.highlights = [QRectF(label.rect().translated(label.mapToGlobal(QPoint())-self.pos())).adjusted(-4,-4,4,4)
+                               for label in self.preview_icons]
         self.update()
 
     def paintEvent(self, event):

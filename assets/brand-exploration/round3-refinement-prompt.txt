@@ -1,0 +1,11 @@
+XDF open-counter mark — 2026-10-01
+Mode: built-in image_gen.imagegen. Transparent RGBA output.
+Target: round3-initial-x.png.
+Style reference: round3-official-references.png (official Runway, StockX,
+SpaceX and A24 marks, used for analysis rather than replication).
+
+Exact prompt:
+Use case: precise-object-edit, logo-brand.
+Image 1 is the CURRENT XDF X mark to redesign. Image 2 is an official-source research board; the outlined Runway R at its left is a reference ONLY for the relationship between a substantial smooth band and expressive hollow counters. Do not copy its R.
+Replace the solid filled X in image 1 with a genuinely OPEN, LOOP-CONSTRUCTED original letter X. This change is essential: it must have hollow arm interiors and a deliberate small diamond-shaped aperture at its crossing. Make the X out of two continuous rounded rectangular loops lying on opposing diagonals and interlocking elegantly at the waist. Their long apertures create clearly visible transparent channels THROUGH THE ARMS of the letter, rather than merely gaps outside a solid X. Design the crossing carefully so the band has coherent, controlled width, rounded inner turns and precise clipped outer terminals. Four arms, compact proportions, recognizably X, with a strong outer silhouette and intelligently resolved negative space. It should be an understated but memorable creative-software monogram, an original proprietary glyph.
+Flat vector-like mark, ONE uniform solid vermilion #F04B2D. Truly transparent RGBA background, including all apertures. One large mark centered in a square, generous clear padding. No lettering, no presentation, no effects, no lighting, no texture, no speckled detached pixels, no shading, no gradient. No conventional solid X, no two crossed strokes, no rounded-close icon, no sports swoosh, no flower. Make the hollow counterforms a real and prominent part of the design.

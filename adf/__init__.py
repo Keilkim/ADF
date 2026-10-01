@@ -1,2 +1,2 @@
-"""ADF — local PDF workspace."""
-__version__ = '0.3.36'
+"""XDF — local PDF workspace."""
+__version__ = '0.3.37'

@@ -10,7 +10,7 @@ import time
 import traceback
 
 import pymupdf
-from PySide6.QtCore import Qt, QTimer, QSettings, QStandardPaths, QUrl, QProcess, QByteArray, QBuffer, QIODevice, QEvent, Signal
+from PySide6.QtCore import Qt, QSize, QTimer, QSettings, QStandardPaths, QUrl, QProcess, QByteArray, QBuffer, QIODevice, QEvent, Signal
 from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QFont, QFontDatabase, QIcon, QKeySequence, QPixmap, QPainter, QPageSize, QPageLayout
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QToolButton, QButtonGroup, QStackedWidget, QFrame,
@@ -21,6 +21,7 @@ from PySide6.QtPrintSupport import QPrinter, QPrintDialog
 from .document import PdfDocument, PasswordRequired, merge_pdfs, split_pdf, compress_pdf, extract_pdf
 from . import __version__, pinch
 from .theme import apply_theme, icon
+from .brand import NAME, ACCENT_PDF
 from .viewer import PdfView, ThumbnailList, page_pixmap
 from .sidebar_widgets import PageSidebar
 from .fonts import original_font, installed_font, normal_name
@@ -41,14 +42,14 @@ def updates_supported():
 
 def sample_pdf(path):
     doc = pymupdf.open()
-    blue = (0.14, 0.36, 0.79)
+    accent = ACCENT_PDF
     from .dialogs import resolve_font_file
     # Embed TrueType Korean fonts so the sample stays editable with its own font.
     # Apple SD Gothic Neo is CID-keyed CFF, which fonts.py does not reuse.
     fontfile = resolve_font_file('Malgun Gothic' if sys.platform=='win32' else 'AppleGothic')
     fontname = 'adfkorean' if fontfile else 'korea'
     content = [
-        ('문서 작업, 가볍게.', 'ADF 시작 안내', [
+        ('문서 작업, 가볍게.', 'XDF 시작 안내', [
             '익숙한 PDF 그대로. 필요한 편집을 한곳에서.',
             '문서를 열고, 페이지를 정리하고, 새 파일로 저장하세요.',
             '모든 작업은 이 컴퓨터 안에서 처리됩니다.']),
@@ -67,18 +68,18 @@ def sample_pdf(path):
         p = doc.new_page(width=595, height=842)
         if fontfile:
             p.insert_font(fontname=fontname,fontfile=fontfile)
-        p.draw_rect(pymupdf.Rect(0,0,595,12), color=None, fill=blue)
-        p.insert_text((52,72), 'ADF / WORK WITH DOCUMENTS', fontsize=10, color=blue)
-        p.insert_text((52,158), eyebrow, fontname=fontname, fontsize=12, color=blue)
+        p.draw_rect(pymupdf.Rect(0,0,595,12), color=None, fill=accent)
+        p.insert_text((52,72), 'XDF / WORK WITH DOCUMENTS', fontsize=10, color=accent)
+        p.insert_text((52,158), eyebrow, fontname=fontname, fontsize=12, color=accent)
         p.insert_text((52,218), title, fontname=fontname, fontsize=31, color=(.13,.17,.23))
         p.draw_line((52,255),(543,255), color=(.85,.88,.92))
         for j, text in enumerate(paragraphs):
             p.insert_text((52,305+j*36), text, fontname=fontname, fontsize=12, color=(.32,.37,.44))
-        p.draw_rect(pymupdf.Rect(52,525,543,670), color=None, fill=(.95,.97,.99))
-        p.insert_text((76,563), 'LOCAL. SIMPLE. PDF.', fontsize=17, color=blue)
+        p.draw_rect(pymupdf.Rect(52,525,543,670), color=None, fill=(1,.94,.92))
+        p.insert_text((76,563), 'LOCAL. SIMPLE. PDF.', fontsize=17, color=accent)
         p.insert_text((76,603), '로그인 없이, 업로드 없이, 표준 PDF로.', fontname=fontname, fontsize=12, color=(.32,.37,.44))
-        p.insert_text((52,790), 'ADF  /  시작 안내', fontname=fontname, fontsize=9, color=(.5,.55,.62))
-        p.insert_text((524,790), f'{i+1:02}', fontsize=10, color=blue)
+        p.insert_text((52,790), 'XDF  /  시작 안내', fontname=fontname, fontsize=9, color=(.5,.55,.62))
+        p.insert_text((524,790), f'{i+1:02}', fontsize=10, color=accent)
     doc.subset_fonts()
     doc.save(path, garbage=4, deflate=True)
     doc.close()
@@ -217,7 +218,7 @@ class AdaptiveToolbar(QFrame):
         gap = 12  # a divider with its margins
         items = self.file_items + self.edit_items + self.tail_items
         required = sum(widget.sizeHint().width() for widget in items) + len(items)*3 + len(tool_groups)*gap + 50
-        two_rows = width < max(1180, required)
+        two_rows = bool(tool_groups) and width < max(1180, required)
         if two_rows:
             groups = [self.file_items + [None] + self.tail_items]
             row, used = [], 0
@@ -231,7 +232,7 @@ class AdaptiveToolbar(QFrame):
                 row.append(group)
             groups.append(joined(row)+[None])
         else:
-            groups = [self.file_items + [self.separator] + joined(tool_groups) + [None] + self.tail_items]
+            groups = [self.file_items + ([self.separator] if tool_groups else []) + joined(tool_groups) + [None] + self.tail_items]
         arrangement = tuple(tuple(id(w) if w else 0 for w in row) for row in groups)
         if arrangement == self._arrangement:
             return
@@ -306,8 +307,8 @@ class MainWindow(QMainWindow):
         self.semantic_delay.setSingleShot(True)
         self.semantic_delay.setInterval(700)
         self.semantic_delay.timeout.connect(self.run_semantic_search)
-        self.setWindowTitle('ADF — 문서 작업, 가볍게')
-        self.setWindowIcon(QIcon(str(resource_path('assets/adf.ico'))))
+        self.setWindowTitle('XDF — 문서 작업, 가볍게')
+        self.setWindowIcon(QIcon(str(resource_path('assets/xdf.ico'))))
         self.resize(1320, 900)
         self.setMinimumSize(1020, 700)
         self.setAcceptDrops(True)
@@ -388,18 +389,19 @@ class MainWindow(QMainWindow):
         a('merge', '파일을 페이지로 추가…', self.add_pdf, None, 'plus')
         a('combine', 'PDF 병합…', self.standalone_merge, None, 'merge')
         a('split', '분할', self.split, None, 'split')
-        a('extract', '선택 페이지 추출…', self.extract_pages, None, 'split')
+        a('extract', '선택 페이지 추출…', self.extract_pages, None, 'extract')
         a('markdown', 'OCR · Markdown 내보내기…', self.export_markdown, None, 'ocr')
-        a('number', '페이지 번호 및 머리말 추가…', self.number, None, 'number')
+        a('number', '페이지 번호 및 머리말 편집', self.number, None, 'number_edit')
         a('number_remove', '페이지 번호 및 머리말 제거', self.remove_numbers, None, 'number_remove')
-        self.actions['number'].setToolTip('페이지 번호와 머리말·꼬리말 글자를 넣습니다. ADF가 넣은 것이 있으면 새 설정으로 바꿉니다.')
-        self.actions['number_remove'].setToolTip('ADF가 넣은 페이지 번호와 머리말·꼬리말을 지웁니다.')
+        self.actions['number'].setToolTip('페이지 번호 및 머리말 편집 · 추가·수정·제거')
+        self.actions['number_remove'].setToolTip('XDF가 넣은 페이지 번호와 머리말·꼬리말을 지웁니다.')
         a('compress', '저용량 저장', self.compress, None, 'compress')
-        a('image', '이미지 삽입', self.insert_image, None, 'image')
+        a('image', '이미지 추가', self.insert_image, None, 'image')
         a('stamps', '도장 보관함', self.show_stamps, None, 'stamp')
         a('compare', 'PDF 두 버전 비교…', self.compare_versions, None, 'compare')
         a('paste', '이미지 붙여넣기', self.paste_image, QKeySequence.StandardKey.Paste)
-        a('text', '텍스트 수정', self.toggle_text, None, 'text', True)
+        a('text', '텍스트 추가 및 편집', self.toggle_text, None, 'text', True)
+        self.actions['text'].setToolTip('기존 글을 클릭하면 수정 · 빈 곳을 클릭하면 새 글 추가')
         a('text_add', '텍스트 쓰기', lambda checked: self.toggle_text(checked, add=True), None, 'text_add', True)
         self.actions['text_add'].setToolTip('페이지를 클릭한 곳에 새 글을 씁니다 · Esc로 끝내기')
         a('select_image', '기존 이미지 선택', self.toggle_image_select, None, 'image', True)
@@ -423,7 +425,7 @@ class MainWindow(QMainWindow):
         a('previous', '이전 페이지', lambda: self.view.navigate(-1), 'PgUp')
         a('settings', '보기 설정…', self.view_settings)
         a('default', '기본 PDF 앱 설정', self.default_app)
-        a('about', 'ADF 정보', self.about)
+        a('about', 'XDF 정보', self.about)
         a('intro', '기능 둘러보기', self.show_intro)
         a('help', '사용 안내', lambda: self.show_help('guide'), 'F1')
         a('licenses', '오픈소스 라이선스', lambda: self.show_help('licenses'))
@@ -446,6 +448,9 @@ class MainWindow(QMainWindow):
         self.actions['select_tool'].setToolTip('텍스트를 드래그하거나 이미지를 클릭해서 선택합니다.')
         self.actions['hand_tool'].setToolTip('손 도구 · 문서를 끌어서 이동 · Esc로 해제\n'
                                              'Space나 휠 버튼을 누르고 있는 동안에도 끌어서 이동합니다')
+        self.pointer_actions.addAction(a('object_tool', '도형 선택', lambda: self.toggle_drawing_tool('object_tool'),
+                                        None, 'object_select', checkable=True))
+        self.actions['object_tool'].setToolTip('도형·이미지·필기를 클릭해서 선택 · 끌어서 이동 · Delete로 삭제')
         self.pointer_actions.addAction(a('pen', '펜', self.activate_pen, None, 'pen', checkable=True))
         self.actions['pen'].setToolTip('펜 켜기 / 끄기 · 작은 화살표로 옵션 열기')
         self.pointer_actions.addAction(a('eraser', '지우개', lambda: self.toggle_drawing_tool('eraser'),
@@ -457,8 +462,8 @@ class MainWindow(QMainWindow):
 
     def create_menus(self):
         groups = [('파일', ['open','save','save_as','close',None,'compare','merge','combine','split','extract','compress','markdown',None,'print','default']),
-                  ('편집',['undo','redo',None,'copy','copy_region','region_tool','paste','image','stamps','text','text_add','select_image']),
-                  ('페이지',['rotate','rotate_left','blank','replace','delete',None,'up','down','number','number_remove']),
+                  ('편집',['undo','redo',None,'copy','copy_region','region_tool','paste','image','stamps','text','object_tool','select_image']),
+                  ('페이지',['rotate','rotate_left','blank','replace','delete',None,'up','down','number']),
                   ('보기',['find','fullscreen',None,'select_tool','hand_tool','pen','eraser',None,'snap','settings']),
                   ('도움말',['help','licenses','sources',None,'intro','auto_update','background','about'])]
         for title, keys in groups:
@@ -471,23 +476,11 @@ class MainWindow(QMainWindow):
         for key, label, icon_only in [
             ('open','열기',True), ('save','저장',True), ('save_as','다른 이름 저장',True), ('compress','저용량 저장',True),
             ('print','인쇄',True), ('undo','실행 취소',True), ('redo','다시 실행',True), ('find','찾기',True),
-            ('compare','비교',True), ('markdown','OCR · MD',True),
+            ('compare','비교',True), ('markdown','OCR · MD',True), ('number','페이지 번호 및 머리말 편집',True),
         ]:
-            self.toolbar.button(self.actions[key], label, 'file', icon_only)
-        # Related tools stay together; faint dividers separate the groups.
-        for group in [
-            [('split','분할'), ('extract','페이지 추출')],
-            [('rotate','오른쪽 회전'), ('rotate_left','왼쪽 회전')],
-            [('number','페이지 번호 및 머리말 추가'), ('number_remove','페이지 번호 및 머리말 제거')],
-            [('image','이미지'), ('text','텍스트 수정'), ('pen','펜'), ('text_add','텍스트'), ('eraser','지우개')],
-            [('snap','스냅'), ('region_tool','캡처'), ('stamps','도장 보관함')],
-        ]:
-            self.toolbar.section()
-            for key, label in group:
-                options = (lambda tool=key: self.show_pen_options(tool)) if key in ('pen', 'eraser') else None
-                button = self.toolbar.button(self.actions[key], label, options=options)
-                if options:
-                    setattr(self, key+'_button', button)
+            button = self.toolbar.button(self.actions[key], label, 'file', icon_only)
+            if key == 'number':
+                button.setIconSize(QSize(24,24))
         self.toolbar.reflow(self.width())
 
     def build_home(self):
@@ -498,7 +491,9 @@ class MainWindow(QMainWindow):
         layout.setSpacing(12)
         layout.addStretch()
         mark = QLabel()
-        mark.setPixmap(icon('doc', '#a0a9b6').pixmap(42, 42))
+        mark.setObjectName('brandWordmark')
+        mark.setAccessibleName('XDF')
+        mark.setPixmap(QIcon(str(resource_path('assets/xdf-wordmark.png'))).pixmap(QSize(188, 64), self.devicePixelRatioF()))
         layout.addWidget(mark, 0, Qt.AlignmentFlag.AlignHCenter)
         title = QLabel('열린 문서가 없습니다')
         title.setObjectName('emptyTitle')
@@ -507,6 +502,7 @@ class MainWindow(QMainWindow):
         hint.setObjectName('muted')
         layout.addWidget(hint, 0, Qt.AlignmentFlag.AlignHCenter)
         button = QPushButton('PDF 열기')
+        button.setObjectName('primary')
         button.setIcon(icon('open'))
         button.setMinimumWidth(130)
         button.clicked.connect(self.open_dialog)
@@ -626,6 +622,8 @@ class MainWindow(QMainWindow):
         self.thumbnails.itemSelectionChanged.connect(self.refresh_selection_status)
         self.thumbnails.reordered.connect(lambda order: self.edit(lambda: self.document.reorder(order)))
         self.thumbnails.filesInserted.connect(lambda paths, index: self.add_pdf(paths=paths, insert_index=index))
+        self.thumbnails.page_drop_handler = self.receive_dropped_pages
+        self.thumbnails.pagesMovedOut.connect(self.remove_moved_pages)
         self.thumbnails.insertionRequested.connect(self.show_page_add_menu)
         self.thumbnails.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.thumbnails.customContextMenuRequested.connect(self.page_context_menu)
@@ -636,7 +634,7 @@ class MainWindow(QMainWindow):
         side_tools.setSpacing(6)
         side_tools.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.side_buttons = {}
-        for key in ['rotate_left','rotate','blank','replace','delete']:
+        for key in ['split','extract','blank','replace','delete']:
             b = QToolButton()
             b.setDefaultAction(self.actions[key])
             b.setFixedSize(36, 34)
@@ -645,6 +643,15 @@ class MainWindow(QMainWindow):
             self.side_buttons[key] = b
         sl.addLayout(side_tools)
         self.view = PdfView()
+        from .toolbox_widgets import FloatingToolbox
+        self.toolbox = FloatingToolbox(self.view, self.actions, self.settings, self.show_pen_options)
+        from .shape_widgets import ShapeProperties
+        self.shape_properties = ShapeProperties(self.view, self.toolbox)
+        self.shape_properties.changed.connect(self.style_selected_object)
+        self.view.objectSelectionChanged.connect(self.shape_properties.set_target)
+        self.toolbox.objectOptionsRequested.connect(self.show_shape_options)
+        self.pen_button = self.toolbox.buttons['pen']
+        self.eraser_button = self.toolbox.buttons['eraser']
         self.view.set_snap_enabled(self.actions['snap'].isChecked())
         # Old rtl/cover preferences described a different layout; do not carry
         # their reversed order or centered cover into the new starting-side UI.
@@ -668,6 +675,8 @@ class MainWindow(QMainWindow):
         self.view.pen.canceled.connect(lambda: self.change_pointer('select_tool'))
         self.view.pan.changed.connect(self.show_temporary_pan)
         self.view.inkTransformed.connect(self.transform_ink)
+        self.view.objectTransformed.connect(self.transform_object)
+        self.view.objectDeleteRequested.connect(self.delete_selection)
         reader_pane = QWidget()
         reader_layout = QVBoxLayout(reader_pane)
         reader_layout.setContentsMargins(0,0,0,0)
@@ -685,6 +694,8 @@ class MainWindow(QMainWindow):
     def build_page_nav(self):
         """The bar below the pages: view options on both sides of the page navigation."""
         nav = QWidget()
+        nav.setObjectName('pageNavigation')
+        nav.setStyleSheet('QToolButton { padding: 4px; }')
         row = QHBoxLayout(nav)
         row.setContentsMargins(12, 5, 12, 5)
         row.setSpacing(2)
@@ -716,6 +727,13 @@ class MainWindow(QMainWindow):
         self.hand_button.setDefaultAction(self.actions['hand_tool'])
         self.hand_button.setAccessibleName('손 도구')
         row.addWidget(self.hand_button)
+        self.rotation_buttons = {}
+        for key in ('rotate_left', 'rotate'):
+            button = QToolButton()
+            button.setDefaultAction(self.actions[key])
+            button.setAccessibleName(self.actions[key].text())
+            row.addWidget(button)
+            self.rotation_buttons[key] = button
         separator()
         view_button('한 쪽씩 보기', 'single')
         view_button('한 쪽 연속 보기', 'continuous')
@@ -801,7 +819,7 @@ class MainWindow(QMainWindow):
             log.parent.mkdir(parents=True, exist_ok=True)
             with log.open('a', encoding='utf-8') as stream:
                 from datetime import datetime
-                stream.write(f'\n{datetime.now().isoformat()} ADF {__version__}\n')
+                stream.write(f'\n{datetime.now().isoformat()} XDF {__version__}\n')
                 stream.write(''.join(traceback.format_exception(error)) if isinstance(error, BaseException) else str(error) + '\n')
         except OSError:
             pass
@@ -820,7 +838,7 @@ class MainWindow(QMainWindow):
         # a multi-page selection needs the hint.
         count = len(self.thumbnails.selectedItems())
         if count > 1:
-            self.notice.showMessage(f'{count}개 페이지 선택 · 끌어서 순서를 바꿀 수 있습니다')
+            self.notice.showMessage(f'{count}개 페이지 선택 · 끌어서 순서를 바꾸거나 다른 문서로 옮길 수 있습니다')
 
     def refresh_actions(self):
         loaded = bool(self.document.page_count)
@@ -833,6 +851,7 @@ class MainWindow(QMainWindow):
         editable = loaded and getattr(self.document,'editable',True)
         self.actions['pen'].setEnabled(editable)
         self.actions['eraser'].setEnabled(editable)
+        self.actions['object_tool'].setEnabled(editable)
         if not editable:
             self.stop_pen()
         if not editable and self.active_stamp_id:
@@ -853,13 +872,13 @@ class MainWindow(QMainWindow):
                 self.save_state.setProperty('unsaved', self.document.dirty)
                 self.save_state.style().unpolish(self.save_state)
                 self.save_state.style().polish(self.save_state)
-            self.setWindowTitle(f'{"● " if self.document.dirty else ""}{name} — ADF')
+            self.setWindowTitle(f'{"● " if self.document.dirty else ""}{name} — XDF')
             self.page_total.setText(f'{self.document.page_count}쪽')
             self.nav_total.setText(f'/ {self.document.page_count}')
             self.page_spin.setMaximum(self.document.page_count)
         else:
             self.save_state.setText('')
-            self.setWindowTitle('ADF — 문서 작업, 가볍게')
+            self.setWindowTitle('XDF — 문서 작업, 가볍게')
 
     def maybe_save(self):
         if not self.resolve_placement():
@@ -1101,6 +1120,11 @@ class MainWindow(QMainWindow):
         menu.exec(self.thumbnails.mapToGlobal(pos))
 
     def delete_selection(self):
+        if self.view.object_selection is not None:
+            selection = self.view.object_selection
+            index, object_id = selection.index, selection.object_id
+            self.edit(lambda: self.document.remove_object(index,object_id))
+            return
         if self.view.ink_selection is not None:
             selection = self.view.ink_selection
             index, xref = selection.index, selection.xref
@@ -1114,7 +1138,7 @@ class MainWindow(QMainWindow):
             page,xref = self.selected_image
             self.edit(lambda: self.document.remove_image(page,xref))
         elif self.clip_text or self.view.selection_item is not None:
-            self.notice.showMessage('선택한 글을 수정하려면 상단 텍스트 수정을 사용하세요', 5000)
+            self.notice.showMessage('선택한 글을 수정하려면 도구함의 텍스트를 사용하세요', 5000)
         elif self.view.hasFocus():
             self.notice.showMessage('페이지를 삭제하려면 왼쪽 페이지 목록에서 선택하세요', 5000)
         else:
@@ -1129,6 +1153,27 @@ class MainWindow(QMainWindow):
             if order[i] in selected and order[j] not in selected:
                 order[i],order[j] = order[j],order[i]
         self.edit(lambda: self.document.reorder(order))
+
+    def receive_dropped_pages(self, data, index):
+        """Insert pages dragged from another XDF window; the source removes them only on success."""
+        if not self.document.page_count or not self.document.editable:
+            return False
+        added = []
+        if not self.edit(lambda: added.append(self.document.insert_page_bytes(data, index))):
+            return False
+        self.thumbnails.clearSelection()
+        for row in range(index, index + added[0]):
+            self.thumbnails.item(row).setSelected(True)
+        self.view.goto(index)
+        self.notice.showMessage(f'{added[0]}개 페이지를 가져왔습니다 · Ctrl+Z로 실행 취소할 수 있습니다', 5000)
+        return True
+
+    def remove_moved_pages(self, pages):
+        if len(pages) >= self.document.page_count:
+            self.notice.showMessage('문서에는 한 페이지 이상 남아야 해서 이 문서의 페이지는 그대로 두었습니다', 6000)
+            return
+        if self.edit(lambda: self.document.delete(pages)):
+            self.notice.showMessage(f'{len(pages)}개 페이지를 다른 문서로 옮겼습니다 · Ctrl+Z로 되돌릴 수 있습니다', 5000)
 
     def show_page_add_menu(self, index=None, point=None):
         if not self.document.page_count or not self.document.editable:
@@ -1293,7 +1338,10 @@ class MainWindow(QMainWindow):
         dialog = NumberingDialog(self.document, current_page=self.current, parent=self,
                                  start_right=self.view.start_right, spread=self.view.is_spread)
         if dialog.exec():
-            self.edit(lambda: self.document.number_pages(**dialog.options))
+            if dialog.remove_ids:
+                self.remove_number_items(dialog.remove_ids, len(self.document.page_marks()))
+            else:
+                self.edit(lambda: self.document.number_pages(**dialog.options))
 
     def remove_numbers(self):
         from .dialogs import MarkRemoveDialog
@@ -1301,16 +1349,19 @@ class MainWindow(QMainWindow):
             return
         items = self.document.page_marks()
         if not items:
-            QMessageBox.information(self, '페이지 번호 및 머리말 제거', 'ADF로 넣은 페이지 번호와 머리말이 없습니다.\n'
+            QMessageBox.information(self, '페이지 번호 및 머리말 제거', 'XDF로 넣은 페이지 번호와 머리말이 없습니다.\n'
                                     '이전 버전이나 다른 프로그램에서 넣은 번호·머리말은 지울 수 없습니다.')
             return
         dialog = MarkRemoveDialog(items, self)
         if not dialog.exec():
             return
+        self.remove_number_items(dialog.ids, len(items))
+
+    def remove_number_items(self, ids, total):
         outcome = []
-        if self.edit(lambda: outcome.extend(self.document.remove_marks(dialog.ids))):
+        if self.edit(lambda: outcome.extend(self.document.remove_marks(ids))):
             removed, kept = outcome
-            what = '페이지 번호와 머리말' if len(dialog.ids) == len(items) else '고른 항목'
+            what = '페이지 번호와 머리말' if len(ids) == total else '고른 항목'
             message = f'{len(removed):,}쪽의 {what}을 지웠습니다 · Ctrl+Z로 되돌릴 수 있습니다'
             if kept:
                 message += f' · 주변이 바뀐 {len(kept):,}쪽은 그대로 두었습니다'
@@ -1371,7 +1422,7 @@ class MainWindow(QMainWindow):
             self.worker.setProgram(sys.executable)
             self.worker.setArguments(([] if getattr(sys,'frozen',False) else [str(resource_path('main.py'))])+['--worker',str(request)])
             self.progress = QProgressDialog(title,'취소',0,0,getattr(self,'export_parent',self))
-            self.progress.setWindowTitle('ADF')
+            self.progress.setWindowTitle('XDF')
             self.progress.setWindowModality(Qt.WindowModality.ApplicationModal)
             self.progress.setMinimumDuration(0)
             self.progress.canceled.connect(self.cancel_worker)
@@ -1529,6 +1580,7 @@ class MainWindow(QMainWindow):
         if not self.resolve_placement():
             return
         self.stop_pen()
+        self.clear_content_selection()
         try:
             stamp = self.stamp_library.get(identifier)
             pm = QPixmap()
@@ -1604,6 +1656,7 @@ class MainWindow(QMainWindow):
             return
         self.stop_pen()
         self.stop_stamp()
+        self.clear_content_selection()
         pm = QPixmap()
         if not pm.loadFromData(data):
             self.error('이 이미지 파일을 읽을 수 없습니다.')
@@ -1632,7 +1685,7 @@ class MainWindow(QMainWindow):
             return False
 
     def toggle_text(self, checked, add=False):
-        """Edit existing paragraphs, or with add write new text where the page is clicked."""
+        """Edit the paragraph under the pointer, or create text in empty space."""
         key, other = ('text_add', 'text') if add else ('text', 'text_add')
         self.stop_pen()
         self.stop_stamp()
@@ -1646,6 +1699,8 @@ class MainWindow(QMainWindow):
             self.actions[other].setChecked(False)
         self.view.text_mode = checked
         self.view.text_add_mode = checked and add
+        self.view.object_mode = False
+        self.actions['object_tool'].setChecked(False)
         self.view.image_mode = False
         self.actions['select_image'].setChecked(False)
         self.clear_content_selection()
@@ -1655,7 +1710,7 @@ class MainWindow(QMainWindow):
             if add:
                 self.notice.showMessage('글을 쓸 곳을 클릭하세요 · 완료나 Esc로 반영 · 다시 누르면 끝냅니다', 6000)
             else:
-                self.notice.clearMessage()
+                self.notice.showMessage('기존 글을 클릭하면 수정 · 빈 곳을 클릭하면 새 글 추가 · 완료나 Esc로 반영', 6000)
             self.view.update_content_cursor()
         else:
             self.clear_text_selection()
@@ -1903,7 +1958,7 @@ class MainWindow(QMainWindow):
             return False
 
     def change_pointer(self, mode):
-        if mode in ('pen', 'eraser') and (not self.document.editable or self.worker):
+        if mode in ('pen', 'eraser', 'object_tool') and (not self.document.editable or self.worker):
             self.actions[self.pointer_mode].setChecked(True)
             return False
         if mode == 'region_tool' and not self.copy_allowed():
@@ -1926,6 +1981,7 @@ class MainWindow(QMainWindow):
         self.view.pen.set_enabled(mode in ('pen', 'eraser'))
         self.view.text_mode = False
         self.view.image_mode = False
+        self.view.object_mode = mode == 'object_tool'
         self.view.copy_region_mode = mode == 'region_tool'
         self.actions['text'].setChecked(False)
         self.actions['text_add'].setChecked(False)
@@ -1936,6 +1992,8 @@ class MainWindow(QMainWindow):
         self.view.update_content_cursor()
         if mode == 'region_tool':
             self.notice.showMessage('복사할 영역을 드래그하세요 · 표·그래프·글을 함께 이미지로 복사 · Esc 종료', 6000)
+        elif mode == 'object_tool':
+            self.notice.showMessage('도형·이미지·필기를 클릭하세요 · 끌어서 이동 · Delete로 삭제 · Esc로 해제', 6000)
         return True
 
     def toggle_hand_tool(self):
@@ -1984,11 +2042,12 @@ class MainWindow(QMainWindow):
     def stop_pen(self):
         if hasattr(self, 'pen_menu'):
             self.pen_menu.hide()
-        if self.pointer_mode in ('pen', 'eraser', 'region_tool'):
+        if self.pointer_mode in ('pen', 'eraser', 'region_tool', 'object_tool'):
             self.pointer_mode = 'select_tool'
             self.actions['select_tool'].setChecked(True)
             self.view.pen.set_enabled(False)
             self.view.copy_region_mode = False
+            self.view.object_mode = False
             self.view.setDragMode(PdfView.DragMode.NoDrag)
 
     def apply_eraser(self, page_index, sweeps, radius):
@@ -2032,13 +2091,71 @@ class MainWindow(QMainWindow):
             self.view.clear_ink_selection()
             self.error(error)
 
+    def transform_object(self, index, object_id, delta):
+        if self.worker or not self.document.editable:
+            self.view.clear_object_selection()
+            return
+        try:
+            self.document.move_object(index,object_id,delta)
+            self.view.invalidate_page(index)
+            self.thumbnails.invalidate_page(index)
+            self.view.select_object(index,object_id)
+            self.refresh_actions()
+            self.notice.showMessage('객체를 이동했습니다 · Delete로 삭제 · Ctrl+Z 취소 · Ctrl+S 저장', 4000)
+        except Exception as error:
+            self.view.clear_object_selection()
+            self.error(error)
+
     def clear_content_selection(self):
+        self.view.clear_object_selection()
         self.view.clear_ink_selection()
         if self.selected_image is not None:
             self.view.set_highlights([])
         self.selected_image = None
         self.clip_text = ''
         self.view.clear_region_selection()
+
+    def show_shape_options(self):
+        if self.shape_properties.isVisible():
+            self.shape_properties.hide()
+            self.view.setFocus()
+            return
+        selection = self.view.object_selection
+        if selection is None or selection.target['kind'] != 'path' or self.worker or not self.document.editable:
+            return
+        if hasattr(self, 'pen_menu'):
+            self.pen_menu.hide()
+        self.shape_properties.set_target(selection.target)
+        self.shape_properties.popup()
+
+    def style_selected_object(self, changes):
+        selection = self.view.object_selection
+        if selection is None or self.worker or not self.document.editable:
+            return
+        target = selection.target
+        # Choosing the already selected color should not add an undo entry.
+        def unchanged(field, value):
+            old = target.get(field)
+            if field in ('fill','stroke'):
+                if (value is not None) != target['has_'+field]:
+                    return False
+                return value is None or old is not None and all(abs(a-b) < 1e-6 for a,b in zip(value,old))
+            return old is not None and abs(value-old) < .005
+        changes = {field: value for field,value in changes.items() if not unchanged(field,value)}
+        if not changes:
+            self.shape_properties.set_target(target)
+            return
+        index, object_id = selection.index, selection.object_id
+        try:
+            self.document.style_object(index,object_id,**changes)
+            self.view.invalidate_page(index)
+            self.thumbnails.invalidate_page(index)
+            self.view.select_object(index,object_id)
+            self.refresh_actions()
+            self.notice.showMessage('도형 속성을 바꿨습니다 · Ctrl+Z 취소 · Ctrl+S 저장',4000)
+        except Exception as error:
+            self.shape_properties.set_target(target)
+            self.error(error)
 
     def set_selected_text(self,text):
         if getattr(self.document.doc,'_adf_owner_authenticated',False) or self.document.doc.permissions & pymupdf.PDF_PERM_COPY:
@@ -2127,7 +2244,10 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, self.fullscreen.exit)
 
     def escape(self):
-        if hasattr(self, 'pen_menu') and self.pen_menu.isVisible():
+        if self.shape_properties.isVisible():
+            self.shape_properties.hide()
+            self.view.setFocus()
+        elif hasattr(self, 'pen_menu') and self.pen_menu.isVisible():
             self.pen_menu.hide()
         elif self.view.pen.page is not None:
             self.view.pen.cancel()
@@ -2146,6 +2266,9 @@ class MainWindow(QMainWindow):
             self.cancel_image()
         elif self.text_selection:
             self.finish_text_selection()
+        elif self.actions['text'].isChecked():
+            self.actions['text'].setChecked(False)
+            self.toggle_text(False)
         elif self.actions['text_add'].isChecked():
             self.actions['text_add'].setChecked(False)
             self.toggle_text(False, add=True)
@@ -2402,14 +2525,14 @@ class MainWindow(QMainWindow):
     def default_app(self):
         if sys.platform=='win32':
             QDesktopServices.openUrl(QUrl('ms-settings:defaultapps?registeredAppUser=ADF'))
-            self.notice.showMessage('Windows 설정에서 ADF를 선택하고 .pdf의 기본 앱으로 지정하세요',15000)
+            self.notice.showMessage('Windows 설정에서 XDF를 선택하고 .pdf의 기본 앱으로 지정하세요',15000)
         else:
-            QMessageBox.information(self,'기본 PDF 앱 설정','Finder에서 PDF를 선택 → 정보 가져오기 → 다음으로 열기에서 ADF 선택 → 모두 변경을 사용하세요.')
+            QMessageBox.information(self,'기본 PDF 앱 설정','Finder에서 PDF를 선택 → 정보 가져오기 → 다음으로 열기에서 XDF 선택 → 모두 변경을 사용하세요.')
 
     def open_sample(self):
         folder = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation))
         folder.mkdir(parents=True,exist_ok=True)
-        path = folder/'ADF 시작 안내.pdf'
+        path = folder/'XDF 시작 안내.pdf'
         if not path.exists():
             sample_pdf(path)
         self.open_path(str(path))
@@ -2466,7 +2589,7 @@ class MainWindow(QMainWindow):
             dialog.deleteLater()
 
     def about(self):
-        QMessageBox.information(self,'ADF 정보',f'ADF {__version__}\n문서 작업, 가볍게.\n\n컴퓨터 안에서 동작하는 PDF 편집기입니다.\n표준 PDF 열기 · 편집 · 병합 · 분할 · 인쇄\n\nADF: GNU AGPL v3 이상 · 보증 없이 제공\nPDF 처리: PyMuPDF / MuPDF (AGPL)\n화면 구성: Qt / PySide6 (LGPL 및 구성 요소별 조건)\n\n도움말에서 사용안내·라이선스 원문·소스코드를 확인하세요.')
+        QMessageBox.information(self,'XDF 정보',f'XDF {__version__}\n문서 작업, 가볍게.\n\n컴퓨터 안에서 동작하는 PDF 편집기입니다.\n표준 PDF 열기 · 편집 · 병합 · 분할 · 인쇄\n\nXDF: GNU AGPL v3 이상 · 보증 없이 제공\nPDF 처리: PyMuPDF / MuPDF (AGPL)\n화면 구성: Qt / PySide6 (LGPL 및 구성 요소별 조건)\n\n도움말에서 사용안내·라이선스 원문·소스코드를 확인하세요.')
 
     def start_updates(self, service=None):
         from .update_widgets import UpdateNotifier
@@ -2480,7 +2603,7 @@ class MainWindow(QMainWindow):
         service.notify.connect(self.announce_update)
         # Asked after the service has started the download it found.
         service.found.connect(lambda: QTimer.singleShot(0, self.offer_new_version))
-        # Returning to ADF, also after the PC wakes, checks when the last check is old.
+        # Returning to XDF, also after the PC wakes, checks when the last check is old.
         QApplication.instance().applicationStateChanged.connect(self.application_state_changed)
         self.update_notifier = UpdateNotifier(self.windowIcon(), self)
         self.update_notifier.clicked.connect(self.update_clicked)
@@ -2492,7 +2615,7 @@ class MainWindow(QMainWindow):
         self.update_snooze_timer.setSingleShot(True)
         self.update_snooze_timer.timeout.connect(self.refresh_update_toast)
         service.start()
-        # An update downloaded in an earlier session is offered once ADF is on screen.
+        # An update downloaded in an earlier session is offered once XDF is on screen.
         QTimer.singleShot(1500, self.offer_update)
         from . import agent
         agent.ensure(self.settings)
@@ -2533,8 +2656,8 @@ class MainWindow(QMainWindow):
             'downloading': (f'업데이트 받는 중 · {service.percent}%',
                             f'새 버전({package.version})을 받고 있습니다. 계속 작업할 수 있습니다.'),
             'ready': (f'업데이트 설치 · {package.version}',
-                      '누르면 새 버전의 설치 화면을 엽니다. ADF를 응용 프로그램 폴더로 끌어 놓아 바꾸세요.' if mac else
-                      '누르면 ADF를 다시 시작하며 업데이트합니다.\n저장하지 않은 변경은 먼저 저장 여부를 묻고, '
+                      '누르면 새 버전의 설치 화면을 엽니다. XDF를 응용 프로그램 폴더로 끌어 놓아 바꾸세요.' if mac else
+                      '누르면 XDF를 다시 시작하며 업데이트합니다.\n저장하지 않은 변경은 먼저 저장 여부를 묻고, '
                       '업데이트 뒤 보던 문서를 다시 엽니다.\n배포 조건은 처음 설치할 때와 같습니다.'),
             'manual': (f'새 버전 받기 · {package.version}',
                        self.manual_update_reason()[1]+' 누르면 다운로드 페이지를 엽니다.'),
@@ -2563,7 +2686,7 @@ class MainWindow(QMainWindow):
         if toast is None:
             return
         content = toast_content(service) if service is not None else None
-        # With ADF running in the background, its notice at the screen's corner is the one to show.
+        # With XDF running in the background, its notice at the screen's corner is the one to show.
         if (content is None or self.installing_update or self.update_when_ready is not None
                 or self.update_snoozed() or agent.running()):
             toast.dismiss()
@@ -2601,14 +2724,14 @@ class MainWindow(QMainWindow):
                 or self.update_snoozed() or agent.running()):
             return
         if service.state == 'ready' and service.platform == 'darwin':
-            self.update_notifier.show('ADF 새 버전 받기 완료',
+            self.update_notifier.show('XDF 새 버전 받기 완료',
                 f'새 버전({package.version})을 받았습니다. 이 알림을 누르면 설치 화면을 엽니다.', '설치 화면 열기')
         elif service.state == 'ready':
-            self.update_notifier.show('ADF 업데이트 준비 완료',
-                f'새 버전({package.version})을 설치할 준비가 되었습니다. 이 알림을 누르면 ADF를 다시 시작하며 '
+            self.update_notifier.show('XDF 업데이트 준비 완료',
+                f'새 버전({package.version})을 설치할 준비가 되었습니다. 이 알림을 누르면 XDF를 다시 시작하며 '
                 '업데이트합니다. 배포 조건은 처음 설치할 때와 같습니다.', '지금 업데이트')
         elif service.state == 'available':
-            self.update_notifier.show(f'ADF 새 버전 {package.version}',
+            self.update_notifier.show(f'XDF 새 버전 {package.version}',
                 '이 알림을 누르면 새 버전을 받습니다.' if service.platform == 'darwin' else
                 '데이터 요금제 연결이라 자동으로 받지 않았습니다. 이 알림을 누르면 받습니다.', '새 버전 받기')
         elif service.state == 'manual':
@@ -2616,7 +2739,7 @@ class MainWindow(QMainWindow):
             self.update_notifier.show(title, reason+' 이 알림을 누르면 다운로드 페이지를 엽니다.', '다운로드 페이지 열기')
 
     def offer_update(self):
-        """Ask to install a downloaded update when ADF or a document opens.
+        """Ask to install a downloaded update when XDF or a document opens.
 
         Asked once per version and session. A download that finishes during work
         only shows the notification and the menu bar button: a dialog appearing
@@ -2636,7 +2759,7 @@ class MainWindow(QMainWindow):
             self.install_update()
 
     def offer_new_version(self):
-        """Ask as soon as ADF finds a new version after it starts, like messengers do.
+        """Ask as soon as XDF finds a new version after it starts, like messengers do.
 
         Only the first check of a session asks this way. A version found later,
         while the user works, keeps to the notification and the menu bar button.
@@ -2665,7 +2788,7 @@ class MainWindow(QMainWindow):
         if self.update_when_ready is not None:
             return
         progress = self.update_when_ready = QProgressDialog('새 버전을 받는 중입니다…', '나중에', 0, 100, self)
-        progress.setWindowTitle('ADF 업데이트')
+        progress.setWindowTitle('XDF 업데이트')
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(0)
         progress.setAutoClose(False)
@@ -2703,15 +2826,15 @@ class MainWindow(QMainWindow):
     def ask_to_update(self, version, mac, found=False):
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Information)
-        box.setWindowTitle('ADF 업데이트')
-        box.setText(f'ADF 새 버전({version})이 나왔습니다.' if found else f'새 버전({version})을 설치할 준비가 되었습니다.')
+        box.setWindowTitle('XDF 업데이트')
+        box.setText(f'XDF 새 버전({version})이 나왔습니다.' if found else f'새 버전({version})을 설치할 준비가 되었습니다.')
         if mac:
-            detail = '지금 업데이트하면 설치 화면을 열고 ADF를 닫습니다. ADF를 응용 프로그램 폴더로 끌어 놓아 바꾸세요.'
+            detail = '지금 업데이트하면 설치 화면을 열고 XDF를 닫습니다. XDF를 응용 프로그램 폴더로 끌어 놓아 바꾸세요.'
         elif self.document.page_count:
-            detail = ('지금 업데이트하면 ADF를 잠시 닫았다가 보던 문서를 다시 엽니다.\n'
+            detail = ('지금 업데이트하면 XDF를 잠시 닫았다가 보던 문서를 다시 엽니다.\n'
                       '저장하지 않은 변경이 있으면 먼저 저장 여부를 묻습니다.')
         else:
-            detail = '지금 업데이트하면 ADF를 잠시 닫았다가 다시 엽니다.'
+            detail = '지금 업데이트하면 XDF를 잠시 닫았다가 다시 엽니다.'
         if found:
             detail = detail.replace('지금 업데이트하면 ', '지금 업데이트하면 새 버전을 받아 ', 1)
         box.setInformativeText(detail)
@@ -2743,7 +2866,7 @@ class MainWindow(QMainWindow):
     def install_update(self):
         service = self.updates
         if self.worker is not None or self.loading_dialog is not None:
-            QMessageBox.information(self, 'ADF 업데이트', '진행 중인 작업을 마치거나 취소한 뒤 다시 눌러 주세요.')
+            QMessageBox.information(self, 'XDF 업데이트', '진행 중인 작업을 마치거나 취소한 뒤 다시 눌러 주세요.')
             return
         # Checks and downloads wait, so the package verified here is the one that runs,
         # also while other windows ask about saving.
@@ -2759,10 +2882,10 @@ class MainWindow(QMainWindow):
         self.notice.clearMessage()
         if not valid:
             self.stop_update_install()
-            QMessageBox.warning(self, 'ADF 업데이트', '받은 업데이트 파일이 손상되어 다시 받습니다. 준비되면 다시 알려 드립니다.')
+            QMessageBox.warning(self, 'XDF 업데이트', '받은 업데이트 파일이 손상되어 다시 받습니다. 준비되면 다시 알려 드립니다.')
             return
         if service.platform == 'darwin':
-            # Finder replaces ADF in Applications only after ADF has quit.
+            # Finder replaces XDF in Applications only after XDF has quit.
             self.stop_update_install()
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(service.staged(package))))
             self.close()
@@ -2771,7 +2894,7 @@ class MainWindow(QMainWindow):
         try:
             windows = other_windows(sys.executable)
         except OSError:
-            windows = {}  # The installer still closes ADF windows it finds.
+            windows = {}  # The installer still closes XDF windows it finds.
         if not windows:
             self.finish_update_install(package)
             return
@@ -2779,7 +2902,7 @@ class MainWindow(QMainWindow):
         close_windows(windows)
         self.update_waiting = set(windows)
         self.update_deadline = time.monotonic()+120
-        self.notice.showMessage('다른 ADF 창을 닫는 중입니다. 저장 여부를 묻는 창이 뜨면 답해 주세요.')
+        self.notice.showMessage('다른 XDF 창을 닫는 중입니다. 저장 여부를 묻는 창이 뜨면 답해 주세요.')
         QTimer.singleShot(300, lambda: self.wait_for_other_windows(package))
 
     def wait_for_other_windows(self, package):
@@ -2793,7 +2916,7 @@ class MainWindow(QMainWindow):
         else:
             self.notice.clearMessage()
             self.stop_update_install()
-            QMessageBox.information(self, 'ADF 업데이트', '다른 ADF 창이 아직 열려 있어 업데이트를 멈췄습니다.\n'
+            QMessageBox.information(self, 'XDF 업데이트', '다른 XDF 창이 아직 열려 있어 업데이트를 멈췄습니다.\n'
                                     '그 창의 작업을 마치고 닫은 뒤 다시 눌러 주세요.')
 
     def stop_update_install(self):
@@ -2815,41 +2938,41 @@ class MainWindow(QMainWindow):
             document = None
         log = service.installer_log(package)
         service.mark_attempt(package)
-        # The background agent runs from the same files; the next ADF window starts it again.
+        # The background agent runs from the same files; the next XDF window starts it again.
         from . import agent
         agent.stop()
-        # The installer reopens ADF, and the document, whether or not it succeeds.
+        # The installer reopens XDF, and the document, whether or not it succeeds.
         started, pid = QProcess.startDetached(str(service.staged(package)), installer_arguments(
             package, sys.executable, document, str(log)))
         if not started:
             service.clear_attempt()
             self.reopen_after_update(document)
-            QMessageBox.warning(self, 'ADF 업데이트', '업데이트 설치 프로그램을 시작하지 못했습니다.\n'
+            QMessageBox.warning(self, 'XDF 업데이트', '업데이트 설치 프로그램을 시작하지 못했습니다.\n'
                                 '보안 프로그램이 막았을 수 있습니다. 나중에 다시 눌러 주세요.')
             return
         self.wait_for_installer(package, pid, log, document, time.monotonic()+INSTALLER_START)
 
     def wait_for_installer(self, package, pid, log, document, deadline):
-        """Quit once the installer's setup program runs; that program reopens ADF when it ends.
+        """Quit once the installer's setup program runs; that program reopens XDF when it ends.
 
         The installer unpacks the setup program to the temporary folder and starts it,
-        and Windows security can stop it there. Nothing would reopen ADF then.
+        and Windows security can stop it there. Nothing would reopen XDF then.
         """
         from .updates import running
         alive = bool(running({pid}))  # Before the log: a setup program that ran and ended left it.
         if log.is_file():
-            # Quit before the setup program starts replacing ADF's files.
+            # Quit before the setup program starts replacing XDF's files.
             QApplication.instance().quit()
         elif alive and time.monotonic() < deadline:
             QTimer.singleShot(100, lambda: self.wait_for_installer(package, pid, log, document, deadline))
         else:
             self.updates.give_up(package, 'security')
             self.reopen_after_update(document)
-            QMessageBox.warning(self, 'ADF 업데이트', 'Windows 보안 설정이 업데이트 설치 프로그램을 막아 ADF를 다시 열었습니다.\n'
+            QMessageBox.warning(self, 'XDF 업데이트', 'Windows 보안 설정이 업데이트 설치 프로그램을 막아 XDF를 다시 열었습니다.\n'
                                 '상태 표시줄 오른쪽의 새 버전 받기 버튼을 누르면 다운로드 페이지를 엽니다.')
 
     def reopen_after_update(self, document):
-        """ADF closed for an installer that did not run: an empty window first, then the document."""
+        """XDF closed for an installer that did not run: an empty window first, then the document."""
         QApplication.instance().setQuitOnLastWindowClosed(True)
         self.show_empty_workspace()
         self.stop_update_install()
@@ -3096,7 +3219,7 @@ class ADFApplication(QApplication):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='ADF PDF 편집기')
+    parser = argparse.ArgumentParser(description='XDF PDF 편집기')
     parser.add_argument('files',nargs='*')
     parser.add_argument('--merge',nargs='*')
     parser.add_argument('--split')
@@ -3124,6 +3247,7 @@ def main():
     app = ADFApplication(sys.argv[:1])
     app.setApplicationName('ADF')
     app.setOrganizationName('ADF')
+    app.setApplicationDisplayName(NAME)
     apply_theme(app)
     font = QFont('Malgun Gothic' if sys.platform=='win32' else 'Apple SD Gothic Neo',10)
     app.setFont(font)
@@ -3137,7 +3261,7 @@ def main():
             if args.tool_smoke_test:
                 Path(args.tool_smoke_test).write_text(json.dumps({'ok':False,'error':str(exc)}),encoding='utf-8')
             else:
-                QMessageBox.warning(None,'ADF 탐색기 요청',str(exc))
+                QMessageBox.warning(None,'XDF 탐색기 요청',str(exc))
             return 1
     elif args.merge is not None:
         tool_operation, tool_files = 'merge', args.merge+args.files

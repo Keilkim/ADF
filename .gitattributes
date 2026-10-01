@@ -16,3 +16,9 @@
 *.zip binary
 *.exe binary
 *.dll binary
+*.ttf binary
+*.woff2 binary
+
+# These delivered font sources are verified byte-for-byte against the font manifest.
+scripts/xdf_type_geometry.py text eol=lf
+assets/fonts/xdf_type_geometry.py text eol=lf

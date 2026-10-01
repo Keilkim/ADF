@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QFrame,
     QSizePolicy, QSlider, QToolButton, QVBoxLayout, QWidget)
 
 from .ink import KINDS
+from .theme import ACCENT, ACCENT_HOVER, ACCENT_TEXT, ACCENT_SELECTED
 import math
 
 COLORS = [('검정', '#252525'), ('빨강', '#d53939'), ('파랑', '#2869cf'), ('초록', '#27824b'),
@@ -178,8 +179,8 @@ class ToolOptionsButton(QToolButton):
             QToolButton#drawingTool { padding-right: 19px; }
             QToolButton#drawingToolOptions { border: 1px solid transparent; border-radius: 5px; padding: 0; background: transparent; }
             QToolButton#drawingToolOptions:hover { background: #c8c8cc; }
-            QToolButton#drawingToolOptions:focus { border-color: #8793a5; }
-        ''')
+            QToolButton#drawingToolOptions:focus { border-color: @ACCENT@; }
+        '''.replace('@ACCENT@',ACCENT))
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -294,22 +295,23 @@ class PenMenu(QWidget):
             QFrame#penSegments { background: #eeeeef; border: none; border-radius: 13px; }
             QToolButton { border: 1px solid transparent; border-radius: 10px; padding: 3px; color: #444548; }
             QToolButton:hover { background: #e8e8ea; }
-            QToolButton:checked, QToolButton:pressed { background: #d5d5d8; color: #252528; }
-            QToolButton:focus { border-color: #8793a5; }
+            QToolButton:checked, QToolButton:pressed { background: @ACCENT_SELECTED@; color: @ACCENT_TEXT@; }
+            QToolButton:focus { border-color: @ACCENT@; }
             QComboBox, QLineEdit { background: #eeeeef; border: none; border-radius: 8px; padding: 5px 8px; }
             QComboBox:focus, QLineEdit:focus { background: #e2e2e5; border: none; }
-            QComboBox QAbstractItemView { background: #fafafa; border: none; outline: none; padding: 6px; selection-background-color: #d5d5d8; }
+            QComboBox QAbstractItemView { background: #fafafa; border: none; outline: none; padding: 6px; selection-background-color: @ACCENT_SELECTED@; }
             QComboBox QAbstractItemView::item { padding: 8px; border: none; border-radius: 8px; }
             QSlider { min-height: 22px; background: transparent; }
             QSlider::groove:horizontal { height: 6px; background: #e0e0e3; border: none; border-radius: 3px; }
-            QSlider::sub-page:horizontal { background: #717276; border-radius: 3px; }
-            QSlider::handle:horizontal { width: 20px; margin: -7px 0; border: none; border-radius: 10px; background: #77787d; }
-            QSlider::handle:horizontal:hover, QSlider::handle:horizontal:focus { background: #535459; }
+            QSlider::sub-page:horizontal { background: @ACCENT@; border-radius: 3px; }
+            QSlider::handle:horizontal { width: 20px; margin: -7px 0; border: none; border-radius: 10px; background: @ACCENT@; }
+            QSlider::handle:horizontal:hover, QSlider::handle:horizontal:focus { background: @ACCENT_HOVER@; }
             QSlider#hueSlider::groove:horizontal { height: 12px; border-radius: 6px;
                 background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #ed6464,stop:0.17 #e6df63,stop:0.33 #72d976,stop:0.5 #65dadd,stop:0.67 #6b75df,stop:0.83 #d371d9,stop:1 #ed6464); }
             QSlider#hueSlider::sub-page:horizontal { background: transparent; }
             QSlider#hueSlider::handle:horizontal { margin: -4px 0; background: #fafafa; }
-        ''')
+        '''.replace('@ACCENT@',ACCENT).replace('@ACCENT_HOVER@',ACCENT_HOVER)
+           .replace('@ACCENT_TEXT@',ACCENT_TEXT).replace('@ACCENT_SELECTED@',ACCENT_SELECTED))
         self.set_color(QColor(pen.color))
         self.change_tool(pen.tool)
         QApplication.instance().installEventFilter(self)

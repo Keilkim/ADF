@@ -818,7 +818,7 @@ class UpdateWindowTests(unittest.TestCase):
         self.assertEqual(self.window.document.page_count, 0)
         for key in ('save', 'close', 'print', 'next', 'rotate'):
             self.assertFalse(self.window.actions[key].isEnabled(), key)
-        self.assertEqual(self.window.windowTitle(), 'ADF — 문서 작업, 가볍게')
+        self.assertEqual(self.window.windowTitle(), 'XDF — 문서 작업, 가볍게')
         # The staged update stays ready for another try.
         self.assertEqual(self.service.state, 'ready')
         self.assertTrue(self.window.update_button.isEnabled())
@@ -971,7 +971,7 @@ class BackgroundAgentTests(unittest.TestCase):
         self.assertFalse(self.agent.isVisible())
         self.assertTrue(self.agent.tray.isVisible() or not QSystemTrayIcon.isSystemTrayAvailable())
         labels = [action.text() for action in self.agent.menu.actions() if action.text()]
-        self.assertEqual(labels, ['ADF 열기', '지금 업데이트 확인', '로그인할 때 자동 실행',
+        self.assertEqual(labels, ['XDF 열기', '지금 업데이트 확인', '로그인할 때 자동 실행',
                                   '업데이트 자동 확인', '백그라운드 실행 끝내기'])
         self.agent.sync_menu()
         self.assertTrue(self.agent.autostart.isChecked())

@@ -84,15 +84,15 @@ exe = EXE(
     console=False, disable_windowed_traceback=False,
     argv_emulation=False, target_arch=None, codesign_identity=codesign_identity,
     entitlements_file=str(root / 'installer' / 'adf.entitlements') if codesign_identity else None,
-    icon=str(root / 'assets' / ('adf.icns' if sys.platform == 'darwin' else 'adf.ico')),
+    icon=str(root / 'assets' / ('xdf.icns' if sys.platform == 'darwin' else 'xdf.ico')),
     version=str(root / 'installer' / 'version-info.txt') if sys.platform == 'win32' else None,
 )
 coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name='ADF')
 if sys.platform == 'darwin':
-    app = BUNDLE(coll, name='ADF.app', icon=str(root / 'assets' / 'adf.icns'),
+    app = BUNDLE(coll, name='ADF.app', icon=str(root / 'assets' / 'xdf.icns'),
                  bundle_identifier='io.github.keilkim.adf',
                  info_plist={
-                     'CFBundleName': 'ADF', 'CFBundleDisplayName': 'ADF',
+                     'CFBundleName': 'XDF', 'CFBundleDisplayName': 'XDF',
                      'CFBundleShortVersionString': version(root), 'CFBundleVersion': version(root),
                      # PySide6 6.11.2's arm64 modules are built for macOS 15; verify-release.py checks every binary.
                      'LSMinimumSystemVersion': '15.0',

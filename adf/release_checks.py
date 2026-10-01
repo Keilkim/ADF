@@ -25,6 +25,20 @@ def check_pen_and_save(window, folder, output):
     before = source.read_bytes()
     assert window.open_path(source)
     window.set_view_mode('single')
+    from PySide6.QtWidgets import QToolButton
+    top_actions = [button.defaultAction() for button in window.toolbar.findChildren(QToolButton)]
+    assert window.toolbox.isVisible()
+    assert window.toolbox.parentWidget() is window.view.viewport()
+    for key in ('image', 'text', 'object_tool', 'pen', 'eraser', 'snap', 'stamps'):
+        assert window.toolbox.buttons[key].isVisible()
+        assert window.actions[key] not in top_actions, f'{key} is still in the top toolbar'
+    for key in ('split', 'extract'):
+        assert window.side_buttons[key].isVisible()
+        assert window.actions[key] not in top_actions
+    for key in ('rotate_left', 'rotate'):
+        assert window.rotation_buttons[key].isVisible()
+        assert window.actions[key] not in top_actions
+    window.grab().save(str(output.with_name(output.stem+'-editor-layout.png')))
     window.show_pen_options('pen')
     assert window.pen_menu.kind.count() == 3
     window.pen_menu.kind.setCurrentIndex(2)
@@ -72,7 +86,8 @@ def check_pen_and_save(window, folder, output):
     window.change_pointer('select_tool')
     result = dict(pen_mouse_input=True, pen_saved_as_pdf_ink=True, pen_printable=True,
                 pen_undo_redo=True, pen_object_transform=True, pen_eight_resize_handles=True,
-                pen_rotation_handle=True, pen_kinds=True, save_current_file=True)
+                pen_rotation_handle=True, pen_kinds=True, save_current_file=True,
+                floating_editor_tools=True, sidebar_split_extract=True, footer_rotation_tools=True)
     result.update(check_eraser_and_region_copy(window, folder, output))
     return result
 

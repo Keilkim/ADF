@@ -1,0 +1,62 @@
+XDF primary wordmark and compact X — 2026-10-01
+
+Mode: built-in image_gen.imagegen, transparent RGBA. No API / CLI fallback.
+User-selected final design: the FIRST generated XDF concept, not the later
+refinement. Main branding spells XDF as one custom wordmark;
+compact X is reserved for application icons and favicons. Vermilion #F04B2D.
+Reference board: brand-exploration/xdf-wordmark-style-reference.png.
+Primary research: https://brand.webflow.com/brand-assets and https://skims.com/
+References informed weight, curve quality and terminal treatment; their exact
+letter outlines are not incorporated into the original XDF design.
+
+Generated concept: brand-exploration/xdf-wordmark-concept.png.
+Chosen generated lettering reference: xdf-wordmark-reference.png, copied
+unchanged from brand-exploration/xdf-wordmark-concept.png.
+Production master: xdf-wordmark.svg, three filled custom glyphs. The first
+concept's broad X arms, sculpted concave waist, rounded D outline and counter,
+curved F terminals and tight spacing are reproduced as clean vector contours.
+Generated texture and detached speckles are omitted from the production
+vector; the fill is uniformly #F04B2D. The second concept is archived as
+brand-exploration/xdf-wordmark-refined.png and xdf-wordmark-refined.svg.
+
+scripts/make-icon.py extracts the SAME X path from the primary wordmark and
+derives square clear space from its vector bounds; there is no separately
+drawn icon. It exports xdf-mark.svg, xdf.png, xdf.ico, xdf.icns and the transparent
+1536px-wide xdf-wordmark.png, and copies both production vectors to site/assets.
+Raster exports resample alpha coverage while preserving the exact flat fill.
+Fully transparent pixels have zero RGB for native decoders and previews.
+
+Application home displays the full wordmark. Website navigation, footer and
+download branding use the full wordmark; all favicons use the compact X.
+Preview: xdf-logo-preview.html and xdf-logo-preview.png.
+
+Validation:
+tests/test_icons.py: 3 passed, 31 subtests passed (Qt / Windows ICO decoding).
+Native shell component checks: 14701 assertions passed, including PDF thumbnails.
+App home: full XDF wordmark visible with alpha at DPR 1 and DPR 2.
+Local website: 5 routes at desktop and mobile sizes, all 10 checks passed.
+Published website: all 10 desktop / mobile checks passed; both SVG assets
+match the local production masters byte for byte.
+Production site: https://adf-desktop.vercel.app
+Selected first design deployment: https://adf-desktop-67s3fregw-lloa9000-6635s-projects.vercel.app
+The production reference matches the first concept byte for byte. The compact
+icon's X path matches the primary wordmark's X path exactly.
+Public installer files remain the existing Windows 0.3.35 / macOS 0.3.30 releases.
+
+Exact initial generation prompt:
+Use case: logo-brand.
+Asset type: final primary XDF brand logotype for a contemporary desktop document workspace.
+Input image: reference board of actual Webflow and SKIMS logos. This is STYLE REFERENCE ONLY: borrow the typographic confidence, substantial curved forms and deliberate directional geometry, never their exact shapes or names.
+Primary request: Design the exact uppercase word "XDF" (X, D, F) as ONE original custom-designed three-letter wordmark. The name itself is the main logo. All three glyphs must belong to a distinctive shared alphabet, not a decorative icon followed by ordinary typeset D and F.
+Art direction: heavy, compact, sculptural, confident American creative / technology identity. Generous thick stems, short tightly controlled letter spacing, aligned cap height and baseline. Draw purposeful smooth inner curves against decisively cut outer terminals, creating a restrained forward energy. Prefer an upright-to-subtly-oblique architectural silhouette. X has a substantial connected crossing and four broad tapering arms, a beautifully shaped concave waist and controlled rounded-to-clipped ends; its center remains solid and strong. D is muscular with an optically generous rounded rectangular counter and carefully balanced stem width. F has two substantial horizontal arms, a confident stem and the same custom terminal cuts and curve family. Resolve X-D and D-F spacing optically so the three letters read together. Every letter has comparable weight. A memorable ownable contour, intelligent restraint, exceptional legibility and small-size performance.
+Color palette: ONE uniform flat solid vermilion #F04B2D, RGB 240 75 45. Truly transparent RGBA background.
+Composition: one large horizontal wordmark centered with generous clear margin, front-on flat vector-like artwork. Exact text "XDF", uppercase, no other text.
+Constraints: fresh design; not the previously rejected loop / ribbon logos. No holes through X's arms or diamond at X's center. No loops, infinity motifs, butterfly, flower, split ribbons, floating pieces, sports swooshes, generic crossed strokes or close-button X. No skinny ordinary D/F, no applied font name. No surrounding tile, frame or additional symbol. No gradient, lighting, texture, grain, shadow, bevel, 3D, checkerboard, presentation board or mockup. Immaculate boundaries with no detached speckles.
+
+
+Exact targeted refinement prompt (SECOND concept, not selected for production):
+Use case: precise-object-edit, logo-brand.
+Image 1: the current original XDF wordmark to finish. Image 2: style reference only for confident weight and deliberate directional geometry.
+Refine Image 1 into a finished coherent XDF logotype. Keep its exact uppercase letters "XDF", thick compact proportions, strong connected solid X crossing, smooth concave X waist, bold D with a rounded rectangular counter, substantial F and uniform cap height. These broad forms and shared weight are the intended design.
+Make ONE focused refinement: resolve the lettering into crisp controlled type contours with optically clean spacing and purposeful terminal cuts. Give X-D and D-F equal clear gaps of about 5 percent of cap height; no letter touching. Keep the X's four arms recognizable and its smooth waist, but replace inflated round exterior tips with subtly clipped and very lightly softened outer corners. The D's left stem must be straight and its top-left/bottom-left corners tightly rounded, while its right side has the generous bow of a capital D. Increase the D counter slightly for clarity. F's two arms must be clearly separated and its stem match D's weight; finish their outer ends with a restrained angled cut, keeping inner corners smooth. The result should feel muscular and architectural rather than soft inflatable type. Preserve the original custom curves and make the three letters a coherent alphabet, not generic font glyphs.
+One single wordmark, same composition with clear margins. Fill every painted interior pixel with the identical single FLAT vermilion #F04B2D (RGB 240 75 45). Truly transparent RGBA background including the D counter. No shading, texture, speckles, disconnected particles, gradients, shadow or lighting. No additional text, labels, symbols, presentation or mockup. No holes or split ribbons in the X. Exact uppercase "XDF".

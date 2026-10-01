@@ -279,7 +279,7 @@ bool AdfOpensPdf() {
         && _wcsicmp(progid, L"ADF.Document") == 0;
 }
 
-// The blue ADF mark on a small rounded white plate, in a bottom corner of
+// The vermilion XDF mark on a small rounded white plate, in a bottom corner of
 // Explorer and desktop thumbnails. The plate keeps the mark readable on dark or
 // busy pages. The mark is scaled from the icon's 256-pixel frame, because
 // Windows would stretch the nearest small frame and soften the logo's shape.

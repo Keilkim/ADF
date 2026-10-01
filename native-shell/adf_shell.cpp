@@ -291,7 +291,7 @@ public:
             item.hbmpItem = bitmap_;
         }
         item.wID = first;
-        item.dwTypeData = const_cast<LPWSTR>(files_.size() == 1 ? L"ADF로 PDF 분할…" : L"ADF로 PDF 병합…");
+        item.dwTypeData = const_cast<LPWSTR>(files_.size() == 1 ? L"XDF로 PDF 분할…" : L"XDF로 PDF 병합…");
         if (!InsertMenuItemW(menu, index, TRUE, &item)) return LastErrorResult();
         offered_ = true;
         return MAKE_HRESULT(SEVERITY_SUCCESS, 0, 1);
@@ -303,7 +303,7 @@ public:
         if (flags == GCS_VERBW) return StringCchCopyW(reinterpret_cast<LPWSTR>(name), length, VerbW());
         if (flags == GCS_VERBA) return StringCchCopyA(name, length, VerbA());
         if (flags == GCS_HELPTEXTW) return StringCchCopyW(reinterpret_cast<LPWSTR>(name), length, files_.size() == 1 ? L"선택한 PDF를 별도 창에서 분할합니다." : L"선택한 PDF를 별도 창에서 병합합니다.");
-        if (flags == GCS_HELPTEXTA) return StringCchCopyA(name, length, files_.size() == 1 ? "Split the selected PDF in ADF." : "Merge the selected PDFs in ADF.");
+        if (flags == GCS_HELPTEXTA) return StringCchCopyA(name, length, files_.size() == 1 ? "Split the selected PDF in XDF." : "Merge the selected PDFs in XDF.");
         return E_INVALIDARG;
     }
     HRESULT STDMETHODCALLTYPE InvokeCommand(CMINVOKECOMMANDINFO* info) override {

@@ -48,7 +48,7 @@ class SourceBrowser(QWidget):
         self.search.textChanged.connect(self.filter_files)
         for index, filename in enumerate(source_files):
             archive_path = self.sources_path/filename
-            root = QTreeWidgetItem(self.tree, ['ADF 프로그램 소스' if index == 0 else '외부 라이브러리 원본 소스'])
+            root = QTreeWidgetItem(self.tree, ['XDF 프로그램 소스' if index == 0 else '외부 라이브러리 원본 소스'])
             root.setToolTip(0, filename)
             root.setData(0, Qt.ItemDataRole.UserRole, (filename, None))
             folders = {'': root}
@@ -103,7 +103,7 @@ class SourceBrowser(QWidget):
             self.preview.setPlainText('이 소스 묶음은 설치 EXE에 포함되어 있습니다.\n\n'
                 '왼쪽 목차에서 파일을 선택하면 앱 안에서 읽을 수 있습니다.\n'
                 '묶음 전체를 보관하려면 아래의 선택한 소스 저장을 누르세요.\n\n'
-                'ADF 사용을 위해 압축 프로그램을 설치하거나 이 파일을 따로 받을 필요는 없습니다.')
+                'XDF 사용을 위해 압축 프로그램을 설치하거나 이 파일을 따로 받을 필요는 없습니다.')
             return
         try:
             with zipfile.ZipFile(self.sources_path/filename) as archive:

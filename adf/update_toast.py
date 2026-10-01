@@ -24,20 +24,20 @@ def snooze(settings):
 
 
 def snooze_remaining(settings):
-    """Seconds until the notice may show again; shared by ADF's windows and the background agent."""
+    """Seconds until the notice may show again; shared by XDF's windows and the background agent."""
     settings.sync()
     return max(0.0, settings.value('updates/snooze_until', 0.0, type=float) - datetime.now().timestamp())
 
 
 def manual_reason(service):
-    """The notification title and the sentence that say why ADF does not install this version itself."""
+    """The notification title and the sentence that say why XDF does not install this version itself."""
     return {
-        'blocked': (f'ADF 새 버전 {service.package.version}',
+        'blocked': (f'XDF 새 버전 {service.package.version}',
                     'Windows 스마트 앱 컨트롤은 서명되지 않은 업데이트를 막으므로 자동으로 설치하지 않습니다.'),
-        'security': ('ADF 업데이트를 설치하지 못했습니다', 'Windows 보안 설정이 업데이트 설치 프로그램을 막았습니다.'),
-        'mismatch': ('ADF 업데이트를 받지 못했습니다',
+        'security': ('XDF 업데이트를 설치하지 못했습니다', 'Windows 보안 설정이 업데이트 설치 프로그램을 막았습니다.'),
+        'mismatch': ('XDF 업데이트를 받지 못했습니다',
                      '받은 업데이트 파일이 두 번 모두 공개된 파일과 달라 자동으로 받지 않습니다.'),
-    }.get(service.reason, ('ADF 업데이트를 설치하지 못했습니다', '자동 업데이트를 설치하지 못했습니다.'))
+    }.get(service.reason, ('XDF 업데이트를 설치하지 못했습니다', '자동 업데이트를 설치하지 못했습니다.'))
 
 
 def toast_content(service, following=False):
@@ -49,12 +49,12 @@ def toast_content(service, following=False):
         title, reason = manual_reason(service)
         return title, reason, '다운로드 페이지', True
     if service.state == 'ready':
-        return (f'ADF {package.version} 업데이트 준비 완료',
-                '지금 업데이트하면 ADF를 잠시 닫았다가 보던 문서를 다시 엽니다.', '업데이트', True)
+        return (f'XDF {package.version} 업데이트 준비 완료',
+                '지금 업데이트하면 XDF를 잠시 닫았다가 보던 문서를 다시 엽니다.', '업데이트', True)
     if following and service.state == 'downloading':
-        return (f'ADF {package.version} 받는 중 · {service.percent}%',
+        return (f'XDF {package.version} 받는 중 · {service.percent}%',
                 '다 받으면 바로 설치합니다. 계속 작업할 수 있습니다.', '받는 중…', False)
-    return (f'ADF 새 버전 {package.version}이 나왔습니다',
+    return (f'XDF 새 버전 {package.version}이 나왔습니다',
             '업데이트를 누르면 받아서 바로 설치합니다. 받는 동안 계속 작업할 수 있습니다.', '업데이트', True)
 
 
@@ -74,7 +74,7 @@ class UpdateToast(QFrame):
                                 | Qt.WindowType.WindowStaysOnTopHint)
             self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
             self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-            self.setWindowTitle('ADF 업데이트')
+            self.setWindowTitle('XDF 업데이트')
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 14, 16, 14)
         layout.setSpacing(4)
@@ -106,8 +106,8 @@ class UpdateToast(QFrame):
             QPushButton { border-radius: 8px; padding: 6px 12px; font-size: 9pt; }
             QPushButton#updateToastLater { background: transparent; color: #c9c9cf; border: 1px solid #5c5c62; }
             QPushButton#updateToastLater:hover { background: #4a4a4f; }
-            QPushButton#updateToastProceed { background: white; color: #26262a; border: none; font-weight: 600; }
-            QPushButton#updateToastProceed:hover { background: #e6e6ea; }
+            QPushButton#updateToastProceed { background: #d83c20; color: white; border: none; font-weight: 600; }
+            QPushButton#updateToastProceed:hover { background: #b8321a; }
             QPushButton#updateToastProceed:disabled { background: #6a6a70; color: #d0d0d4; }
         ''')
         self.animation = QPropertyAnimation(self, b'pos', self)

@@ -1,0 +1,29 @@
+XDF design exploration, round 3 — 2026-10-01
+
+Research: official American company identities and source artwork.
+Runway: https://runway.com/brand-guidelines
+Replit: https://replit.com/blog/rebranding-replit-inspiration-to-action
+StockX: https://stockx.com/about/brand-assets/
+SpaceX: https://www.spacex.com/
+A24: https://a24films.com/
+
+Runway's counterforms, StockX's controlled X silhouette, SpaceX's diagonal
+contrast and A24's custom lettering were inspected visually. Replit's designer
+account was read for its approach to carrying a primitive through an identity.
+These are design interpretations and references, not an association with XDF.
+
+Execution mode: built-in image_gen.
+Input: official-source reference board, input.png.
+Exact prompts:
+
+01 / OPEN X
+Use case: logo-brand.
+Design a new ORIGINAL capital X logomark for XDF, a contemporary desktop document workspace. The attached image is a board of actual US brands, used ONLY as a reference for the degree of typographic craft and formal sophistication. Do not use any of their exact shapes, names or symbols in the output.
+Direction: a sculptural OPEN X, with substantial smooth bands and deliberately drawn interior counterforms. It should feel like a custom letter carved by a leading New York identity designer: compact, calm, confident, slightly unexpected. The four arms must clearly read as X. Resolve the crossing with two elegantly shaped open apertures instead of a generic crossing of diagonal strokes. Let the edges blend controlled straight cuts with precise concave curves. The outer terminals are restrained, with subtly rounded corners and no inflated flaring. The interior apertures are roomy enough to remain legible at app icon size. Optical balance matters more than rigid symmetry.
+One single LARGE mark, centered in a square with 15% clear margin. ONE solid flat vermilion #F04B2D. Truly transparent RGBA background. Flat front-on artwork with clean vector-like contours. No words or labels, no shading, no texture, no gradients, no shadows, no enclosing tile, no presentations or mockups. No ordinary crossed lines, no close-button icon, no petals, no arrows, no sportswear swoosh. Make an original finished logomark with a memorable silhouette.
+
+02 / CUSTOM WORDMARK
+Use case: logo-brand.
+Design an ORIGINAL XDF wordmark for a premium creative document workspace, as if commissioned from an excellent independent New York brand studio. The attached board of actual US brands is ONLY a reference for professional typographic craft and distinctive letter architecture. Do not copy or combine their logos.
+The exact text is "XDF", in uppercase, as one coherent custom logotype. Make the X the star: a compact sculpted capital X with deliberate diagonal weight contrast, one elegant inward-curving diagonal and one precise angular diagonal, an unexpected but restrained waist and carefully cut terminals. The D and F must be custom drawn to belong to this X: optically squared D with a generous counter and softened corners, a decisive F with specific arm lengths and an architectural junction. All three letters are the same cap height and kerned with care, an identity designed from letterform and negative space. Confident, cultural, intelligent contemporary software energy. The X itself should make an outstanding standalone app mark.
+Use ONE uniform flat vermilion #F04B2D for all three letters on a truly transparent RGBA background. Wide horizontal composition with generous clear margin around the large XDF lettering. Flat front-on precise vector-like artwork. No extra standalone symbol beside or above the wordmark, no additional words, no labels, no slogan, no gradients, no shadows, no textures, no enclosing box. No stock font, no racing italic, no military stencil, no flared sports logo. Prioritize elegant original forms, coherent rhythm and optically balanced spacing.

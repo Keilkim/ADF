@@ -1,0 +1,41 @@
+XDF logo research, round 2 — 2026-10-01
+
+Deliverable: us-brand-references-v2.png.
+This is a visual comparison of actual brand references, not generated XDF designs.
+The accompanying observations are design interpretations for XDF.
+
+StockX
+https://stockx.com/about/brand-assets/
+X mark extracted from the SVG labeled StockX Logo served by stockx.com.
+Focus: asymmetric crossing, controlled width and recognizable silhouette.
+
+SpaceX
+https://www.spacex.com/
+Header wordmark SVG extracted from the official homepage.
+Focus: unequal diagonals, a single directional curve and custom lettering.
+
+A24
+https://a24films.com/
+Header wordmark SVG extracted from the official homepage.
+Focus: distinctive letter architecture and spacing across a short name.
+
+Dropbox
+https://brand.dropbox.com/logo
+Official glyph image loaded from the brand guidelines page:
+https://cdn.prod.website-files.com/66c503d081b2f012369fc5d2/674000d6c0a42d41f8c331be_dropbox-2-logo-png-transparent-p-500.png
+Focus: repeated planar geometry and meaningful central negative space.
+
+Oakley
+https://stores.oakley.com/us/ca/los-angeles/100-citadel-dr
+Official store-listing logo image:
+https://a.mktgcdn.com/p/dvXHxfOT0OillcoMXZj9WQJrCrxOx-XSvZa0jTkhNRM/1730x1730.jpg
+Focus: contrast between outer contour and inner aperture, optical weight.
+
+Xsolla
+https://www.pentagram.com/work/xsolla
+Brand application image from the identity designers' case study.
+Focus: consistent geometric language across mark, wordmark and product UI.
+
+The references retain their original colors and proportions. XDF retains its
+requested vermilion #F04B2D. The comparison does not imply any association or
+endorsement by the represented companies. Brand marks belong to their owners.

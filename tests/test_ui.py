@@ -717,19 +717,13 @@ class DesktopWorkflowTests(unittest.TestCase):
         self.window.resize(1020, 700)
         self.app.processEvents()
         toolbar.reflow(1020)
-        self.assertTrue(toolbar._two_rows)
+        self.assertFalse(toolbar._two_rows)
         rows = self.toolbar_rows()
-        self.assertGreaterEqual(len(rows), 2)
+        self.assertEqual(len(rows), 1)
         self.assertEqual(toolbar.height(), 46+38*(len(rows)-1))
         self.assertEqual(rows[0], toolbar.file_items)
-        # Rows wrap between tool groups; dividers only separate groups within a row.
-        for group in toolbar.edit_groups:
-            row = next(row for row in rows if group[0] in row)
-            start = row.index(group[0])
-            self.assertEqual(row[start:start+len(group)], group)
-        for row in rows[1:]:
-            self.assertNotIn(row[0], toolbar.dividers)
-            self.assertNotIn(row[-1], toolbar.dividers)
+        self.assertEqual(toolbar.edit_items, [])
+        self.assertTrue(self.window.view.viewport().rect().contains(self.window.toolbox.geometry()))
         # Leave room for wider offscreen/platform fallback fonts as well.
         self.window.resize(2200, 700)
         self.app.processEvents()
@@ -754,20 +748,232 @@ class DesktopWorkflowTests(unittest.TestCase):
         self.assertEqual(file_keys[file_keys.index('save_as')+1], 'compress')
         self.assertEqual(toolbar.file_items[file_keys.index('compress')].toolButtonStyle(),
                          Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.assertEqual([keys(group) for group in toolbar.edit_groups], [
-            ['split', 'extract'], ['rotate', 'rotate_left'], ['number', 'number_remove'],
-            ['image', 'text', 'pen', 'text_add', 'eraser'], ['snap', 'region_tool', 'stamps']])
+        self.assertEqual(toolbar.edit_items, [])
+        self.assertEqual(file_keys[file_keys.index('markdown')+1], 'number')
+        self.assertEqual(toolbar.file_items[file_keys.index('number')].toolButtonStyle(),
+                         Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.assertEqual(self.window.actions['number'].text(), '페이지 번호 및 머리말 편집')
+        self.assertEqual(list(self.window.toolbox.buttons), ['image','text','object_tool','pen','eraser','snap','stamps'])
         self.assertEqual(toolbar.tail_items, [])
         self.assertNotIn('replace', file_keys + keys(toolbar.edit_items))
 
     def test_pen_eraser_and_capture_turn_off_when_pressed_again(self):
-        for key in ('pen', 'eraser', 'region_tool'):
+        for key in ('pen', 'eraser', 'region_tool', 'object_tool'):
             with self.subTest(tool=key):
                 self.window.actions[key].trigger()
                 self.assertEqual(self.window.pointer_mode, key)
                 self.window.actions[key].trigger()
                 self.assertEqual(self.window.pointer_mode, 'select_tool')
                 self.assertTrue(self.window.actions['select_tool'].isChecked())
+
+    def test_floating_toolbox_moves_stays_visible_and_retains_tool_toggles(self):
+        toolbox = self.window.toolbox
+        original_side = toolbox.side
+        original_fraction = toolbox.fraction
+        self.addCleanup(lambda: self.window.settings.setValue('toolbox_side',original_side))
+        self.addCleanup(lambda: self.window.settings.setValue('toolbox_height',original_fraction))
+        QTest.mouseDClick(toolbox.grip,Qt.MouseButton.LeftButton)
+        self.assertNotEqual(toolbox.side,original_side)
+        self.assertTrue(self.window.view.viewport().rect().contains(toolbox.geometry()))
+        self.window.resize(1080,680)
+        self.app.processEvents()
+        self.assertTrue(self.window.view.viewport().rect().contains(toolbox.geometry()))
+        QTest.mouseClick(toolbox.buttons['pen'],Qt.MouseButton.LeftButton,pos=QPoint(15,15))
+        self.assertTrue(self.window.view.pen.enabled)
+        QTest.mouseClick(toolbox.buttons['text'],Qt.MouseButton.LeftButton)
+        self.assertFalse(self.window.view.pen.enabled)
+        self.assertTrue(self.window.view.text_mode)
+        QTest.mouseClick(toolbox.buttons['object_tool'],Qt.MouseButton.LeftButton)
+        self.assertFalse(self.window.view.text_mode)
+        self.assertTrue(self.window.view.object_mode)
+        self.window.toggle_hand_tool()
+        self.window.toggle_hand_tool()
+        self.assertTrue(self.window.view.object_mode)
+
+    def test_shape_click_drag_delete_and_undo_preserve_overlapping_text(self):
+        source = self.root/'shape.pdf'
+        with pymupdf.open() as doc:
+            page = doc.new_page(width=360,height=480)
+            page.draw_rect((80,180,180,260),fill=(.9,.5,.2))
+            page.insert_text((90,220),'Keep text')
+            doc.save(source)
+        self.assertTrue(self.window.open_path(source))
+        self.window.set_view_mode('single')
+        self.window.view.set_snap_enabled(False)
+        self.window.actions['object_tool'].trigger()
+        view = self.window.view
+        self.app.processEvents()
+        def point(x,y):
+            return view.mapFromScene(view.pages[0].mapToScene(QPointF(x,y)))
+        QTest.mouseClick(view.viewport(),Qt.MouseButton.LeftButton,pos=point(130,240))
+        self.assertIsNotNone(view.object_selection)
+        before = pymupdf.Rect(self.window.document.doc[0].get_drawings()[0]['rect'])
+        QTest.mousePress(view.viewport(),Qt.MouseButton.LeftButton,pos=point(130,240))
+        QTest.mouseMove(view.viewport(),point(170,290))
+        QTest.mouseRelease(view.viewport(),Qt.MouseButton.LeftButton,pos=point(170,290))
+        after = self.window.document.doc[0].get_drawings()[0]['rect']
+        self.assertAlmostEqual(after.x0-before.x0,40,delta=1)
+        self.assertAlmostEqual(after.y0-before.y0,50,delta=1)
+        self.assertIn('Keep text',self.window.document.doc[0].get_text())
+        self.assertIsNotNone(view.object_selection)
+        delete = view.mapFromScene(view.object_selection.mapToScene(view.object_selection.delete_rect().center()))
+        QTest.mouseClick(view.viewport(),Qt.MouseButton.LeftButton,pos=delete)
+        self.assertEqual(self.window.document.doc[0].get_drawings(),[])
+        self.assertEqual(self.window.document.page_count,1)
+        self.assertIn('Keep text',self.window.document.doc[0].get_text())
+        self.window.undo()
+        self.assertEqual(len(self.window.document.doc[0].get_drawings()),1)
+        self.window.undo()
+        self.assertEqual(tuple(self.window.document.doc[0].get_drawings()[0]['rect']),tuple(before))
+
+    def test_shape_palette_edits_colors_width_and_none_without_affecting_text(self):
+        source = self.root/'shape-properties.pdf'
+        with pymupdf.open() as doc:
+            page = doc.new_page(width=360,height=480)
+            page.draw_rect((50,170,150,250),color=(1,0,0),fill=(0,1,0))
+            page.insert_text((60,215),'Keep text')
+            image = io.BytesIO()
+            Image.new('RGB',(10,10),'blue').save(image,format='PNG')
+            page.insert_image((40,300,90,350),stream=image.getvalue())
+            doc.save(source)
+        original = source.read_bytes()
+        self.assertTrue(self.window.open_path(source))
+        self.window.set_view_mode('single')
+        self.window.actions['object_tool'].trigger()
+        view = self.window.view
+        properties = self.window.shape_properties
+        self.assertFalse(properties.isVisible())
+        self.app.processEvents()
+        point = view.mapFromScene(view.pages[0].mapToScene(QPointF(100,235)))
+        QTest.mouseClick(view.viewport(),Qt.MouseButton.LeftButton,pos=point)
+        self.assertIsNotNone(view.object_selection)
+        self.assertFalse(properties.isVisible())
+        options = self.window.toolbox.buttons['object_tool'].options
+        self.assertTrue(options.isEnabled())
+        QTest.mouseClick(options,Qt.MouseButton.LeftButton)
+        self.assertTrue(properties.isVisible())
+        self.assertEqual(self.window.pointer_mode,'object_tool')
+        self.assertTrue(view.viewport().rect().contains(properties.geometry()))
+        QTest.mouseClick(properties.fill.button,Qt.MouseButton.LeftButton)
+        self.assertTrue(properties.fill.menu.isVisible())
+        menu = properties.fill.menu
+        self.assertFalse(menu.preset_grid.isVisible())
+        original_revision = self.window.document.revision
+        QTest.keyClick(menu.field,Qt.Key.Key_Down)
+        self.assertEqual(self.window.document.revision,original_revision)
+        self.assertEqual(self.window.document.doc[0].get_drawings()[0]['fill'],(0.,1.,0.))
+        menu.hex.setText('#zzzzzz')
+        QTest.mouseClick(menu.apply,Qt.MouseButton.LeftButton)
+        self.assertTrue(menu.isVisible())
+        self.assertEqual(self.window.document.revision,original_revision)
+        QTest.keyClick(menu.hex,Qt.Key.Key_Escape)
+        self.assertFalse(menu.isVisible())
+        self.assertTrue(properties.isVisible())
+        QTest.mouseClick(properties.fill.button,Qt.MouseButton.LeftButton)
+        QTest.mouseClick(menu.preset_toggle,Qt.MouseButton.LeftButton)
+        self.assertTrue(menu.preset_grid.isVisible())
+        blue = next(button for button,color in properties.fill.menu.buttons if color == '#4177de')
+        QTest.mouseClick(blue,Qt.MouseButton.LeftButton)
+        drawing = self.window.document.doc[0].get_drawings()[0]
+        for actual,expected in zip(drawing['fill'],(65/255,119/255,222/255)):
+            self.assertAlmostEqual(actual,expected,places=6)
+        self.assertFalse(properties.fill.menu.isVisible())
+        self.assertTrue(properties.isVisible())
+        revision = self.window.document.revision
+        QTest.mouseClick(properties.fill.button,Qt.MouseButton.LeftButton)
+        QTest.mouseClick(blue,Qt.MouseButton.LeftButton)
+        self.assertEqual(self.window.document.revision,revision)
+        QTest.mouseClick(options,Qt.MouseButton.LeftButton)
+        self.assertFalse(properties.isVisible())
+        self.assertIsNotNone(view.object_selection)
+        QTest.mouseClick(options,Qt.MouseButton.LeftButton)
+        self.assertTrue(properties.isVisible())
+        properties.stroke_width.setValue(4.)
+        self.assertAlmostEqual(self.window.document.doc[0].get_drawings()[0]['width'],4.)
+        self.assertTrue(properties.isVisible())
+        QTest.mouseClick(properties.stroke.button,Qt.MouseButton.LeftButton)
+        QTest.mouseClick(properties.stroke.none_button,Qt.MouseButton.LeftButton)
+        self.assertEqual(self.window.document.doc[0].get_drawings()[0]['type'],'f')
+        self.assertFalse(properties.stroke_width.isEnabled())
+        self.assertFalse(properties.fill.none_button.isEnabled())
+        self.assertEqual(self.window.document.doc[0].get_text().strip(),'Keep text')
+        QTest.keyClick(properties.fill.button,Qt.Key.Key_Escape)
+        self.assertFalse(properties.isVisible())
+        self.assertIsNotNone(view.object_selection)
+        QTest.mouseClick(options,Qt.MouseButton.LeftButton)
+        self.assertTrue(properties.isVisible())
+        # Clicking unused toolbar space closes the panel without losing the
+        # selected object or toggling the selection tool.
+        QTest.mouseClick(self.window.toolbar,Qt.MouseButton.LeftButton,
+                         pos=QPoint(self.window.toolbar.width()-10,self.window.toolbar.height()//2))
+        self.assertFalse(properties.isVisible())
+        self.assertIsNotNone(view.object_selection)
+        QTest.mouseClick(options,Qt.MouseButton.LeftButton)
+        self.assertTrue(properties.isVisible())
+        view.select_object(0,1)
+        self.assertFalse(properties.isVisible())
+        self.assertFalse(options.isEnabled())
+        self.window.undo()
+        self.assertEqual(self.window.document.doc[0].get_drawings()[0]['type'],'fs')
+        self.window.undo()
+        self.assertAlmostEqual(self.window.document.doc[0].get_drawings()[0]['width'],1.)
+        self.window.undo()
+        self.assertEqual(self.window.document.doc[0].get_drawings()[0]['fill'],(0.,1.,0.))
+        self.assertFalse(self.window.document.can_undo)
+        view.select_object(0,0)
+        QTest.mouseClick(options,Qt.MouseButton.LeftButton)
+        QTest.mouseClick(properties.fill.button,Qt.MouseButton.LeftButton)
+        properties.fill.menu.hex.setText('#E44768')
+        QTest.mouseClick(properties.fill.menu.apply,Qt.MouseButton.LeftButton)
+        self.assertFalse(properties.fill.menu.isVisible())
+        self.assertTrue(properties.isVisible())
+        for actual,expected in zip(self.window.document.doc[0].get_drawings()[0]['fill'],(228/255,71/255,104/255)):
+            self.assertAlmostEqual(actual,expected,places=6)
+        self.window.undo()
+        self.assertFalse(self.window.document.can_undo)
+        self.assertEqual(source.read_bytes(),original)
+
+    def test_toolbox_migrates_to_upper_right_and_remembers_later_manual_moves(self):
+        from PySide6.QtCore import QSettings
+        from adf.toolbox_widgets import FloatingToolbox
+        settings = QSettings(str(self.root/'toolbox.ini'),QSettings.Format.IniFormat)
+        settings.setValue('toolbox_side','left')
+        settings.setValue('toolbox_height',.5)
+        toolbox = FloatingToolbox(self.window.view,self.window.actions,settings,self.window.show_pen_options)
+        self.addCleanup(toolbox.deleteLater)
+        self.assertEqual(toolbox.side,'right')
+        self.assertEqual(toolbox.fraction,0.)
+        self.assertEqual(toolbox.y(),8)
+        self.assertEqual(toolbox.x(),self.window.view.viewport().width()-toolbox.width()-14)
+        toolbox.side = 'left'
+        toolbox.fraction = .4
+        toolbox.position()
+        toolbox.remember_position()
+        again = FloatingToolbox(self.window.view,self.window.actions,settings,self.window.show_pen_options)
+        self.addCleanup(again.deleteLater)
+        self.assertEqual(again.side,'left')
+        self.assertAlmostEqual(again.fraction,toolbox.fraction)
+
+    def test_number_editor_includes_removal_and_cancellation_leaves_document_intact(self):
+        from adf.dialogs import MarkRemoveDialog
+        self.assertTrue(self.window.edit(lambda: self.window.document.number_pages(range(6))))
+        dialog = NumberingDialog(self.window.document,parent=self.window)
+        self.assertEqual(dialog.windowTitle(),'페이지 번호 및 머리말 편집')
+        self.assertTrue(dialog.remove_button.isEnabled())
+        with patch.object(MarkRemoveDialog,'exec',return_value=0):
+            dialog._remove_items()
+        self.assertEqual(dialog.remove_ids,[])
+        self.assertEqual(self.window.document.numbered_pages(),list(range(6)))
+        dialog.reject()
+        def remove(editor):
+            with patch.object(MarkRemoveDialog,'exec',lambda inner: 1):
+                editor._remove_items()
+            return editor.result()
+        with patch.object(NumberingDialog,'exec',remove):
+            self.window.number()
+        self.assertEqual(self.window.document.numbered_pages(),[])
+        self.window.undo()
+        self.assertEqual(self.window.document.numbered_pages(),list(range(6)))
 
     def test_remove_numbers_only_removes_numbers_adf_added(self):
         with patch('adf.app.QMessageBox.information') as information:
@@ -1060,6 +1266,9 @@ class DesktopWorkflowTests(unittest.TestCase):
             self.assertEqual(self.window.text_value.font().family(), self.window.edit_font_family)
             blank = self.window.view.mapFromScene(self.window.view.pages[index].mapToScene(QPointF(290, 400)))
             QTest.mouseClick(self.window.view.viewport(), Qt.MouseButton.LeftButton, pos=blank)
+            self.assertTrue(self.window.text_selection[1].get('new'))
+            self.assertEqual(self.window.text_value.toPlainText(), '')
+            self.window.finish_text_selection()
             self.assertTrue(self.window.textbar.isHidden())
             self.assertIsNone(self.window.view.text_placement)
             words = ' '.join(self.window.document.doc[index].get_text().split())
@@ -1226,7 +1435,10 @@ class DesktopWorkflowTests(unittest.TestCase):
         wheel(120)
         self.assertEqual(self.window.current, 0)
         self.assertGreater(self.window.page_spin.mapTo(self.window, QPoint()).y(), view.mapTo(self.window, view.rect().bottomLeft()).y())
-        self.assertEqual(list(self.window.side_buttons), ['rotate_left','rotate','blank','replace','delete'])
+        self.assertEqual(list(self.window.side_buttons), ['split','extract','blank','replace','delete'])
+        self.assertEqual(list(self.window.rotation_buttons), ['rotate_left','rotate'])
+        self.assertLess(self.window.hand_button.x(),self.window.rotation_buttons['rotate_left'].x())
+        self.assertLess(self.window.rotation_buttons['rotate_left'].x(),self.window.rotation_buttons['rotate'].x())
         self.window.actions['rotate_left'].trigger()
         self.assertEqual(self.window.document.doc[0].rotation, 270)
         self.window.actions['rotate'].trigger()
@@ -1319,6 +1531,64 @@ class DesktopWorkflowTests(unittest.TestCase):
         self.assertEqual(self.window.document.doc[1].get_text(), '')
         self.assertEqual(len(self.window.document.doc[1].get_images()), 1)
         self.assertIn('needle page 2', self.window.document.doc[2].get_text())
+        self.assert_source_unchanged()
+
+    def test_thumbnails_move_pages_between_document_windows(self):
+        from adf.viewer import PAGES_MIME
+        other_path = self.root / 'other.pdf'
+        with pymupdf.open() as doc:
+            for index in range(2):
+                doc.new_page(width=300, height=400).insert_text((40, 60), f"other page {index + 1}", fontsize=16)
+            doc.save(other_path)
+        other = MainWindow(smoke=True)
+        other.error = lambda error: self.errors.append(str(error))
+        try:
+            other.show()
+            self.assertTrue(other.open_path(other_path))
+            thumbs = self.window.thumbnails
+            thumbs.clearSelection()
+            for row in (1, 3):
+                thumbs.item(row).setSelected(True)
+            dropped = []
+            def deliver(drag_self, *args):
+                # Stand in for the operating system delivering the drag to the other window.
+                mime = drag_self.mimeData()
+                target = other.thumbnails
+                point = target.visualItemRect(target.item(0)).center()
+                point = QPointF(point.x(), target.visualItemRect(target.item(0)).bottom() - 4)
+                enter = QDragEnterEvent(point.toPoint(), Qt.DropAction.MoveAction, mime, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+                target.dragEnterEvent(enter)
+                self.assertTrue(enter.isAccepted())
+                drop = QDropEvent(point, Qt.DropAction.MoveAction, mime, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+                target.dropEvent(drop)
+                dropped.append(drop.isAccepted())
+                return Qt.DropAction.MoveAction if drop.isAccepted() else Qt.DropAction.IgnoreAction
+            with patch('adf.viewer.QDrag.exec', deliver):
+                thumbs.startDrag(Qt.DropAction.MoveAction)
+            self.assertEqual(dropped, [True])
+            self.assertEqual([page.get_text().splitlines()[0] for page in other.document.doc],
+                             ['other page 1', 'needle page 2', 'needle page 4', 'other page 2'])
+            self.assertEqual(other.selected_pages(), [1, 2])
+            self.assertEqual([page.get_text().splitlines()[0] for page in self.window.document.doc],
+                             ['needle page 1', 'needle page 3', 'needle page 5', 'needle page 6'])
+            self.window.undo()
+            self.assertEqual(self.window.document.page_count, 6)
+            other.undo()
+            self.assertEqual(other.document.page_count, 2)
+            # A move never empties the source document, and a refused drop leaves it untouched.
+            self.window.remove_moved_pages(list(range(6)))
+            self.assertEqual(self.window.document.page_count, 6)
+            mime = QMimeData()
+            mime.setData(PAGES_MIME, b'not a pdf')
+            drop = QDropEvent(QPointF(10, 10), Qt.DropAction.MoveAction, mime, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+            other.thumbnails.dropEvent(drop)
+            self.assertFalse(drop.isAccepted())
+            self.assertEqual(other.document.page_count, 2)
+            self.errors.clear()
+        finally:
+            with patch.object(other, "maybe_save", return_value=True):
+                other.close()
+            other.deleteLater()
         self.assert_source_unchanged()
 
     def test_mixed_file_order_and_clipboard_page_are_one_edit_each(self):
