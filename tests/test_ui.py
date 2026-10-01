@@ -1179,6 +1179,60 @@ class DesktopWorkflowTests(unittest.TestCase):
         self.assertFalse(properties.draw_buttons['line'].isChecked())
         self.assertTrue(view.object_mode)
 
+    def test_escape_cancels_an_unfinished_shape_without_committing_on_release(self):
+        view, point = self.object_page('cancel-drawing.pdf', lambda doc, page: None)
+        self.window.choose_shape_kind('rect')
+        QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=point(100, 150))
+        QTest.mouseMove(view.viewport(), point(200, 230))
+        self.assertIsNotNone(view.shape_draft)
+        self.press_escape()
+        self.assertIsNone(view.shape_draft)
+        QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=point(200, 230))
+        self.assertEqual(self.window.document.doc[0].get_drawings(), [])
+        self.assertFalse(self.window.document.dirty)
+
+    def test_changing_tool_or_reloading_clears_an_unfinished_shape(self):
+        for action in ('tool', 'reload'):
+            with self.subTest(action=action):
+                view, point = self.object_page('cancel-'+action+'.pdf', lambda doc, page: None)
+                self.window.choose_shape_kind('rect')
+                QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=point(100, 150))
+                QTest.mouseMove(view.viewport(), point(200, 230))
+                self.assertIsNotNone(view.shape_draft)
+                if action == 'tool':
+                    self.window.change_pointer('select_tool')
+                else:
+                    view.load(self.window.document)
+                self.assertIsNone(view.shape_draft)
+                QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=point(200, 230))
+                self.assertEqual(self.window.document.doc[0].get_drawings(), [])
+                self.assertFalse(self.window.document.dirty)
+
+    def test_escape_cancels_drawing_with_the_shape_panel_open(self):
+        view, point = self.object_page('cancel-panel.pdf', lambda doc, page: None)
+        self.window.show_shape_options()
+        QTest.mouseClick(self.window.shape_properties.draw_buttons['rect'], Qt.MouseButton.LeftButton)
+        QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=point(100, 150))
+        QTest.mouseMove(view.viewport(), point(200, 230))
+        self.assertIsNotNone(view.shape_draft)
+        self.press_escape()
+        self.assertIsNone(view.shape_draft)
+        QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=point(200, 230))
+        self.assertEqual(self.window.document.doc[0].get_drawings(), [])
+        self.assertFalse(self.window.document.dirty)
+
+    def test_delete_in_node_editing_removes_the_shape_and_preserves_the_page(self):
+        view, point = self.object_page('delete-nodes.pdf', lambda doc, page: page.draw_rect((80, 180, 180, 260)))
+        QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point(80, 220))
+        QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point(80, 220))
+        self.assertIsNotNone(view.node_editor)
+        self.window.toolbox.buttons['object_tool'].setFocus()
+        self.window.delete_selection()
+        self.assertEqual(self.window.document.page_count, 1)
+        self.assertEqual(self.window.document.doc[0].get_drawings(), [])
+        self.window.undo()
+        self.assertEqual(len(self.window.document.doc[0].get_drawings()), 1)
+
     def test_toolbox_migrates_to_upper_right_and_remembers_later_manual_moves(self):
         from PySide6.QtCore import QSettings
         from adf.toolbox_widgets import FloatingToolbox

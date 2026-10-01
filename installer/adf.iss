@@ -1,6 +1,6 @@
 #define AppName "XDF"
 #ifndef AppVersion
-  #define AppVersion "0.3.39"
+  #define AppVersion "0.3.40"
 #endif
 #define RepoRoot AddBackslash(SourcePath) + ".."
 #ifndef AppBuildDir

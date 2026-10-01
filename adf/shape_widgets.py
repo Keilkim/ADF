@@ -480,7 +480,10 @@ class ShapeProperties(QFrame):
             if child_window in (self.fill.menu,self.stroke.menu) or child_window is not None and self.isAncestorOf(child_window):
                 return False
             if kind == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
-                self.hide()
+                if self.view.shape_draft is not None:
+                    self.view.cancel_shape()
+                else:
+                    self.hide()
                 self.view.setFocus()
                 event.accept()
                 return True

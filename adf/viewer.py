@@ -676,6 +676,7 @@ class PdfView(QGraphicsView):
 
     def layout_pages(self):
         self.pen.cancel()
+        self.cancel_shape()
         self.clear_snap_guides()
         if not self.pages:
             return
@@ -1507,6 +1508,7 @@ class PdfView(QGraphicsView):
         self.objectSelectionChanged.emit(target)
 
     def clear_object_selection(self, notify=True):
+        self.cancel_shape()
         for name in ('object_selection', 'node_editor'):
             item = getattr(self, name)
             if item is not None:
@@ -1519,6 +1521,14 @@ class PdfView(QGraphicsView):
         self.clear_snap_guides()
         if notify:
             self.objectSelectionChanged.emit(None)
+
+    def cancel_shape(self):
+        draft, self.shape_draft = self.shape_draft, None
+        if draft is not None:
+            if draft.scene() is not None:
+                draft.scene().removeItem(draft)
+            draft.setParentItem(None)
+            draft.deleteLater()
 
     def begin_shape(self, item, scene_pos):
         from .object_widgets import ShapeDraft

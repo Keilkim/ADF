@@ -1127,8 +1127,8 @@ class MainWindow(QMainWindow):
         menu.exec(self.thumbnails.mapToGlobal(pos))
 
     def delete_selection(self):
-        if self.view.object_selection is not None:
-            selection = self.view.object_selection
+        selection = self.view.object_selection or self.view.node_editor
+        if selection is not None:
             index, object_id = selection.index, selection.object_id
             self.edit(lambda: self.document.remove_object(index,object_id))
             return
@@ -2155,6 +2155,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue('shape_defaults', json.dumps(style))
 
     def choose_shape_kind(self, kind):
+        self.view.cancel_shape()
         if kind is not None and self.pointer_mode != 'object_tool' and not self.change_pointer('object_tool'):
             self.shape_properties.set_draw_kind(None)
             return
@@ -2324,7 +2325,9 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, self.fullscreen.exit)
 
     def escape(self):
-        if self.shape_properties.isVisible():
+        if self.view.shape_draft is not None:
+            self.view.cancel_shape()
+        elif self.shape_properties.isVisible():
             self.shape_properties.hide()
             self.view.setFocus()
         elif hasattr(self, 'pen_menu') and self.pen_menu.isVisible():
