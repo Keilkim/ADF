@@ -120,11 +120,12 @@ def check_toolbox_controls(window, folder, output):
     assert options.isEnabled()
     QTest.mouseClick(options, Qt.MouseButton.LeftButton)
     assert properties.isVisible() and view.object_mode and properties.hint.isVisible()
-    assert not properties.fill.isEnabled()
+    assert properties.fill.isEnabled() and properties.target is None
+    assert all(button.isEnabled() for button in properties.draw_buttons.values())
     point = view.mapFromScene(view.pages[0].mapToScene(QPointF(130, 240)))
     QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
     assert view.object_selection is not None and properties.isVisible()
-    assert properties.fill.isEnabled() and not properties.hint.isVisible()
+    assert properties.fill.isEnabled() and properties.target['kind'] == 'path'
     QTest.mouseClick(properties.fill.button, Qt.MouseButton.LeftButton)
     properties.fill.menu.hex.setText('#4177DE')
     QTest.mouseClick(properties.fill.menu.apply, Qt.MouseButton.LeftButton)
@@ -151,8 +152,77 @@ def check_toolbox_controls(window, folder, output):
     assert window.document.doc[0].get_drawings()[0]['fill'] == (0., 1., 0.)
     assert source.read_bytes() == original
     window.document.save(saved_path)
-    return dict(toolbox_right_click_escape=True, object_options_before_selection=True,
-                object_color_mouse_edit=True, object_escape_exit=True)
+    result = dict(toolbox_right_click_escape=True, object_options_before_selection=True,
+                  object_color_mouse_edit=True, object_escape_exit=True)
+    result.update(check_shape_editing(window, folder, output))
+    return result
+
+
+def check_shape_editing(window, folder, output):
+    """Draw, resize, edit nodes, cancel and save using the installed UI."""
+    source = folder/'shape-editing.pdf'
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=380, height=480)
+        page.insert_text((40, 60), 'Keep original text')
+        doc.save(source)
+    original = source.read_bytes()
+    assert window.open_path(source)
+    window.set_view_mode('single')
+    window.activateWindow()
+    window.view.setFocus()
+    QTest.qWait(30)
+    view = window.view
+    point = lambda x, y: view.mapFromScene(view.pages[0].mapToScene(QPointF(x, y)))
+
+    def drag(start, end):
+        QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+        QTest.mouseMove(view.viewport(), (start+end)/2)
+        QTest.mouseMove(view.viewport(), end)
+        QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+
+    window.show_shape_options()
+    properties = window.shape_properties
+    QTest.mouseClick(properties.draw_buttons['rect'], Qt.MouseButton.LeftButton)
+    drag(point(100, 150), point(220, 250))
+    drawings = window.document.doc[0].get_drawings()
+    assert len(drawings) == 1 and view.object_selection is not None
+    width = drawings[0]['width']
+    bounds = pymupdf.Rect(drawings[0]['rect'])
+    selection = view.object_selection
+    corner = view.mapFromScene(selection.mapToScene(selection.handle_rect('br').center()))
+    drag(corner, corner+QPoint(30, 20))
+    drawing = window.document.doc[0].get_drawings()[0]
+    assert drawing['rect'].width > bounds.width and drawing['rect'].height > bounds.height
+    assert abs(drawing['width']-width) < 1e-6
+    window.choose_shape_kind(None)
+    selection = view.object_selection
+    edge = QPointF(selection.rect.left(), selection.rect.center().y())
+    QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(selection.mapToScene(edge)))
+    editor = view.node_editor
+    assert editor is not None and len(editor.anchors()) == 4
+    before = window.document.doc[0].read_contents()
+    anchor = view.mapFromScene(editor.mapToScene(editor.parts[0][1][0]))
+    drag(anchor, anchor+QPoint(-20, 15))
+    assert view.node_editor is not None and window.document.doc[0].read_contents() != before
+    window.grab().save(str(output.with_name(output.stem+'-shape-nodes.png')))
+    window.choose_shape_kind('ellipse')
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=point(100, 320))
+    QTest.mouseMove(view.viewport(), point(200, 380))
+    assert view.shape_draft is not None
+    QTest.keyClick(view.viewport(), Qt.Key.Key_Escape)
+    assert view.shape_draft is None
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=point(200, 380))
+    assert len(window.document.doc[0].get_drawings()) == 1
+    saved_path = folder/'shape-editing-saved.pdf'
+    window.document.save(saved_path)
+    with pymupdf.open(saved_path) as saved:
+        assert len(saved[0].get_drawings()) == 1
+        assert 'Keep original text' in saved[0].get_text()
+        assert abs(saved[0].get_drawings()[0]['width']-width) < 1e-6
+    assert source.read_bytes() == original
+    window.change_pointer('select_tool')
+    return dict(shape_mouse_drawing=True, shape_mouse_resize=True, shape_stroke_preserved=True,
+                shape_mouse_node_edit=True, shape_drawing_escape_cancel=True, shape_saved_and_reopened=True)
 
 
 def check_eraser_and_region_copy(window, folder, output):
