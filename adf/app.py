@@ -650,6 +650,8 @@ class MainWindow(QMainWindow):
         self.shape_properties.changed.connect(self.style_selected_object)
         self.view.objectSelectionChanged.connect(self.shape_properties.set_target)
         self.toolbox.objectOptionsRequested.connect(self.show_shape_options)
+        self.toolbox.cancelRequested.connect(self.escape)
+        self.view.escapeRequested.connect(self.escape)
         self.pen_button = self.toolbox.buttons['pen']
         self.eraser_button = self.toolbox.buttons['eraser']
         self.view.set_snap_enabled(self.actions['snap'].isChecked())
@@ -2120,12 +2122,14 @@ class MainWindow(QMainWindow):
             self.shape_properties.hide()
             self.view.setFocus()
             return
-        selection = self.view.object_selection
-        if selection is None or selection.target['kind'] != 'path' or self.worker or not self.document.editable:
+        if self.worker or not self.document.editable:
             return
+        if self.pointer_mode != 'object_tool' and not self.change_pointer('object_tool'):
+            return
+        selection = self.view.object_selection
         if hasattr(self, 'pen_menu'):
             self.pen_menu.hide()
-        self.shape_properties.set_target(selection.target)
+        self.shape_properties.set_target(selection.target if selection is not None else None)
         self.shape_properties.popup()
 
     def style_selected_object(self, changes):
@@ -2255,7 +2259,7 @@ class MainWindow(QMainWindow):
             self.fullscreen.exit()
         elif self.view.pen.enabled:
             self.change_pointer('select_tool')
-        elif self.view.copy_region_mode:
+        elif self.view.copy_region_mode or self.view.object_mode or self.view.image_mode:
             self.change_pointer('select_tool')
         elif self.pointer_mode == 'hand_tool':
             self.toggle_hand_tool()

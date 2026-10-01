@@ -790,6 +790,72 @@ class DesktopWorkflowTests(unittest.TestCase):
         self.window.toggle_hand_tool()
         self.assertTrue(self.window.view.object_mode)
 
+    def test_right_click_on_every_toolbox_target_cancels_the_active_tool(self):
+        toolbox = self.window.toolbox
+        targets = [toolbox, toolbox.grip, *toolbox.buttons.values()]
+        targets += [toolbox.buttons[key].options for key in ('pen', 'eraser', 'object_tool')]
+        for target in targets:
+            with self.subTest(target=target.accessibleName()):
+                self.window.change_pointer('pen')
+                QTest.mouseClick(target, Qt.MouseButton.RightButton, pos=target.rect().center())
+                self.assertEqual(self.window.pointer_mode, 'select_tool')
+                self.assertFalse(self.window.view.pen.enabled)
+        QTest.mouseClick(toolbox.buttons['text'], Qt.MouseButton.LeftButton)
+        self.assertTrue(self.window.view.text_mode)
+        QTest.mouseClick(toolbox.buttons['text'], Qt.MouseButton.RightButton)
+        self.assertFalse(self.window.view.text_mode)
+        self.assertFalse(self.window.actions['text'].isChecked())
+
+    def test_object_tool_exits_on_escape_and_document_right_click(self):
+        for cancel in ('escape', 'right_click'):
+            with self.subTest(cancel=cancel):
+                self.window.change_pointer('object_tool')
+                if cancel == 'escape':
+                    self.window.activateWindow()
+                    self.window.view.setFocus()
+                    self.app.processEvents()
+                    QTest.keyClick(self.window.view.viewport(), Qt.Key.Key_Escape)
+                else:
+                    QTest.mouseClick(self.window.view.viewport(), Qt.MouseButton.RightButton,
+                                     pos=QPoint(1, 1))
+                self.assertFalse(self.window.view.object_mode)
+                self.assertEqual(self.window.pointer_mode, 'select_tool')
+
+    def test_object_options_open_before_selection_and_follow_a_clicked_shape(self):
+        source = self.root/'object-options-first.pdf'
+        with pymupdf.open() as doc:
+            page = doc.new_page(width=360, height=480)
+            page.draw_rect((50, 170, 150, 250), color=(1, 0, 0), fill=(0, 1, 0))
+            page.insert_text((60, 215), 'Keep text')
+            doc.save(source)
+        self.assertTrue(self.window.open_path(source))
+        self.window.set_view_mode('single')
+        self.app.processEvents()
+        options = self.window.toolbox.buttons['object_tool'].options
+        properties = self.window.shape_properties
+        self.assertTrue(options.isEnabled())
+        QTest.mouseClick(options, Qt.MouseButton.LeftButton)
+        self.assertTrue(properties.isVisible())
+        self.assertTrue(self.window.view.object_mode)
+        self.assertFalse(properties.fill.isEnabled())
+        self.assertTrue(properties.hint.isVisible())
+        view = self.window.view
+        point = view.mapFromScene(view.pages[0].mapToScene(QPointF(100, 235)))
+        QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+        self.assertIsNotNone(view.object_selection)
+        self.assertTrue(properties.isVisible())
+        self.assertTrue(properties.fill.isEnabled())
+        self.assertFalse(properties.hint.isVisible())
+        QTest.mouseClick(properties.fill.button, Qt.MouseButton.LeftButton)
+        properties.fill.menu.hex.setText('#4177DE')
+        QTest.mouseClick(properties.fill.menu.apply, Qt.MouseButton.LeftButton)
+        drawing = self.window.document.doc[0].get_drawings()[0]
+        for actual, expected in zip(drawing['fill'], (65/255, 119/255, 222/255)):
+            self.assertAlmostEqual(actual, expected, places=6)
+        self.assertEqual(self.window.document.doc[0].get_text().strip(), 'Keep text')
+        self.window.undo()
+        self.assertEqual(self.window.document.doc[0].get_drawings()[0]['fill'], (0., 1., 0.))
+
     def test_shape_click_drag_delete_and_undo_preserve_overlapping_text(self):
         source = self.root/'shape.pdf'
         with pymupdf.open() as doc:
@@ -911,8 +977,11 @@ class DesktopWorkflowTests(unittest.TestCase):
         QTest.mouseClick(options,Qt.MouseButton.LeftButton)
         self.assertTrue(properties.isVisible())
         view.select_object(0,1)
-        self.assertFalse(properties.isVisible())
-        self.assertFalse(options.isEnabled())
+        self.assertTrue(properties.isVisible())
+        self.assertTrue(options.isEnabled())
+        self.assertFalse(properties.fill.isEnabled())
+        self.assertTrue(properties.hint.isVisible())
+        self.assertIn('이미지', properties.hint.text())
         self.window.undo()
         self.assertEqual(self.window.document.doc[0].get_drawings()[0]['type'],'fs')
         self.window.undo()
@@ -921,7 +990,8 @@ class DesktopWorkflowTests(unittest.TestCase):
         self.assertEqual(self.window.document.doc[0].get_drawings()[0]['fill'],(0.,1.,0.))
         self.assertFalse(self.window.document.can_undo)
         view.select_object(0,0)
-        QTest.mouseClick(options,Qt.MouseButton.LeftButton)
+        if not properties.isVisible():
+            QTest.mouseClick(options,Qt.MouseButton.LeftButton)
         QTest.mouseClick(properties.fill.button,Qt.MouseButton.LeftButton)
         properties.fill.menu.hex.setText('#E44768')
         QTest.mouseClick(properties.fill.menu.apply,Qt.MouseButton.LeftButton)

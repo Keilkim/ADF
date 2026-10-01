@@ -52,6 +52,7 @@ class ToolboxGrip(QWidget):
 class FloatingToolbox(QFrame):
     positionChanged = Signal()
     objectOptionsRequested = Signal()
+    cancelRequested = Signal()
 
     def __init__(self, view, actions, settings, options):
         super().__init__(view.viewport())
@@ -97,7 +98,6 @@ class FloatingToolbox(QFrame):
                         button.optionsRequested.connect(self.objectOptionsRequested.emit)
                         button.options.setAccessibleName('도형 속성 열기 및 닫기')
                         button.options.setToolTip('도형 속성 · 채움색, 외곽선색, 선 두께')
-                        button.options.setEnabled(False)
                     else:
                         button.optionsRequested.connect(lambda tool=key: options(tool))
                         button.options.setAccessibleName(actions[key].text() + ' 옵션')
@@ -113,6 +113,9 @@ class FloatingToolbox(QFrame):
                 self.buttons[key] = button
         self.adjustSize()
         self.parentWidget().installEventFilter(self)
+        self.installEventFilter(self)
+        for widget in self.findChildren(QWidget):
+            widget.installEventFilter(self)
         self.position()
 
     def move_clamped(self, point):
@@ -136,6 +139,19 @@ class FloatingToolbox(QFrame):
         self.settings.setValue('toolbox_height', self.fraction)
 
     def eventFilter(self, watched, event):
-        if event.type() in (QEvent.Type.Resize, QEvent.Type.Show):
+        kind = event.type()
+        if watched is self.parentWidget() and kind in (QEvent.Type.Resize, QEvent.Type.Show):
             self.position()
+        if watched is not self.parentWidget():
+            if kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.RightButton:
+                self.grip.offset = None
+                self.grip.setCursor(Qt.CursorShape.OpenHandCursor)
+                self.cancelRequested.emit()
+                event.accept()
+                return True
+            if (kind == QEvent.Type.ContextMenu or
+                    kind in (QEvent.Type.MouseButtonRelease, QEvent.Type.MouseButtonDblClick)
+                    and event.button() == Qt.MouseButton.RightButton):
+                event.accept()
+                return True
         return False

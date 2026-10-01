@@ -2,8 +2,8 @@
 101 ICON "assets/xdf.ico"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,3,37,0
- PRODUCTVERSION 0,3,37,0
+ FILEVERSION 0,3,38,0
+ PRODUCTVERSION 0,3,38,0
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0
  FILEOS VOS_NT_WINDOWS32
@@ -16,11 +16,11 @@ BEGIN
   BEGIN
    VALUE "CompanyName", "XDF"
    VALUE "FileDescription", "XDF PDF Explorer context menu"
-   VALUE "FileVersion", "0.3.37.0"
+   VALUE "FileVersion", "0.3.38.0"
    VALUE "InternalName", "ADFShell"
-   VALUE "OriginalFilename", "ADFShell-0.3.37.dll"
+   VALUE "OriginalFilename", "ADFShell-0.3.38.dll"
    VALUE "ProductName", "XDF"
-   VALUE "ProductVersion", "0.3.37.0"
+   VALUE "ProductVersion", "0.3.38.0"
   END
  END
  BLOCK "VarFileInfo"

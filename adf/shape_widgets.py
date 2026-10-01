@@ -305,6 +305,10 @@ class ShapeProperties(QFrame):
         title = QLabel('도형 속성')
         title.setStyleSheet('font-weight: 600;')
         layout.addWidget(title)
+        self.hint = QLabel()
+        self.hint.setWordWrap(True)
+        self.hint.setStyleSheet('color: #64748b;')
+        layout.addWidget(self.hint)
         self.fill = ShapeColorPalette('채움색')
         self.stroke = ShapeColorPalette('외곽선색')
         layout.addWidget(self.fill)
@@ -328,14 +332,25 @@ class ShapeProperties(QFrame):
         layout.addLayout(width)
         self.adjustSize()
         self.hide()
+        self.set_target(None)
         toolbox.positionChanged.connect(self.position)
         self.parentWidget().installEventFilter(self)
 
     def set_target(self, target):
         self.target = target if target is not None and target['kind'] == 'path' else None
-        self.options.setEnabled(self.target is not None)
+        editable_shape = self.target is not None
+        self.fill.setEnabled(editable_shape)
+        self.stroke.setEnabled(editable_shape)
+        self.stroke_width.setEnabled(editable_shape)
+        self.hint.setVisible(not editable_shape)
         if self.target is None:
-            self.hide()
+            self.fill.menu.hide()
+            self.stroke.menu.hide()
+            self.hint.setText('이미지는 이동·삭제할 수 있습니다. 색과 선 두께를 바꾸려면 문서의 도형을 선택하세요.'
+                              if target is not None else
+                              '문서의 도형을 클릭하세요. 선택한 도형의 채움색·외곽선색·선 두께를 바꿀 수 있습니다.')
+            if not self.view.object_mode:
+                self.hide()
             return
         self.fill.set_color(target['fill'],target['has_fill'])
         self.stroke.set_color(target['stroke'],target['has_stroke'])
@@ -350,11 +365,12 @@ class ShapeProperties(QFrame):
             self.position()
 
     def popup(self):
-        if self.target is None:
-            return
         self.show()
         self.position()
-        self.fill.button.setFocus()
+        if self.target is not None:
+            self.fill.button.setFocus()
+        else:
+            self.view.setFocus()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -390,6 +406,8 @@ class ShapeProperties(QFrame):
                 return True
             if kind in (QEvent.Type.MouseButtonPress,QEvent.Type.MouseButtonDblClick,QEvent.Type.TabletPress):
                 if isinstance(watched,QWidget) and (watched is self.options or self.options.isAncestorOf(watched)):
+                    return False
+                if watched is self.view.viewport() and self.view.object_mode:
                     return False
                 if not self.rect().contains(self.mapFromGlobal(event.globalPosition().toPoint())):
                     self.hide()

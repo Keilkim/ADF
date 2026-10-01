@@ -296,6 +296,7 @@ class PdfView(QGraphicsView):
     objectTransformed = Signal(int, int, object)
     objectDeleteRequested = Signal()
     objectSelectionChanged = Signal(object)
+    escapeRequested = Signal()
     regionCopied = Signal()
 
     def __init__(self, parent=None):
@@ -1138,6 +1139,13 @@ class PdfView(QGraphicsView):
 
     def mousePressEvent(self, event):
         pos = self.mapToScene(event.position().toPoint())
+        if event.button() == Qt.MouseButton.RightButton and (
+                self.object_mode or self.text_mode or self.image_mode or self.copy_region_mode
+                or self.placement is not None or self.stamp_pixmap is not None
+                or self.object_selection is not None or self.ink_selection is not None):
+            self.escapeRequested.emit()
+            event.accept()
+            return
         if self.object_selection is not None and self.object_selection.contains(self.object_selection.mapFromScene(pos)):
             super().mousePressEvent(event)
             return
