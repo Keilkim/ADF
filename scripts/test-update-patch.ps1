@@ -24,7 +24,16 @@ if (-not $Patch) {
         $expected = ([Text.Encoding]::UTF8.GetString($sums.Content) -split "`r?`n" | Where-Object { $_ -match "^([a-f0-9]{64})  ADF-Setup-$([regex]::Escape($base))\.exe$" } | ForEach-Object { $Matches[1] })
         if (-not $expected) { throw "No published checksum for ADF-Setup-$base.exe" }
         if (-not (Test-Path -LiteralPath $setup) -or (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) {
-            Invoke-WebRequest -UseBasicParsing -Uri "$download/ADF-Setup-$base.exe" -OutFile $setup
+            for ($downloadAttempt = 1; $downloadAttempt -le 3; $downloadAttempt++) {
+                try {
+                    Invoke-WebRequest -UseBasicParsing -Uri "$download/ADF-Setup-$base.exe" -OutFile $setup
+                    break
+                } catch {
+                    if ($downloadAttempt -eq 3) { throw }
+                    Write-Warning "Download interrupted for ADF $base; retrying ($downloadAttempt/3)."
+                    Start-Sleep -Seconds 5
+                }
+            }
             if ((Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw "Downloaded ADF-Setup-$base.exe differs from its release checksum." }
         }
         & $PSCommandPath -BaseSetup $setup -Patch $file.FullName -Manifest (Join-Path $releaseRoot "ADF-Files-$version-Windows.json") `
