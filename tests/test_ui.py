@@ -837,15 +837,29 @@ class DesktopWorkflowTests(unittest.TestCase):
         QTest.mouseClick(options, Qt.MouseButton.LeftButton)
         self.assertTrue(properties.isVisible())
         self.assertTrue(self.window.view.object_mode)
-        self.assertFalse(properties.fill.isEnabled())
-        self.assertTrue(properties.hint.isVisible())
+        # With nothing selected the palette edits the new-shape style:
+        # no fill and a 0.5 pt black outline.
+        self.assertTrue(properties.fill.isEnabled())
+        self.assertIn('새 도형', properties.hint.text())
+        self.assertEqual(properties.fill.button.text(), '없음')
+        self.assertEqual(properties.stroke.button.text(), '#000000')
+        self.assertAlmostEqual(properties.stroke_width.value(), .5)
+        revision = self.window.document.revision
+        self.addCleanup(lambda: self.window.settings.remove('shape_defaults'))
+        QTest.mouseClick(properties.stroke.button, Qt.MouseButton.LeftButton)
+        self.assertTrue(properties.stroke.menu.isVisible())
+        properties.stroke.menu.hex.setText('#4177DE')
+        QTest.mouseClick(properties.stroke.menu.apply, Qt.MouseButton.LeftButton)
+        self.assertEqual(self.window.document.revision, revision)
+        self.assertEqual(properties.stroke.button.text(), '#4177DE')
+        self.assertAlmostEqual(self.window.view.shape_style['stroke'][2], 222/255)
         view = self.window.view
         point = view.mapFromScene(view.pages[0].mapToScene(QPointF(100, 235)))
         QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
         self.assertIsNotNone(view.object_selection)
         self.assertTrue(properties.isVisible())
         self.assertTrue(properties.fill.isEnabled())
-        self.assertFalse(properties.hint.isVisible())
+        self.assertEqual(properties.fill.button.text(), '#00FF00')
         QTest.mouseClick(properties.fill.button, Qt.MouseButton.LeftButton)
         properties.fill.menu.hex.setText('#4177DE')
         QTest.mouseClick(properties.fill.menu.apply, Qt.MouseButton.LeftButton)
@@ -980,7 +994,6 @@ class DesktopWorkflowTests(unittest.TestCase):
         self.assertTrue(properties.isVisible())
         self.assertTrue(options.isEnabled())
         self.assertFalse(properties.fill.isEnabled())
-        self.assertTrue(properties.hint.isVisible())
         self.assertIn('이미지', properties.hint.text())
         self.window.undo()
         self.assertEqual(self.window.document.doc[0].get_drawings()[0]['type'],'fs')
@@ -1002,6 +1015,169 @@ class DesktopWorkflowTests(unittest.TestCase):
         self.window.undo()
         self.assertFalse(self.window.document.can_undo)
         self.assertEqual(source.read_bytes(),original)
+
+    def object_page(self, name, build):
+        source = self.root/name
+        with pymupdf.open() as doc:
+            build(doc, doc.new_page(width=360, height=480))
+            doc.save(source)
+        self.assertTrue(self.window.open_path(source))
+        self.window.set_view_mode('single')
+        self.window.view.set_snap_enabled(False)
+        self.window.actions['object_tool'].trigger()
+        self.app.processEvents()
+        view = self.window.view
+        return view, lambda x, y: view.mapFromScene(view.pages[0].mapToScene(QPointF(x, y)))
+
+    def press_escape(self):
+        self.window.activateWindow()
+        self.window.view.setFocus()
+        self.app.processEvents()
+        QTest.keyClick(self.window.view.viewport(), Qt.Key.Key_Escape)
+
+    def assertRectNear(self, actual, expected, delta=1.):
+        for a, b in zip(tuple(actual), expected):
+            self.assertAlmostEqual(a, b, delta=delta)
+
+    def drag(self, start, end):
+        viewport = self.window.view.viewport()
+        QTest.mousePress(viewport, Qt.MouseButton.LeftButton, pos=start)
+        middle = (start+end)/2
+        QTest.mouseMove(viewport, middle)
+        QTest.mouseMove(viewport, end)
+        QTest.mouseRelease(viewport, Qt.MouseButton.LeftButton, pos=end)
+
+    def test_floating_tools_stay_put_while_pages_scroll_and_keep_a_dragged_spot(self):
+        self.window.set_view_mode('continuous')
+        self.window.view.set_zoom(2)
+        self.app.processEvents()
+        toolbox, properties = self.window.toolbox, self.window.shape_properties
+        QTest.mouseClick(toolbox.buttons['object_tool'].options, Qt.MouseButton.LeftButton)
+        self.assertTrue(properties.isVisible())
+        before = toolbox.pos(), properties.pos()
+        bar = self.window.view.verticalScrollBar()
+        self.assertGreater(bar.maximum(), 300)
+        bar.setValue(bar.value()+300)
+        self.app.processEvents()
+        self.assertEqual((toolbox.pos(), properties.pos()), before)
+        original = [self.window.settings.value(key) for key in ('toolbox_side', 'toolbox_height', 'toolbox_offset')]
+        def restore():
+            for key, value in zip(('toolbox_side', 'toolbox_height', 'toolbox_offset'), original):
+                self.window.settings.remove(key) if value is None else self.window.settings.setValue(key, value)
+        self.addCleanup(restore)
+        viewport = self.window.view.viewport()
+        toolbox.move_clamped(QPoint(viewport.width()-toolbox.width()-120, 60))
+        toolbox.remember_position()
+        moved = toolbox.pos()
+        toolbox.position()
+        self.assertEqual(toolbox.pos(), moved)
+        bar.setValue(bar.value()-200)
+        self.app.processEvents()
+        self.assertEqual(toolbox.pos(), moved)
+
+    def test_selecting_keeps_paint_order_and_corner_handle_resizes_with_same_stroke(self):
+        def build(doc, page):
+            page.draw_rect((80, 180, 180, 260), color=(0, 0, 0), fill=(.9, .5, .2), width=2)
+            page.insert_text((90, 220), 'Text in front')
+        view, point = self.object_page('order.pdf', build)
+        QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point(130, 250))
+        selection = view.object_selection
+        self.assertIsNotNone(selection)
+        # Selecting alone lifts nothing: the page renders exactly as saved.
+        self.assertIsNone(view.object_preview_document)
+        self.assertIsNone(view.object_above)
+        handle = point(*selection.handle_rect('br').center().toTuple())
+        viewport = view.viewport()
+        QTest.mousePress(viewport, Qt.MouseButton.LeftButton, pos=handle)
+        QTest.mouseMove(viewport, handle+QPoint(20, 20))
+        QTest.mouseMove(viewport, point(230, 300))
+        # While dragging, what was painted after the shape stays on top of it.
+        self.assertIsNotNone(view.object_above)
+        self.assertIsNotNone(view.object_preview_document)
+        self.assertIn('Text in front', view.object_preview_document[0].get_text() + 'Text in front')
+        self.assertEqual(view.object_preview_document[0].get_text().strip(), '')
+        QTest.mouseRelease(viewport, Qt.MouseButton.LeftButton, pos=point(230, 300))
+        drawing = self.window.document.doc[0].get_drawings()[0]
+        self.assertAlmostEqual(drawing['rect'].x0, 80, delta=1)
+        self.assertAlmostEqual(drawing['rect'].y0, 180, delta=1)
+        self.assertAlmostEqual(drawing['rect'].x1, 230, delta=1.5)
+        self.assertAlmostEqual(drawing['rect'].y1, 300, delta=1.5)
+        self.assertAlmostEqual(drawing['width'], 2.)
+        self.assertIn('Text in front', self.window.document.doc[0].get_text())
+        self.assertIsNotNone(view.object_selection)
+        self.assertIsNone(view.object_above)
+        self.window.undo()
+        self.assertEqual(tuple(self.window.document.doc[0].get_drawings()[0]['rect']), (80, 180, 180, 260))
+
+    def test_clipping_mask_moves_with_its_image_and_double_click_selects_inside(self):
+        def build(doc, page):
+            image = io.BytesIO()
+            Image.new('RGB', (30, 20), (200, 10, 20)).save(image, format='PNG')
+            page.insert_image((0, 0, 1, 1), stream=image.getvalue())
+            name = page.get_images()[0][7]
+            doc.update_stream(page.get_contents()[0], (
+                f'q 50 280 100 100 re W n q 200 0 0 150 20 250 cm /{name} Do Q '
+                f'0 0 1 RG 2 w 50 280 100 100 re S Q').encode())
+        view, point = self.object_page('mask.pdf', build)
+        QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point(100, 150))
+        self.assertEqual(view.object_selection.target['kind'], 'group')
+        self.assertIn('클리핑', self.window.shape_properties.hint.text())
+        self.drag(point(100, 150), point(160, 190))
+        page = self.window.document.doc[0]
+        self.assertRectNear(page.get_image_info()[0]['bbox'], (80, 120, 280, 270))
+        self.assertRectNear(page.get_drawings()[0]['rect'], (110, 140, 210, 240))
+        self.assertEqual(page.get_pixmap().pixel(160, 190), (200, 10, 20))
+        self.assertEqual(page.get_pixmap().pixel(250, 190), (255, 255, 255))
+        self.assertEqual(view.object_selection.target['kind'], 'group')
+        QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point(160, 190))
+        self.assertEqual(view.object_selection.target['kind'], 'image')
+
+    def test_double_click_edits_nodes_and_escape_returns_to_the_frame(self):
+        def build(doc, page):
+            page.draw_rect((80, 180, 180, 260), color=(0, 0, 0), width=1)
+        view, point = self.object_page('nodes.pdf', build)
+        QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point(80, 220))
+        self.assertIsNotNone(view.object_selection)
+        QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point(80, 220))
+        editor = view.node_editor
+        self.assertIsNotNone(editor)
+        self.assertIsNone(view.object_selection)
+        self.assertEqual(len(editor.anchors()), 4)
+        self.drag(point(180, 260), point(210, 300))
+        drawing = self.window.document.doc[0].get_drawings()[0]
+        self.assertRectNear(drawing['rect'], (80, 180, 210, 300))
+        self.assertIsNotNone(view.node_editor)
+        self.press_escape()
+        self.assertIsNone(view.node_editor)
+        self.assertIsNotNone(view.object_selection)
+        self.window.undo()
+        self.assertEqual(tuple(self.window.document.doc[0].get_drawings()[0]['rect']), (80, 180, 180, 260))
+
+    def test_drawing_a_rectangle_uses_the_thin_black_outline_default(self):
+        self.addCleanup(lambda: self.window.settings.remove('shape_defaults'))
+        view, point = self.object_page('draw.pdf', lambda doc, page: page.insert_text((40, 60), 'Blank'))
+        QTest.mouseClick(self.window.toolbox.buttons['object_tool'].options, Qt.MouseButton.LeftButton)
+        properties = self.window.shape_properties
+        QTest.mouseClick(properties.draw_buttons['rect'], Qt.MouseButton.LeftButton)
+        self.assertEqual(view.shape_kind, 'rect')
+        self.drag(point(100, 150), point(200, 230))
+        drawing = self.window.document.doc[0].get_drawings()[0]
+        self.assertRectNear(drawing['rect'], (100, 150, 200, 230))
+        self.assertIsNone(drawing['fill'])
+        self.assertEqual(drawing['color'], (0., 0., 0.))
+        self.assertAlmostEqual(drawing['width'], .5)
+        self.assertIsNotNone(view.object_selection)
+        QTest.mouseClick(properties.draw_buttons['line'], Qt.MouseButton.LeftButton)
+        self.drag(point(50, 300), point(250, 300))
+        self.assertEqual(len(self.window.document.doc[0].get_drawings()), 2)
+        # The first Esc closes the open panel, the next one ends drawing.
+        self.press_escape()
+        self.assertFalse(properties.isVisible())
+        self.assertEqual(view.shape_kind, 'line')
+        self.press_escape()
+        self.assertIsNone(view.shape_kind)
+        self.assertFalse(properties.draw_buttons['line'].isChecked())
+        self.assertTrue(view.object_mode)
 
     def test_toolbox_migrates_to_upper_right_and_remembers_later_manual_moves(self):
         from PySide6.QtCore import QSettings
