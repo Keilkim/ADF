@@ -112,7 +112,7 @@ class Agent(QWidget):
         self.menu.aboutToShow.connect(self.sync_menu)
         self.tray.setContextMenu(self.menu)
         self.tray.show()
-        self.toast = UpdateToast()
+        self.toast = UpdateToast(tray=self.tray)
         self.toast.updateRequested.connect(self.update_requested)
         self.toast.laterRequested.connect(self.later)
         self.snooze_timer = QTimer(self)

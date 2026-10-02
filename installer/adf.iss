@@ -1,6 +1,6 @@
 #define AppName "XDF"
 #ifndef AppVersion
-  #define AppVersion "0.3.40"
+  #define AppVersion "0.3.41"
 #endif
 #define RepoRoot AddBackslash(SourcePath) + ".."
 #ifndef AppBuildDir
@@ -381,6 +381,20 @@ begin
   end;
 end;
 
+procedure NotifyShellDirectoryChanged(EventID: Integer; Flags: Cardinal; Path: String; Unused: Integer);
+  external 'SHChangeNotify@shell32.dll stdcall';
+
+procedure RefreshDesktopThumbnails;
+begin
+  if IsIsolatedTest then
+    Exit;
+  { Refresh the existing desktop view after replacing the thumbnail provider.
+    SHCNE_UPDATEDIR, SHCNF_PATHW | SHCNF_FLUSHNOWAIT: keep icons and documents in
+    place, without deleting the global cache or restarting Explorer. }
+  NotifyShellDirectoryChanged($1000, $2005, ExpandConstant('{userdesktop}'), 0);
+  NotifyShellDirectoryChanged($1000, $2005, ExpandConstant('{commondesktop}'), 0);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep <> ssPostInstall then
@@ -390,6 +404,7 @@ begin
   DeleteOtherVersions(ExpandConstant('{app}\_internal\SOURCES\'), 'ADF-Source-*.zip', 'ADF-Source-{#AppVersion}.zip');
   DeleteOtherVersions(ExpandConstant('{app}\_internal\SOURCES\'), 'ADF-ThirdParty-Sources-*.zip', 'ADF-ThirdParty-Sources-{#AppVersion}.zip');
   DeleteOtherVersions(ExpandConstant('{app}\'), 'ADFShell-*.dll', 'ADFShell-{#AppVersion}.dll');
+  RefreshDesktopThumbnails;
 end;
 
 { ADF closes itself to update. Start it again, also after a failed or cancelled

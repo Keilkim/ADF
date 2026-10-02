@@ -675,7 +675,12 @@ class UpdateWindowTests(unittest.TestCase):
         self.assertEqual(toast.proceed.text(), '업데이트')
         self.assertEqual(toast.animation.easingCurve().type(), QEasingCurve.Type.OutBounce)
         wait_until(lambda: toast.pos() == toast.resting_pos())
-        self.assertGreater(toast.x(), self.window.width() // 2)
+        if sys.platform == 'win32':
+            from adf.update_toast import notification_screen
+            area = notification_screen().availableGeometry()
+            self.assertEqual(toast.x() + toast.width(), area.right() - 16)
+        else:
+            self.assertGreater(toast.x(), self.window.width() // 2)
         toast.hop()
         self.assertEqual(toast.animation.keyValueAt(.1), toast.resting_pos() - QPoint(0, 22))
         with patch.object(self.window, 'install_update') as install:
@@ -1177,7 +1182,8 @@ class BackgroundAgentTests(unittest.TestCase):
         self.assertTrue(toast.isVisible())
         self.assertEqual(self.settings.value('updates/background_notified'), self.package.version)
         self.assertIsNone(toast.parentWidget())
-        area = QApplication.primaryScreen().availableGeometry()
+        from adf.update_toast import notification_screen
+        area = notification_screen(self.agent.tray).availableGeometry()
         self.assertEqual(toast.resting_pos().x() + toast.width(), area.right() - 16)
         toast.proceed.click()
         self.opened.assert_called_once_with('--update-now')
