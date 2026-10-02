@@ -1,11 +1,11 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param([switch]$SkipNativeHarness, [switch]$SkipBlockedUninstaller, [switch]$NativeComponentTestsOnly)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $pythonPath = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $releaseRoot = Join-Path $repoRoot 'release'
 $verificationRoot = Join-Path $repoRoot '.tools\verification'
-$version = '0.3.40'
+$version = '0.3.41'
 New-Item -ItemType Directory -Path $verificationRoot -Force | Out-Null
 $setupPath = Join-Path $releaseRoot "ADF-Setup-$version.exe"
 if (-not (Test-Path -LiteralPath $setupPath)) { throw 'Build the installer first.' }
