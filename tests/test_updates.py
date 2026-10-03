@@ -726,6 +726,15 @@ class UpdateWindowTests(unittest.TestCase):
             self.service._set('ready', announce=True)
         install.assert_called_once_with()
 
+    def test_only_the_window_that_owns_updates_shows_the_notice(self):
+        # Two XDF windows would otherwise stack identical notices at the screen's corner.
+        self.window.show()
+        self.ready()
+        self.assertTrue(self.window.update_toast.isVisible())
+        with patch.object(UpdateService, 'owner', new=False):
+            self.window.refresh_update_toast()
+            self.assertFalse(self.window.update_toast.isVisible())
+
     def test_window_leaves_the_notice_to_a_running_background_agent(self):
         self.window.show()
         with patch('adf.agent.running', return_value=True), \
@@ -1188,6 +1197,19 @@ class BackgroundAgentTests(unittest.TestCase):
         toast.proceed.click()
         self.opened.assert_called_once_with('--update-now')
         self.assertFalse(toast.isVisible())
+
+    def test_install_click_opens_one_window_and_the_notice_stays_away_meanwhile(self):
+        self.ready()
+        self.agent.toast.proceed.click()
+        self.agent.refresh()
+        self.service._set('ready')
+        self.assertFalse(self.agent.toast.isVisible())
+        self.agent.install()
+        self.opened.assert_called_once_with('--update-now')
+        # A window that did not install lets the notice come back.
+        self.agent.launched = (self.package.version, self.agent.launched[1] - 1000)
+        self.agent.refresh()
+        self.assertTrue(self.agent.toast.isVisible())
 
     def test_found_version_downloads_then_opens_adf_to_install(self):
         self.service.package = self.package

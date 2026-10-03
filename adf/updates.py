@@ -388,6 +388,11 @@ class UpdateService(QObject):
         self._remove(path)
         return path
 
+    @property
+    def owner(self):
+        """True in the one XDF process that checks and downloads for this user."""
+        return self.lock is not None and self.lock.isLocked()
+
     def _own(self):
         if self.lock is not None and self.lock.isLocked():
             return True
