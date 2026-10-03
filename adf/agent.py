@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+import time
 
 from PySide6.QtCore import QProcess, QSettings, QStandardPaths, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QFont, QIcon
@@ -21,6 +22,7 @@ TITLE = 'ADF Background Agent'
 RUN_KEY = r'HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run'
 RUN_VALUE = 'ADF'
 WM_CLOSE = 0x0010
+INSTALL_WAIT = 120              # seconds the window opened to install has before the notice returns
 
 
 def supported():
@@ -95,6 +97,7 @@ class Agent(QWidget):
         self.winId()  # A native, never shown window that WM_CLOSE reaches.
         icon = QIcon(str(Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent.parent))/'assets/xdf.ico'))
         self.install_when_ready = False
+        self.launched = None              # (version, time) of the window opened to install
         self.tray = QSystemTrayIcon(icon, self)
         self.tray.setToolTip('XDF')
         self.tray.activated.connect(self.activated)
@@ -175,6 +178,9 @@ class Agent(QWidget):
         if remaining > 0 and not self.install_when_ready:
             self.snooze_timer.start(min(int(remaining * 1000) + 1000, 2**31 - 1))
             content = None
+        if content is not None and service.state == 'ready' and self.installing(service.package.version):
+            # The window opened to install closes this agent; until then the notice stays away.
+            content = None
         if content is None:
             self.toast.dismiss()
             self.tray.setToolTip('XDF')
@@ -201,9 +207,20 @@ class Agent(QWidget):
                 service.download()
             self.refresh()
 
+    def installing(self, version):
+        return (self.launched is not None and self.launched[0] == version
+                and time.monotonic() - self.launched[1] < INSTALL_WAIT)
+
     def install(self):
         """XDF installs from a window: it asks about unsaved work and closes the other windows first."""
+        version = self.updates.package.version if self.updates.package is not None else None
+        if self.installing(version):
+            return
+        self.launched = (version, time.monotonic())
+        self.toast.dismiss()
         open_adf('--update-now')
+        # Should that window not install, the notice returns.
+        QTimer.singleShot(INSTALL_WAIT * 1000 + 1000, self.refresh)
 
     def later(self):
         from .update_toast import snooze

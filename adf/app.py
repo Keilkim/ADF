@@ -2773,9 +2773,10 @@ class MainWindow(QMainWindow):
         if toast is None:
             return
         content = toast_content(service) if service is not None else None
-        # With XDF running in the background, its notice at the screen's corner is the one to show.
+        # On Windows every notice sits at the same corner of the screen, so only one
+        # process shows it: the background agent, or else the window that owns updates.
         if (content is None or self.installing_update or self.update_when_ready is not None
-                or self.update_snoozed() or self.background_update_notified()):
+                or not service.owner or self.update_snoozed() or self.background_update_notified()):
             toast.dismiss()
         elif self.isVisible():
             toast.present(*content)
