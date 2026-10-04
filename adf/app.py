@@ -391,6 +391,7 @@ class MainWindow(QMainWindow):
         a('split', '분할', self.split, None, 'split')
         a('extract', '선택 페이지 추출…', self.extract_pages, None, 'extract')
         a('markdown', 'OCR · Markdown 내보내기…', self.export_markdown, None, 'ocr')
+        a('hwpx', '한글(HWPX)로 변환…', self.export_hwpx, None, 'save_as')
         a('number', '페이지 번호 및 머리말 편집', self.number, None, 'number_edit')
         a('number_remove', '페이지 번호 및 머리말 제거', self.remove_numbers, None, 'number_remove')
         self.actions['number'].setToolTip('페이지 번호 및 머리말 편집 · 추가·수정·제거')
@@ -461,7 +462,7 @@ class MainWindow(QMainWindow):
         self.actions['region_tool'].setToolTip('드래그한 영역을 그림으로 복사합니다 · 표·그래프·글 포함')
 
     def create_menus(self):
-        groups = [('파일', ['open','save','save_as','close',None,'compare','merge','combine','split','extract','compress','markdown',None,'print','default']),
+        groups = [('파일', ['open','save','save_as','close',None,'compare','merge','combine','split','extract','compress','markdown','hwpx',None,'print','default']),
                   ('편집',['undo','redo',None,'copy','copy_region','region_tool','paste','image','stamps','text','object_tool','select_image']),
                   ('페이지',['rotate','rotate_left','blank','replace','delete',None,'up','down','number']),
                   ('보기',['find','fullscreen',None,'select_tool','hand_tool','pen','eraser',None,'snap','settings']),
@@ -865,7 +866,7 @@ class MainWindow(QMainWindow):
             self.stop_stamp()
         if self.stamp_dock:
             self.stamp_dock.set_editable(editable)
-        for key in ['save','save_as','close','split','extract','compress','markdown','find','print','copy','next','previous','settings','fullscreen']:
+        for key in ['save','save_as','close','split','extract','compress','markdown','hwpx','find','print','copy','next','previous','settings','fullscreen']:
             self.actions[key].setEnabled(loaded)
         for key in ['merge','number','number_remove','image','paste','text','text_add','select_image','rotate','rotate_left','delete','blank','replace','up','down']:
             self.actions[key].setEnabled(editable)
@@ -1548,6 +1549,41 @@ class MainWindow(QMainWindow):
             box.exec()
             if box.clickedButton() == folder_button:
                 QDesktopServices.openUrl(QUrl.fromLocalFile(options['output']))
+        except Exception as error:
+            self.error(error)
+
+    def export_hwpx(self):
+        if self.worker or not self.document.page_count or not self.resolve_placement():
+            return
+        from .document import _require_permission
+        from .hwpx_widgets import HwpxOptionsDialog, run_hwpx_job
+        try:
+            _require_permission(self.document.doc, pymupdf.PDF_PERM_COPY)
+            dialog = HwpxOptionsDialog(self.document, self.current, self.selected_pages(), self)
+            if not dialog.exec():
+                dialog.deleteLater()
+                return
+            options = dialog.options
+            dialog.deleteLater()
+            result = run_hwpx_job(self, dict(operation='convert', options=options))
+            if result is None:
+                self.notice.showMessage('HWPX 변환을 취소했습니다', 8000)
+                return
+            self.notice.showMessage(f'HWPX 저장 완료 · {options["output"]}', 15000)
+            message = (f'{result["pages"]}쪽 · 편집 가능한 문단 {result["paragraphs"]}개 · '
+                       f'표 {result["tables"]}개 · 그림 {result["figures"]}개\n\n{options["output"]}')
+            if result['warnings']:
+                message += '\n\n원본과 대조할 항목:\n' + '\n'.join(
+                    (f'{item["page"]}쪽: ' if item['page'] else '') + item['message']
+                    for item in result['warnings'][:4])
+                if len(result['warnings']) > 4:
+                    message += f'\n외 {len(result["warnings"]) - 4}개 항목'
+            box = QMessageBox(QMessageBox.Icon.Information, 'HWPX 변환 완료', message,
+                              QMessageBox.StandardButton.Close, self)
+            folder_button = box.addButton('저장 폴더 열기', QMessageBox.ButtonRole.ActionRole)
+            box.exec()
+            if box.clickedButton() == folder_button:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(options['output']).parent)))
         except Exception as error:
             self.error(error)
 
@@ -3328,6 +3364,7 @@ def main():
     parser.add_argument('--worker')
     parser.add_argument('--load-worker')
     parser.add_argument('--markdown-worker')
+    parser.add_argument('--hwpx-worker')
     parser.add_argument('--compare-worker')
     parser.add_argument('--smoke-test')
     parser.add_argument('--help-section', choices=['guide', 'licenses', 'sources'])
@@ -3336,6 +3373,9 @@ def main():
     if args.markdown_worker:
         from .markdown_export import markdown_worker
         return markdown_worker(args.markdown_worker)
+    if args.hwpx_worker:
+        from .hwpx_export import hwpx_worker
+        return hwpx_worker(args.hwpx_worker)
     if args.load_worker:
         from .loading import loading_worker
         return loading_worker(args.load_worker)

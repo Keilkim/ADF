@@ -1,6 +1,6 @@
 {
   "application": "ADF",
-  "version": "0.3.36",
+  "version": "0.3.43",
   "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
   "packages": {
     "PyMuPDF": "1.28.2",
@@ -11,6 +11,11 @@
     "Pillow": "12.3.0",
     "fonttools": "4.64.0",
     "PyInstaller": "6.22.2",
+    "python-hwpx": "6.7.0",
+    "lxml": "6.1.3",
+    "cryptography": "50.0.2",
+    "cffi": "2.1.1",
+    "pycparser": "3.0",
     "antlr4-python3-runtime": "4.9.3",
     "certifi": "2026.7.22",
     "charset-normalizer": "3.5.1",
@@ -57,6 +62,41 @@
       "url": "https://files.pythonhosted.org/packages/d4/41/0f072a712dc74496e03710e462a18a4cfd8a258ad055a4e22d28b43a7abd/fonttools-4.64.0.tar.gz",
       "filename": "fonttools-4.64.0.tar.gz",
       "sha256": "ecb2e59a7bc692fee64dda6010deb66222335693b30046f15cccf81233aa715f"
+    },
+    {
+      "name": "python-hwpx",
+      "version": "6.7.0",
+      "url": "https://files.pythonhosted.org/packages/51/75/08bebcf0b7ea2ff9d18e79e61960a2a903bf249883b9c0a8b80fad065745/python_hwpx-6.7.0.tar.gz",
+      "filename": "python_hwpx-6.7.0.tar.gz",
+      "sha256": "d1c3d727f11fcf565f4ed989868eed38e54a40547794e0298d7197e82c72383a"
+    },
+    {
+      "name": "lxml",
+      "version": "6.1.3",
+      "url": "https://files.pythonhosted.org/packages/23/ad/28ecd7cb894d172f3c9c80a075eeeb2017ac62e3632cee05a5f9493547eb/lxml-6.1.3.tar.gz",
+      "filename": "lxml-6.1.3.tar.gz",
+      "sha256": "45222d94ddd511536f3b2f7d9deae3b2339b4ce0f075f1ca25703b07cad9dd21"
+    },
+    {
+      "name": "cryptography",
+      "version": "50.0.2",
+      "url": "https://files.pythonhosted.org/packages/9d/af/182eb91b0df3fe75c4d9f26fe70684569566745f6ba7e5c9c73a862c5252/cryptography-50.0.2.tar.gz",
+      "filename": "cryptography-50.0.2.tar.gz",
+      "sha256": "7b46165bb56eb4704e2eaaf86f3c940d19154535d9b0ca7d6d590b04060e00d5"
+    },
+    {
+      "name": "cffi",
+      "version": "2.1.1",
+      "url": "https://files.pythonhosted.org/packages/9e/ef/008a1939e372c06329a3fce4279c02f328488f3526744906eeec3da7ad5f/cffi-2.1.1.tar.gz",
+      "filename": "cffi-2.1.1.tar.gz",
+      "sha256": "dd31f52ea1086513bb9df30f8fcee9b8918323ae067a3d5b78bc826a000712be"
+    },
+    {
+      "name": "pycparser",
+      "version": "3.0",
+      "url": "https://files.pythonhosted.org/packages/1b/7d/92392ff7815c21062bea51aa7b87d45576f649f16458d78b7cf94b9ab2e6/pycparser-3.0.tar.gz",
+      "filename": "pycparser-3.0.tar.gz",
+      "sha256": "600f49d217304a5902ac3c37e1281c9fe94e4d0489de643a9504c5cdfdfc6b29"
     },
     {
       "name": "antlr4-python3-runtime",
@@ -356,7 +396,7 @@
     "notices": "multilingual-e5-small-NOTICE.txt"
   },
   "native_shell": {
-    "version": "0.3.36",
+    "version": "0.3.43",
     "source": "native-shell/",
     "toolchain": "LLVM-MinGW 20260826 (LLVM 23.1.0)",
     "toolchain_source": "https://github.com/mstorsjo/llvm-mingw/tree/20260826",

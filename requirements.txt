@@ -1,4 +1,5 @@
-# Python 3.12, tested Windows x64. Build-time download only; installed app is offline.
+# Python 3.12, tested Windows x64. Core PDF/OCR operations are offline.
+# Gemini HWPX is an optional online operation initiated by the user.
 -c requirements-ocr-lock.txt
 PySide6==6.11.2
 PyMuPDF==1.28.2
@@ -9,3 +10,6 @@ rapid-layout==1.2.1
 rapid-table==3.0.2
 onnxruntime==1.29.0
 sentencepiece==0.2.2
+python-hwpx==6.7.0
+lxml==6.1.3
+cryptography==50.0.2

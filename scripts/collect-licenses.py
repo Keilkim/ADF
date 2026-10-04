@@ -68,7 +68,8 @@ def main() -> None:
             if not source.is_file():
                 raise RuntimeError("Run scripts/build-shell.ps1 before collecting native runtime notices")
             shutil.copyfile(source, native / source.name)
-    packages = ["PyMuPDF", "PySide6", "PySide6_Essentials", "PySide6_Addons", "shiboken6", "Pillow", "fonttools", "PyInstaller"]
+    packages = ["PyMuPDF", "PySide6", "PySide6_Essentials", "PySide6_Addons", "shiboken6", "Pillow", "fonttools", "PyInstaller",
+                "python-hwpx", "lxml", "cryptography", "cffi", "pycparser"]
     packages += [name for name in ocr_packages(ROOT) if name.lower() not in {entry.lower() for entry in packages}]
     installed = {}
     for name in packages:
@@ -113,7 +114,7 @@ def main() -> None:
         'rapid-table': ('RapidAI/RapidTable', '22592283c1f9d7c5a014c96c4ecc57de0b3ebfce'),
         'rapidocr': ('RapidAI/RapidOCR', '095232a4c94f7f0e6600ba5bba1177010ad696d4'),
     }
-    for package in dict.fromkeys(['pymupdf', 'pillow', 'fonttools', *ocr_packages(ROOT)]):
+    for package in dict.fromkeys(['pymupdf', 'pillow', 'fonttools', 'python-hwpx', 'lxml', 'cryptography', 'cffi', 'pycparser', *ocr_packages(ROOT)]):
         try:
             version = importlib.metadata.version(package)
         except importlib.metadata.PackageNotFoundError:
