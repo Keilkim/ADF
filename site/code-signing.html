@@ -30,7 +30,7 @@
       <h1>코드 서명과 배포.</h1>
       <p class="lead">
         macOS용 ADF 0.3.30은 Developer ID로 서명하고 Apple 공증을 받았습니다.
-        Windows용 0.3.42는 현재 미서명 상태로 제공합니다.
+        Windows용 0.3.43은 현재 미서명 상태로 제공합니다.
       </p>
       <p class="notice">
         2026년 9월 10일 SignPath Foundation에 무료 오픈소스 서명 지원을
@@ -54,11 +54,11 @@
         실제 입력 장치와 인쇄 조작, macOS 15 실기기 및 다른 Mac 설치는 추가 확인이 필요합니다.
       </p>
       <p>
-        Windows용 0.3.42는 소스·OCR 검사와 탐색기 확장 구성 요소 검사를 통과했습니다. Windows
+        Windows용 0.3.43은 소스·OCR 검사와 탐색기 확장 구성 요소 검사를 통과했습니다. Windows
         Server 2022에서 설치·설치된 파일 대조·앱 실행·문서 처리·제거도 확인했습니다.
         해당 서버의 탐색기 메뉴 조합 검사는 실패했으며, Windows 10/11의 실제
         탐색기 통합과 입력 장치는 추가 확인이 필요합니다.
-        <a href="https://github.com/Keilkim/ADF/releases/tag/v0.3.42"
+        <a href="https://github.com/Keilkim/ADF/releases/tag/v0.3.43"
           >릴리즈 안내</a
         >에서 검증 범위와 파일 해시를 확인할 수 있습니다.
       </p>
@@ -78,8 +78,9 @@
       </p>
       <h2>문서와 도장 보관</h2>
       <p>
-        PDF 편집, 도장 보관, 비교와 OCR은 사용자 PC에서 처리합니다. 앱은 문서와
-        도장을 서버로 전송하지 않습니다. 자세한 내용은
+        기본 PDF 편집, 도장 보관, 비교와 OCR은 사용자 PC에서 처리합니다.
+        사용자가 Gemini HWPX 변환과 전송 항목을 선택한 경우 해당 페이지의
+        이미지·텍스트를 Google에 보냅니다. 자세한 내용은
         <a href="/privacy">데이터 보관 안내</a>를 참고하세요.
       </p>
       <h2 lang="en">For reviewers</h2>
@@ -105,7 +106,7 @@
             <a href="https://github.com/Keilkim/ADF/actions/workflows/windows-build.yml"
               >GitHub Actions Windows workflow</a
             > builds public source on GitHub-hosted runners and retains unsigned
-            review artifacts. Windows 0.3.42 comes from that workflow and is
+            review artifacts. Windows 0.3.43 comes from that workflow and is
             published unsigned; workflow results are available at the link.
           </li>
           <li>
@@ -116,7 +117,7 @@
             in the build's summary and verification records.
           </li>
           <li>
-            The application does not upload user documents or stamp data.
+            Core PDF and stamp operations stay local. Optional Gemini HWPX conversion sends selected page images and text to Google only after the user enables transmission.
             Website and download hosting are described in the
             <a href="/privacy">privacy notice</a>.
           </li>
