@@ -35,6 +35,16 @@ for package in ('rapid_layout', 'rapid_table'):
 for package in ('PyMuPDF', 'PySide6', 'shiboken6', 'Pillow', 'fonttools'):
     datas += copy_metadata(package)
 datas += collect_data_files('pymupdf')
+datas += collect_data_files('hwpx')
+for package in ('python-hwpx', 'lxml', 'cryptography'):
+    datas += copy_metadata(package)
+# This private bundle conceals plaintext; recipients can reverse its encryption.
+credential_dir = root / '.tools' / 'hwpx-credentials'
+if os.environ.get('XDF_HWPX_BUNDLE_SHARED_KEY') == '1' and (credential_dir / 'credential.enc').is_file():
+    if not (credential_dir / 'wrapping.bin').is_file():
+        raise RuntimeError('The HWPX credential bundle is incomplete.')
+    for name in ('credential.enc', 'wrapping.bin'):
+        datas.append((str(credential_dir / name), 'HWPX_CREDENTIALS'))
 binaries = collect_dynamic_libs('pymupdf')
 a = Analysis(
     [str(root / 'main.py')], pathex=[str(root)], binaries=binaries, datas=datas,

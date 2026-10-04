@@ -1,6 +1,6 @@
 #define AppName "XDF"
 #ifndef AppVersion
-  #define AppVersion "0.3.42"
+  #define AppVersion "0.3.43"
 #endif
 #define RepoRoot AddBackslash(SourcePath) + ".."
 #ifndef AppBuildDir
@@ -22,6 +22,10 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64os
 ArchitecturesInstallIn64BitMode=x64os
 MinVersion=10.0.17763
+#ifdef HwpxPrivateBundle
+OutputDir={#RepoRoot}\release\private
+OutputBaseFilename=XDF-Friends-Setup-{#AppVersion}
+#else
 OutputDir={#RepoRoot}\release
 #ifdef PatchFrom
 ; Updates exactly one installed version with only the files that changed.
@@ -29,6 +33,7 @@ OutputDir={#RepoRoot}\release
 OutputBaseFilename=ADF-Update-{#PatchFrom}-to-{#AppVersion}
 #else
 OutputBaseFilename=ADF-Setup-{#AppVersion}
+#endif
 #endif
 SetupIconFile={#RepoRoot}\assets\xdf.ico
 UninstallDisplayIcon={app}\ADF.exe
@@ -68,6 +73,12 @@ Source: "{#AppBuildDir}\*"; DestDir: "{app}"; Excludes: "ADFShell-*.dll"; Flags:
 ; Normal version comparison skips an identical DLL on same-version reinstalls.
 ; Do not use reboot-replacement flags: per-user installation has no admin rights.
 Source: "{#AppBuildDir}\ADFShell-{#AppVersion}.dll"; DestDir: "{app}"
+#ifdef HwpxPrivateBundle
+; Private installers stay outside public release assets. Both files are
+; necessary at runtime; users do not enter a key. Encryption is reversible.
+Source: "{#RepoRoot}\.tools\hwpx-credentials\credential.enc"; DestDir: "{app}\_internal\HWPX_CREDENTIALS"; Flags: ignoreversion
+Source: "{#RepoRoot}\.tools\hwpx-credentials\wrapping.bin"; DestDir: "{app}\_internal\HWPX_CREDENTIALS"; Flags: ignoreversion
+#endif
 
 [Icons]
 Name: "{group}\XDF"; Filename: "{app}\ADF.exe"; AppUserModelID: "ADF.PDF.Editor"
