@@ -749,7 +749,9 @@ class DesktopWorkflowTests(unittest.TestCase):
         self.assertEqual(toolbar.file_items[file_keys.index('compress')].toolButtonStyle(),
                          Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.assertEqual(toolbar.edit_items, [])
-        self.assertEqual(file_keys[file_keys.index('markdown')+1], 'number')
+        self.assertEqual(file_keys[file_keys.index('markdown')+1], 'hwpx')
+        self.assertEqual(file_keys[file_keys.index('hwpx')+1], 'number')
+        self.assertEqual(toolbar.file_items[file_keys.index('hwpx')].text(), '한글 변환')
         self.assertEqual(toolbar.file_items[file_keys.index('number')].toolButtonStyle(),
                          Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.assertEqual(self.window.actions['number'].text(), '페이지 번호 및 머리말 편집')

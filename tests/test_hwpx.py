@@ -250,3 +250,24 @@ def test_publication_refuses_existing_file_and_rolls_back_batch(tmp_path):
             publish_hwpx(folder, destination)
     assert not destination.exists()
     assert not destination.with_suffix('.conversion.json').exists()
+
+
+def test_worker_finishes_when_windows_temporarily_locks_progress_file(tmp_path):
+    sample_pdf(tmp_path / 'document.pdf')
+    request = tmp_path / 'request.json'
+    request.write_text(json.dumps({'operation': 'convert', 'options': {'provider': 'local'}}), encoding='utf-8')
+    original_replace = Path.replace
+    blocked = []
+
+    def sharing_violation(path, target):
+        if path.name == 'progress.tmp':
+            blocked.append(True)
+            raise PermissionError('simulated Windows sharing violation')
+        return original_replace(path, target)
+
+    with patch.object(Path, 'replace', sharing_violation):
+        assert hwpx_worker(request) == 0
+    assert blocked
+    assert json.loads((tmp_path / 'result.json').read_text(encoding='utf-8'))['ok']
+    with HwpxDocument.open(tmp_path / 'output.hwpx') as document:
+        assert 'Editable heading' in document.text.plain()

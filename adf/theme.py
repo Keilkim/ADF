@@ -36,6 +36,9 @@ def apply_theme(app):
 
 
 def icon(name, color='#525b6a'):
+    if name == 'hwpx':
+        root = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent.parent))
+        return QIcon(str(root / 'assets' / 'icons' / 'pdf-to-hwpx.svg'))
     pm = QPixmap(24, 24)
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
