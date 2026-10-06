@@ -4,7 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import io
+import math
 import re
+from statistics import median
 
 import pymupdf
 from fontTools.ttLib import TTFont, newTable
@@ -77,11 +79,90 @@ def _pdf_mapping(page, resource):
     # Covers simple encodings and PDFs without ToUnicode. MuPDF supplies the
     # actual Unicode/glyph-index pairs it used to render the selected page.
     matching = {r[0] for r in page.get_fonts(full=True) if normal_name(r[3]) == normal_name(resource[3])}
-    for span in page.get_texttrace() if len(matching) == 1 else ():
+    trace = page.get_texttrace() if len(matching) == 1 else ()
+    recovered = set()
+    if any(cp in (ord('$'), 0xfffd) for span in trace for cp, *_ in span['chars']):
+        from .text_groups import restore_blank_spacers
+        raw = page.get_text('rawdict', flags=pymupdf.TEXTFLAGS_RAWDICT & ~pymupdf.TEXT_PRESERVE_IMAGES)
+        recovered = restore_blank_spacers(page, raw)
+    for span in trace:
         if normal_name(span['font']) == normal_name(resource[3]):
-            for codepoint, gid, *_ in span['chars']:
-                if codepoint != 0xfffd and gid > 0:
+            for codepoint, gid, origin, *_ in span['chars']:
+                if gid <= 0:
+                    continue
+                identity = span['font'], span['size'], tuple(origin)
+                if identity in recovered:
+                    result[32] = gid
+                elif codepoint == ord('$') and recovered:
+                    # The same font may paint a genuine dollar elsewhere.
+                    result[codepoint] = gid
+                elif codepoint != 0xfffd:
                     result.setdefault(codepoint, gid)
+    return result
+
+
+def _pdf_whitespace_widths(page, resource):
+    """Read advances that can survive in the PDF after font subsetting."""
+    doc, xref = page.parent, resource[0]
+
+    def value(owner, key):
+        kind, result = doc.xref_get_key(owner, key)
+        return doc.xref_object(int(result.split()[0])) if kind == 'xref' else result
+
+    kind, unicode_ref = doc.xref_get_key(xref, 'ToUnicode')
+    codes = {code: cp for code, cp in _cmap_pairs(doc.xref_stream(int(unicode_ref.split()[0])))
+             if cp is not None and chr(cp).isspace()} if kind == 'xref' else {}
+    widths = {}
+    if resource[2] == 'Type0':
+        refs = re.findall(r'(\d+)\s+0\s+R', value(xref, 'DescendantFonts'))
+        if refs:
+            descendant = int(refs[0])
+            default = value(descendant, 'DW')
+            if default != 'null':
+                widths = {code: float(default) / 1000 for code in codes}
+            # /W contains either a starting CID and an array of widths, or
+            # a first/last CID range followed by a shared width.
+            number = r'[-+]?(?:\d+(?:\.\d*)?|\.\d+)'
+            for first, array, last, width in re.findall(
+                    rf'(\d+)\s*(?:\[([^\]]*)\]|(\d+)\s+({number}))', value(descendant, 'W')):
+                first = int(first)
+                if array:
+                    entries = re.findall(number, array)
+                    for code in codes:
+                        if first <= code < first + len(entries):
+                            widths[code] = float(entries[code-first]) / 1000
+                elif last:
+                    for code in codes:
+                        if first <= code <= int(last):
+                            widths[code] = float(width) / 1000
+    elif codes:
+        first = value(xref, 'FirstChar')
+        if first != 'null':
+            entries = re.findall(r'[-+]?(?:\d+(?:\.\d*)?|\.\d+)', value(xref, 'Widths'))
+            for code in codes:
+                index = code - int(first)
+                if 0 <= index < len(entries):
+                    widths[code] = float(entries[index]) / 1000
+    result = {codes[code]: width for code, width in widths.items() if math.isfinite(width) and width > 0}
+    # Without a usable width entry, extracted spaces (including synthetic
+    # ones between positioned words) still describe the visible word gap.
+    observed = {}
+    data = page.get_text('rawdict', flags=pymupdf.TEXTFLAGS_RAWDICT & ~pymupdf.TEXT_PRESERVE_IMAGES)
+    from .text_groups import restore_blank_spacers
+    restore_blank_spacers(page, data)
+    for block in data['blocks']:
+        for line in block.get('lines', []):
+            for span in line['spans']:
+                if normal_name(span['font']) != normal_name(resource[3]) or span['size'] <= 0:
+                    continue
+                for char in span['chars']:
+                    if not char['c'].isspace() or len(char['c']) != 1:
+                        continue
+                    width = (char['bbox'][2] - char['bbox'][0]) / span['size']
+                    if math.isfinite(width) and width > 0:
+                        observed.setdefault(ord(char['c']), []).append(width)
+    for cp, samples in observed.items():
+        result.setdefault(cp, median(samples))
     return result
 
 
@@ -163,6 +244,34 @@ def _sfnt(data, mapping=None):
             if pen.bounds is not None and name != order[0]:
                 visible.add(name)
         cmap = {cp: name for cp, name in cmap.items() if name in visible or chr(cp).isspace()}
+    if 32 not in cmap:
+        # Positioned words often have no encoded space in a subset font. Qt's
+        # NoFontMerging would then paint .notdef at each inferred word gap.
+        # Add a truly empty glyph, keeping all original glyph IDs unchanged.
+        name = 'ADFSpace'
+        while name in order:
+            name += '_'
+        new_order = order + [name]
+        if 'glyf' in font:
+            from fontTools.pens.ttGlyphPen import TTGlyphPen
+            font['glyf'][name] = TTGlyphPen(None).glyph()
+        elif 'CFF ' in font:
+            from fontTools.misc.psCharStrings import T2CharString
+            cff = font['CFF '].cff
+            top = cff.topDictIndex[0]
+            top.charset.append(name)
+            charstring = T2CharString(program=[0, 'endchar'],
+                                      private=top.Private, globalSubrs=cff.GlobalSubrs)
+            if top.CharStrings.charStringsAreIndexed:
+                index = top.CharStrings.charStringsIndex
+                top.CharStrings.charStrings[name] = len(index)
+                index.append(charstring)
+            else:
+                top.CharStrings[name] = charstring
+        font.setGlyphOrder(new_order)
+        font['hmtx'][name] = (0, 0)
+        font['maxp'].numGlyphs = len(new_order)
+        cmap[32] = name
     table = newTable('cmap')
     table.tableVersion = 0
     table.tables = []
@@ -217,6 +326,16 @@ def embedded_font(page, name):
             if not data:
                 continue
             font = _sfnt(data, _pdf_mapping(page, resource))
+            # Subsetting can retain a space's Unicode mapping but clear its
+            # unused advance. Restore it for both Qt and the edited PDF.
+            spaces = {cp: glyph for cp, glyph in font.getBestCmap().items()
+                      if chr(cp).isspace() and font['hmtx'][glyph][0] <= 0}
+            if spaces:
+                widths = _pdf_whitespace_widths(page, resource)
+                for cp, glyph in spaces.items():
+                    advance = round(widths.get(cp, .25 if cp == 32 else 0) * font['head'].unitsPerEm)
+                    if 0 < advance <= 65535:
+                        font['hmtx'][glyph] = (advance, font['hmtx'][glyph][1])
             result = EditFont(name, _save(font), source)
             candidates[hashlib.sha256(result.data).digest()] = result
         except Exception:

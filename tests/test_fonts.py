@@ -11,20 +11,20 @@ import pymupdf
 from fontTools.fontBuilder import FontBuilder
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTFont
-from PySide6.QtGui import QFontDatabase, QRawFont
+from PySide6.QtGui import QFont, QFontDatabase, QRawFont
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from adf.fonts import embedded_font, installed_font, original_font, _cmap_pairs
+from adf.fonts import EditFont, embedded_font, installed_font, original_font, _cmap_pairs
 from adf.document import PdfDocument
 from adf.text_groups import text_group_at
 from adf.app import MainWindow
 
 
-def fixture_font(name='ADF Fixture Uninstalled', width=520):
+def fixture_font(name='ADF Fixture Uninstalled', width=520, space_width=None, extra_codepoints=(), spacer_gid=1):
     builder = FontBuilder(1000, isTTF=True)
-    cmap = {cp: f'u{cp:04X}' for cp in [32, 65, 66, 67, 88, 44032, 45208, 45796]}
-    order = ['.notdef'] + list(cmap.values())
+    cmap = {cp: f'u{cp:04X}' for cp in [32, 65, 66, 67, 88, 44032, 45208, 45796, *extra_codepoints]}
+    order = ['.notdef'] + [f'pad{i}' for i in range(spacer_gid-1)] + list(cmap.values())
     builder.setupGlyphOrder(order)
     builder.setupCharacterMap(cmap)
     glyphs = {}
@@ -35,7 +35,8 @@ def fixture_font(name='ADF Fixture Uninstalled', width=520):
             pen.lineTo((width-80, 650-index*12)); pen.lineTo((40, 650)); pen.closePath()
         glyphs[glyph] = pen.glyph()
     builder.setupGlyf(glyphs)
-    builder.setupHorizontalMetrics({glyph: (width, 40) for glyph in order})
+    builder.setupHorizontalMetrics({glyph: (space_width if glyph == 'u0020' and space_width is not None else width, 40)
+                                    for glyph in order})
     builder.setupHorizontalHeader(ascent=800, descent=-200)
     builder.setupNameTable({'familyName': name, 'styleName': 'Regular', 'fullName': name,
                            'psName': name.replace(' ', '')})
@@ -106,6 +107,188 @@ class DocumentFontTests(unittest.TestCase):
         fixture_pdf(self.path, subset=False)
         with pymupdf.open(self.path) as doc:
             self.assertEqual(self.font(doc).missing('X 가나다'), '')
+
+    def test_positioned_word_spaces_keep_width_in_editor_and_saved_pdf(self):
+        # The PDF positions words without painting a space glyph. Subsetting
+        # clears its advance in hmtx while retaining the width in the PDF /W.
+        data = fixture_font(space_width=300)
+        with pymupdf.open() as doc:
+            page = doc.new_page(width=400, height=500)
+            page.insert_font(fontname='Fixture', fontbuffer=data)
+            page.insert_text((40, 80), 'AB', fontname='Fixture', fontsize=20)
+            page.insert_text((66.8, 80), '가나', fontname='Fixture', fontsize=20)
+            doc.subset_fonts()
+            doc.save(self.path)
+        before = self.path.read_bytes()
+        with pymupdf.open(self.path) as doc:
+            raw = TTFont(io.BytesIO(doc.extract_font(doc[0].get_fonts()[0][0])[3]))
+            self.assertEqual(raw['hmtx'][raw.getGlyphOrder()[1]][0], 0)
+
+        def run(window):
+            self.assertEqual(window.text_value.toPlainText(), 'AB 가나')
+            self.assertAlmostEqual(window.edit_font.metrics.glyph_advance(32), .3, places=4)
+            # Measure the actual QTextEdit layout: text contents alone would
+            # miss a space that is present but rendered with zero advance.
+            layout = window.text_value.document().firstBlock().layout()
+            window.text_value.document().documentLayout().documentSize()
+            line = layout.lineAt(0)
+            self.assertAlmostEqual(line.cursorToX(3)[0] - line.cursorToX(2)[0], 6, delta=.05)
+            window.text_value.setPlainText('가나 AB')
+            self.assertTrue(window.finish_text_selection())
+            self.assertIn('가나 AB', window.document.doc[0].get_text())
+            target = self.path.with_name('spaces-saved.pdf')
+            window.document.save(target)
+            with pymupdf.open(target) as saved:
+                self.assertIn('가나 AB', saved[0].get_text())
+                chars = saved[0].get_text('rawdict')['blocks'][0]['lines'][0]['spans'][0]['chars']
+                for char in chars:
+                    if char['c'] == ' ':
+                        self.assertAlmostEqual(char['bbox'][2] - char['bbox'][0], 6, delta=.05)
+            self.assertEqual(self.path.read_bytes(), before)
+            self.assertTrue(window.document.undo())
+            self.assertIn('AB 가나', window.document.doc[0].get_text())
+
+        self.with_window(run)
+
+    def test_changing_font_preserves_repeated_spaces_and_line_breaks(self):
+        replacement = EditFont('ADF Fixture Replacement',
+                               fixture_font('ADF Fixture Replacement', width=360, space_width=240), 'PC 글꼴')
+        text = 'AB  가나\nC 다'
+
+        def run(window):
+            window.text_value.setPlainText(text)
+            with patch('adf.app.installed_font', return_value=replacement):
+                window.text_font.setCurrentFont(QFont(replacement.label))
+            self.assertIs(window.edit_font, replacement)
+            self.assertEqual(window.text_value.toPlainText(), text)
+            window.text_value.document().documentLayout().documentSize()
+            line = window.text_value.document().firstBlock().layout().lineAt(0)
+            for start in (2, 3):
+                self.assertAlmostEqual(line.cursorToX(start+1)[0] - line.cursorToX(start)[0], 4.8, delta=.05)
+            self.assertTrue(window.finish_text_selection())
+            target = self.path.with_name('font-changed.pdf')
+            window.document.save(target)
+            with pymupdf.open(target) as saved:
+                self.assertIn(text, saved[0].get_text())
+
+        self.with_window(run)
+
+    def test_zero_space_advance_is_restored_from_pdf_widths_or_visible_gap(self):
+        import re
+        data = fixture_font(space_width=300)
+        with pymupdf.open() as doc:
+            page = doc.new_page()
+            page.insert_font(fontname='Fixture', fontbuffer=data)
+            page.insert_text((40, 80), 'AB', fontname='Fixture', fontsize=20)
+            page.insert_text((66.8, 80), '가나', fontname='Fixture', fontsize=20)
+            doc.subset_fonts()
+            buffer = doc.tobytes()
+        for widths, default in (('[1 [300] 2 8 520]', None), ('[1 1 300 2 8 520]', None),
+                                ('[2 8 520]', '300'), ('[2 8 520]', None)):
+            with self.subTest(widths=widths, default=default), pymupdf.open(stream=buffer) as doc:
+                page = doc[0]
+                resource = page.get_fonts(full=True)[0]
+                descendant = int(re.findall(r'(\d+)\s+0\s+R', doc.xref_get_key(resource[0], 'DescendantFonts')[1])[0])
+                doc.xref_set_key(descendant, 'W', widths)
+                doc.xref_set_key(descendant, 'DW', default or 'null')
+                font = embedded_font(page, resource[3])
+                self.assertIsNotNone(font)
+                self.assertAlmostEqual(font.metrics.glyph_advance(32), .3, places=3)
+                # Restoring a blank space must leave all painted glyphs alone.
+                original = pymupdf.Font(fontbuffer=data)
+                self.assertEqual(font.metrics.text_length('AB가나'), original.text_length('AB가나'))
+
+    def test_subset_without_any_space_mapping_renders_empty_space_in_editor(self):
+        import re
+        with pymupdf.open() as doc:
+            page = doc.new_page(width=400, height=500)
+            page.insert_font(fontname='Fixture', fontbuffer=fixture_font(space_width=300))
+            page.insert_text((40, 80), 'AB', fontname='Fixture', fontsize=20)
+            page.insert_text((66.8, 80), 'C', fontname='Fixture', fontsize=20)
+            resource = page.get_fonts()[0]
+            unicode_ref = int(doc.xref_get_key(resource[0], 'ToUnicode')[1].split()[0])
+            doc.update_stream(unicode_ref, re.sub(rb'<0001>\s*<0020>', b'', doc.xref_stream(unicode_ref)))
+            doc.subset_fonts()
+            doc.save(self.path)
+
+        def run(window):
+            self.assertEqual(window.text_value.toPlainText(), 'AB C')
+            raw = QRawFont.fromFont(window.text_font.currentFont())
+            gid = raw.glyphIndexesForString(' ')[0]
+            self.assertGreater(gid, 0)
+            self.assertTrue(raw.boundingRect(gid).isEmpty())
+            window.text_value.document().documentLayout().documentSize()
+            line = window.text_value.document().firstBlock().layout().lineAt(0)
+            self.assertAlmostEqual(line.cursorToX(3)[0]-line.cursorToX(2)[0], 6, delta=.05)
+            window.text_value.setPlainText('C AB')
+            self.assertTrue(window.finish_text_selection())
+            self.assertIn('C AB', window.document.doc[0].get_text())
+
+        self.with_window(run)
+
+    def test_unmapped_blank_cid_36_recovers_a_space_and_keeps_currency(self):
+        import re
+        data = fixture_font(space_width=300, extra_codepoints=(36, 49, 48), spacer_gid=36)
+        with pymupdf.open() as doc:
+            page = doc.new_page()
+            page.insert_font(fontname='Fixture', fontbuffer=data)
+            page.insert_text((40, 80), 'AB C $100', fontname='Fixture', fontsize=20)
+            resource = page.get_fonts()[0]
+            unicode_ref = int(doc.xref_get_key(resource[0], 'ToUnicode')[1].split()[0])
+            cmap = doc.xref_stream(unicode_ref)
+            cmap = re.sub(rb'<0024>\s*<0020>', b'', cmap)
+            doc.update_stream(unicode_ref, cmap)
+            doc.subset_fonts()
+            buffer = doc.tobytes()
+        with pymupdf.open(stream=buffer) as doc:
+            self.assertIn('AB$C$$100', doc[0].get_text())
+            group = text_group_at(doc[0], (45, 75))
+            self.assertEqual(group['text'], 'AB C $100')
+            source = embedded_font(doc[0], group['font'])
+            self.assertIsNotNone(source)
+            self.assertEqual(source.missing(group['text']), '')
+            self.assertAlmostEqual(source.metrics.glyph_advance(32), .3, places=4)
+            # Actual currency remains an outlined dollar in the recovered font.
+            font = TTFont(io.BytesIO(source.data))
+            self.assertNotEqual(font.getBestCmap()[32], font.getBestCmap()[36])
+
+    def test_blank_dollar_mapping_is_a_space_after_font_change_and_save(self):
+        import re
+        data = fixture_font(space_width=300, extra_codepoints=(36, 49, 48))
+        with pymupdf.open() as doc:
+            page = doc.new_page(width=400, height=500)
+            page.insert_font(fontname='Fixture', fontbuffer=data)
+            page.insert_text((40, 80), 'AB C $100', fontname='Fixture', fontsize=20)
+            resource = page.get_fonts()[0]
+            unicode_ref = int(doc.xref_get_key(resource[0], 'ToUnicode')[1].split()[0])
+            cmap = doc.xref_stream(unicode_ref)
+            cmap = re.sub(rb'(<0001>\s*)<0020>', rb'\g<1><0024>', cmap)
+            doc.update_stream(unicode_ref, cmap)
+            doc.subset_fonts()
+            doc.save(self.path)
+        original = self.path.read_bytes()
+        replacement = EditFont('ADF Dollar Replacement',
+                               fixture_font('ADF Dollar Replacement', space_width=240,
+                                            extra_codepoints=(36, 49, 48)), 'PC 글꼴')
+
+        def run(window):
+            self.assertEqual(window.text_value.toPlainText(), 'AB C $100')
+            self.assertGreater(window.edit_font.metrics.glyph_advance(32), 0)
+            with patch('adf.app.installed_font', return_value=replacement):
+                window.text_font.setCurrentFont(QFont(replacement.label))
+            self.assertIs(window.edit_font, replacement)
+            self.assertEqual(window.text_value.toPlainText(), 'AB C $100')
+            self.assertTrue(window.finish_text_selection())
+            target = self.path.with_name('blank-dollar-saved.pdf')
+            window.document.save(target)
+            with pymupdf.open(target) as saved:
+                self.assertIn('AB C $100', saved[0].get_text())
+                self.assertEqual(saved[0].get_text().count('$'), 1)
+            self.assertEqual(self.path.read_bytes(), original)
+            self.assertTrue(window.document.undo())
+            self.assertIn('AB$C', window.document.doc[0].get_text())
+
+        self.with_window(run)
 
     def test_same_named_document_fonts_get_different_preview_families(self):
         other = self.path.with_name('other.pdf'); fixture_pdf(other, width=740)

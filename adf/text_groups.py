@@ -65,9 +65,49 @@ def _make_line(spans, direction, wmode):
     return _Line(spans, box, text.strip(), float(main["origin"][1]), tuple(direction), wmode)
 
 
+def restore_blank_spacers(page, data):
+    """Recover a dollar-encoded spacer only when its actual glyph has no ink.
+
+    PDF producers may map a blank glyph to '$', or omit its Unicode mapping
+    and expose CID 36. A replacement font then paints a real dollar sign.
+    Accurate glyph bounds distinguish these spacers from genuine currency.
+    Keep the normal boxes for selection and redaction; change only the text.
+    """
+    def chars(tree):
+        for block in tree['blocks']:
+            for line in block.get('lines', []):
+                for span in line['spans']:
+                    for char in span['chars']:
+                        if char['c'] == '$':
+                            yield span, char
+
+    candidates = list(chars(data))
+    if not candidates:
+        return set()
+    flags = (pymupdf.TEXTFLAGS_RAWDICT & ~pymupdf.TEXT_PRESERVE_IMAGES) | pymupdf.TEXT_ACCURATE_BBOXES
+    accurate = page.get_text('rawdict', flags=flags)
+
+    def key(span, char):
+        return span['font'], span['size'], tuple(char['origin'])
+
+    blank = {}
+    for span, char in chars(accurate):
+        rect = pymupdf.Rect(char['bbox'])
+        empty = rect.width > 0 and abs(rect.height) < 1e-6
+        identity = key(span, char)
+        blank[identity] = blank.get(identity, True) and empty
+    recovered = set()
+    for span, char in candidates:
+        if blank.get(key(span, char), False):
+            recovered.add(key(span, char))
+            char['c'] = ' '
+    return recovered
+
+
 def _extract_lines(page, vertical):
     # RAWDICT lets us split even a single wide span at a column-sized space.
     data = page.get_text("rawdict", flags=pymupdf.TEXTFLAGS_RAWDICT & ~pymupdf.TEXT_PRESERVE_IMAGES)
+    restore_blank_spacers(page, data)
     fragments = []
     for block in data["blocks"]:
         if block["type"] != 0:

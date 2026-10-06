@@ -391,7 +391,7 @@ class MainWindow(QMainWindow):
         a('split', '분할', self.split, None, 'split')
         a('extract', '선택 페이지 추출…', self.extract_pages, None, 'extract')
         a('markdown', 'OCR · Markdown 내보내기…', self.export_markdown, None, 'ocr')
-        a('hwpx', '한글(HWPX)로 변환…', self.export_hwpx, None, 'save_as')
+        a('hwpx', '한글(HWPX)로 변환…', self.export_hwpx, None, 'hwpx')
         a('number', '페이지 번호 및 머리말 편집', self.number, None, 'number_edit')
         a('number_remove', '페이지 번호 및 머리말 제거', self.remove_numbers, None, 'number_remove')
         self.actions['number'].setToolTip('페이지 번호 및 머리말 편집 · 추가·수정·제거')
@@ -477,10 +477,11 @@ class MainWindow(QMainWindow):
         for key, label, icon_only in [
             ('open','열기',True), ('save','저장',True), ('save_as','다른 이름 저장',True), ('compress','저용량 저장',True),
             ('print','인쇄',True), ('undo','실행 취소',True), ('redo','다시 실행',True), ('find','찾기',True),
-            ('compare','비교',True), ('markdown','OCR · MD',True), ('number','페이지 번호 및 머리말 편집',True),
+            ('compare','비교',True), ('markdown','OCR · MD',True), ('hwpx','한글 변환',False),
+            ('number','페이지 번호 및 머리말 편집',True),
         ]:
             button = self.toolbar.button(self.actions[key], label, 'file', icon_only)
-            if key == 'number':
+            if key in ('number', 'hwpx'):
                 button.setIconSize(QSize(24,24))
         self.toolbar.reflow(self.width())
 

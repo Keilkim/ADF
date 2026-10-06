@@ -305,7 +305,13 @@ def hwpx_worker(request_path):
             def progress(data):
                 temporary = path.parent / 'progress.tmp'
                 temporary.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
-                temporary.replace(path.parent / 'progress.json')
+                try:
+                    temporary.replace(path.parent / 'progress.json')
+                except PermissionError:
+                    # Windows may deny replacement while the UI reads the old
+                    # progress file. The next update will publish fresh data.
+                    # A display update must not discard a completed conversion.
+                    pass
             converted = convert_document(path.parent / 'document.pdf', path.parent / 'output.hwpx',
                 provider=options['provider'], model=options.get('model', DEFAULT_MODEL), client=client,
                 page_numbers=task.get('page_numbers'), progress=progress)
