@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QGraphicsObject
 from .fullscreen import motion_enabled
 
 from .theme import ACCENT
+from .text_groups import restore_text_spacing
 
 HIGHLIGHT = QColor(ACCENT)
 HIGHLIGHT.setAlpha(64)
@@ -37,7 +38,8 @@ class PageText:
         if page is None:
             return
         flags = pymupdf.TEXTFLAGS_RAWDICT & ~pymupdf.TEXT_PRESERVE_IMAGES
-        for block_index, block in enumerate(page.get_text('rawdict', flags=flags)['blocks']):
+        data = restore_text_spacing(page, page.get_text('rawdict', flags=flags))
+        for block_index, block in enumerate(data['blocks']):
             for line in block.get('lines', []):
                 start, rect = len(self.chars), None
                 for span in line['spans']:
@@ -245,9 +247,11 @@ class RegionSelection(QGraphicsObject):
         if not clip.is_empty:
             flags = pymupdf.TEXTFLAGS_RAWDICT & ~pymupdf.TEXT_PRESERVE_IMAGES
             textpage = page.get_textpage(clip=clip, flags=flags)
-            text = textpage.extractTextbox(clip)
+            data = restore_text_spacing(page, textpage.extractRAWDICT())
+            text = '\n'.join(''.join(char['c'] for span in line['spans'] for char in span['chars'])
+                             for block in data['blocks'] for line in block.get('lines', []))
             if highlight_text:
-                for block in textpage.extractRAWDICT()['blocks']:
+                for block in data['blocks']:
                     for line in block.get('lines', []):
                         for span in line['spans']:
                             for char in span['chars']:

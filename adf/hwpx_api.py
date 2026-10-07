@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import json
 import math
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -27,6 +28,16 @@ CELL_SCHEMA = _object(dict(
     row=dict(type='integer'), col=dict(type='integer'),
     row_span=dict(type='integer'), col_span=dict(type='integer'),
     text=dict(type='string')))
+FORMAT_PROPERTIES = dict(
+    font=dict(type='string'), font_size_pt=dict(type='number'), color=dict(type='string'),
+    bold=dict(type='boolean'), italic=dict(type='boolean'),
+    alignment=dict(type='string', enum=['LEFT', 'CENTER', 'RIGHT', 'JUSTIFY']))
+BORDER_SCHEMA = _object(dict(side=dict(type='string', enum=['left', 'right', 'top', 'bottom']),
+    type=dict(type='string', enum=['NONE', 'SOLID', 'DASH', 'DOT', 'DASH_DOT', 'DASH_DOT_DOT', 'DOUBLE_SLIM']),
+    width_pt=dict(type='number'), color=dict(type='string')))
+CELL_SCHEMA['properties'].update(FORMAT_PROPERTIES)
+CELL_SCHEMA['properties'].update(dict(
+    fill_color=dict(type=['string', 'null']), borders=dict(type='array', items=BORDER_SCHEMA)))
 BLOCK_SCHEMA = _object(dict(
     kind=dict(type='string', enum=['paragraph', 'table', 'image']),
     bbox=dict(type='array', items=dict(type='number'), minItems=4, maxItems=4),
@@ -35,6 +46,9 @@ BLOCK_SCHEMA = _object(dict(
     alignment=dict(type='string', enum=['LEFT', 'CENTER', 'RIGHT', 'JUSTIFY']),
     rows=dict(type='integer'), cols=dict(type='integer'),
     cells=dict(type='array', items=CELL_SCHEMA)))
+BLOCK_SCHEMA['properties'].update(dict(font=dict(type='string'), color=dict(type='string'),
+    column_widths_pt=dict(type='array', items=dict(type='number')),
+    row_heights_pt=dict(type='array', items=dict(type='number'))))
 PAGE_SCHEMA = _object(dict(
     blocks=dict(type='array', items=BLOCK_SCHEMA),
     warnings=dict(type='array', items=dict(type='string'))))
@@ -54,7 +68,14 @@ that cannot be represented faithfully. Image bbox must exclude surrounding
 paragraphs. Never replace an entire text page with an image to skip transcription.
 Coordinates are [left, top, right, bottom], normalized to 0..1000, relative to
 the displayed full page with its top-left at (0,0). Preserve approximate font
-size in points (1..144), bold, italic and alignment. For images set font_size_pt=10.
+size in points (1..144), bold, italic and alignment. Preserve font family and
+text color when recognizable. Each table cell may have its own font_size_pt,
+font, bold, italic, color and alignment; do not force all cells to one size.
+Preserve unequal column_widths_pt and row_heights_pt. For each cell describe
+visible borders with side, type, width_pt and #RRGGBB color, and fill_color
+(#RRGGBB or null). Use NONE for invisible edges, SOLID, DASH, DOT, DASH_DOT,
+DASH_DOT_DOT or DOUBLE_SLIM for visible ones. Prefer measured native styles
+over guessing. Report uncertain style in warnings. For images set font_size_pt=10.
 For non-table blocks set rows=cols=0
 and cells=[]. For table/image blocks set text="". Include each table cell once at
 its top-left row/col; spans must tile the grid without overlap. Empty cells are
@@ -64,6 +85,56 @@ layout in warnings. Return only the requested JSON structure.'''
 
 class ConversionError(ValueError):
     """A message safe to show without provider bodies or credentials."""
+
+
+def validate_format(value):
+    def number(number, low, high):
+        return type(number) in (int, float) and math.isfinite(number) and low <= number <= high
+
+    if 'font_size_pt' in value and not number(value['font_size_pt'], 1, 144):
+        raise ConversionError('글자 크기 서식을 확인해 주세요.')
+    if any(key in value and not isinstance(value[key], bool) for key in ('bold', 'italic')):
+        raise ConversionError('글자 서식을 확인해 주세요.')
+    if 'font' in value and (not isinstance(value['font'], str) or not 1 <= len(value['font']) <= 200):
+        raise ConversionError('글꼴 이름을 확인해 주세요.')
+    if value.get('alignment', 'LEFT') not in {'LEFT', 'CENTER', 'RIGHT', 'JUSTIFY'}:
+        raise ConversionError('정렬 서식을 확인해 주세요.')
+    for key in ('color', 'fill_color'):
+        if key in value and not (key == 'fill_color' and value[key] is None) and (not isinstance(value[key], str) or
+                                                       not re.fullmatch(r'#[0-9a-fA-F]{6}', value[key])):
+            raise ConversionError('문서 색상 서식을 확인해 주세요.')
+    for key in ('width_pt', 'height_pt'):
+        if key in value and not number(value[key], .01, 20000):
+            raise ConversionError('셀 크기를 확인해 주세요.')
+    if 'line_spacing_percent' in value and not number(value['line_spacing_percent'], 50, 500):
+        raise ConversionError('줄 간격을 확인해 주세요.')
+    if 'margins_pt' in value and (not isinstance(value['margins_pt'], dict) or
+            any(key not in {'left', 'right', 'top', 'bottom'} or not number(n, 0, 20000)
+                for key, n in value['margins_pt'].items())):
+        raise ConversionError('셀 안쪽 여백을 확인해 주세요.')
+    if 'runs' in value:
+        runs = value['runs']
+        if not isinstance(runs, list) or len(runs) > 10000:
+            raise ConversionError('글자별 서식 구조를 확인해 주세요.')
+        for run in runs:
+            if not isinstance(run, dict) or not isinstance(run.get('text'), str) or 'runs' in run:
+                raise ConversionError('글자별 서식 구조를 확인해 주세요.')
+            validate_format(run)
+        if runs and ''.join(run['text'] for run in runs) != value['text']:
+            raise ConversionError('글자별 서식과 본문이 일치하지 않습니다.')
+    if 'borders' in value:
+        borders = value['borders']
+        if not isinstance(borders, list) or len(borders) > 4:
+            raise ConversionError('표 테두리 서식을 확인해 주세요.')
+        sides = set()
+        for border in borders:
+            if (not isinstance(border, dict) or border.get('side') not in {'left', 'right', 'top', 'bottom'}
+                    or border['side'] in sides or border.get('type') not in {'NONE', 'SOLID', 'DASH', 'DOT',
+                        'DASH_DOT', 'DASH_DOT_DOT', 'DOUBLE_SLIM', 'SLIM_THICK', 'THICK_SLIM', 'SLIM_THICK_SLIM'}
+                    or not number(border.get('width_pt'), 0, 20) or not isinstance(border.get('color'), str)
+                    or not re.fullmatch(r'#[0-9a-fA-F]{6}', border['color'])):
+                raise ConversionError('표 테두리 서식을 확인해 주세요.')
+            sides.add(border['side'])
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -136,11 +207,16 @@ def validate_page(value):
             raise ConversionError('문단의 글자 서식이 올바르지 않습니다.')
         if block.get('alignment', 'LEFT') not in {'LEFT', 'CENTER', 'RIGHT', 'JUSTIFY'}:
             raise ConversionError('문단의 정렬 방식이 올바르지 않습니다.')
+        validate_format(block)
         if block['kind'] != 'table':
             continue
         rows, cols = block.get('rows'), block.get('cols')
         if any(type(v) is not int for v in (rows, cols)) or not 1 <= rows <= 200 or not 1 <= cols <= 60:
             raise ConversionError('표의 행·열 수가 올바르지 않습니다.')
+        for key, count in (('column_widths_pt', cols), ('row_heights_pt', rows)):
+            if key in block and (not isinstance(block[key], list) or len(block[key]) != count or any(
+                    type(n) not in (int, float) or not math.isfinite(n) or not .01 <= n <= 20000 for n in block[key])):
+                raise ConversionError('표의 행·열 크기를 확인해 주세요.')
         cells = block.get('cells')
         if not isinstance(cells, list) or len(cells) > 12000:
             raise ConversionError('표의 셀 구조가 올바르지 않습니다.')
@@ -153,6 +229,7 @@ def validate_page(value):
                 raise ConversionError('병합 셀이 표의 범위를 벗어났습니다.')
             if not isinstance(cell.get('text'), str) or len(cell['text']) > 200000:
                 raise ConversionError('표 셀의 텍스트가 올바르지 않습니다.')
+            validate_format(cell)
             addresses = {(i, j) for i in range(r, r + rs) for j in range(c, c + cs)}
             if occupied & addresses:
                 raise ConversionError('병합 셀이 서로 겹칩니다.')

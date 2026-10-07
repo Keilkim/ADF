@@ -122,7 +122,9 @@ class SelectionWorkflowTests(unittest.TestCase):
 
     def test_drag_selects_the_text_between_the_two_points_while_dragging(self):
         start, end = self.word('line'), self.word('ends')
-        live = self.drag((start.x0+1, start.y0+5), (end.x1-1, end.y0+5))
+        # Start before the narrow "l". At fit-page zoom, pixel rounding can
+        # move x0+1 beyond its midpoint and legitimately place the next caret.
+        live = self.drag((start.x0-.5, start.y0+5), (end.x1+.5, end.y0+5))
         self.assertEqual(live, (False, False))  # highlighted before the button is released
         self.assertIsInstance(self.view.selection_item, TextSelection)
         self.assertEqual(self.window.clip_text, 'line of the paragraph\nsecond line continues here\nthird line ends')

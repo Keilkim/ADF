@@ -104,10 +104,55 @@ def restore_blank_spacers(page, data):
     return recovered
 
 
+def restore_text_spacing(page, data):
+    """Keep encoded whitespace and recover gaps omitted between Korean words.
+
+    MuPDF deliberately omits inferred spaces between CJK glyphs. Some Korean
+    PDFs position words separately without drawing a space. Compare gaps with
+    the line's normal tracking so evenly spaced lettering remains untouched.
+    Chinese and Japanese writing is left alone: gaps need not delimit words.
+    """
+    restore_blank_spacers(page, data)
+
+    def hangul(text):
+        return any('\uac00' <= char <= '\ud7a3' or '\u1100' <= char <= '\u11ff'
+                   or '\u3130' <= char <= '\u318f' for char in text)
+
+    for block in data['blocks']:
+        for line in block.get('lines', []):
+            if tuple(line['dir']) != (1., 0.) or line.get('wmode', 0):
+                continue
+            chars = [(span, char) for span in line['spans'] for char in span['chars']]
+            pairs = [(a, b) for a, b in zip(chars, chars[1:])
+                     if a[1]['c'] and b[1]['c'] and not a[1]['c'].isspace() and not b[1]['c'].isspace()]
+            if not pairs or not any(hangul(char['c']) for _, char in chars):
+                continue
+            gaps = [b[1]['bbox'][0] - a[1]['bbox'][2] for a, b in pairs]
+            tracking = max(0., median(gaps))
+            previous = None
+            for span in line['spans']:
+                normalized = []
+                for char in span['chars']:
+                    if previous is not None:
+                        previous_span, last = previous
+                        gap = char['bbox'][0] - last['bbox'][2]
+                        size = min(span['size'], previous_span['size'])
+                        if (last['c'] and char['c'] and not last['c'].isspace() and not char['c'].isspace()
+                                and (hangul(last['c']) or hangul(char['c']))
+                                and gap >= max(.5, tracking + .12 * size)):
+                            normalized.append({'c': ' ', 'synthetic': True,
+                                'origin': (last['bbox'][2], char['origin'][1]),
+                                'bbox': (last['bbox'][2], char['bbox'][1], char['bbox'][0], char['bbox'][3])})
+                    normalized.append(char)
+                    previous = span, char
+                span['chars'] = normalized
+    return data
+
+
 def _extract_lines(page, vertical):
     # RAWDICT lets us split even a single wide span at a column-sized space.
     data = page.get_text("rawdict", flags=pymupdf.TEXTFLAGS_RAWDICT & ~pymupdf.TEXT_PRESERVE_IMAGES)
-    restore_blank_spacers(page, data)
+    restore_text_spacing(page, data)
     fragments = []
     for block in data["blocks"]:
         if block["type"] != 0:

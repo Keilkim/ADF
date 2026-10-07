@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 from pathlib import Path
 import unicodedata
 import zipfile
@@ -125,7 +126,15 @@ def test_native_font_loading_selects_all_four_real_weights(qt_app):
                 info = QFontInfo(requested)
                 assert info.family() == family
                 assert info.styleName() == style
-                assert int(info.weight()) == weight
+                # CoreText reports this real ExtraBold face as Black on macOS.
+                # Verify the selected file's OpenType weight as well as its name.
+                allowed = {weight, 900} if sys.platform == 'darwin' and weight == 800 else {weight}
+                assert int(info.weight()) in allowed
+                if sys.platform == 'darwin' and qt_app.platformName() == 'cocoa':
+                    raw = QRawFont.fromFont(requested)
+                    assert raw.familyName() == family
+                    assert raw.styleName() == style
+                    assert int.from_bytes(bytes(raw.fontTable('OS/2'))[4:6], 'big') == weight
     finally:
         for identity in ids:
             QFontDatabase.removeApplicationFont(identity)
