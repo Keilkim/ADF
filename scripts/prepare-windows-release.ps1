@@ -29,6 +29,7 @@ $setup = Join-Path $inputRoot "ADF-Setup-$version.exe"
 Check-File $setup "ADF-Setup-$version.exe"
 $output = Join-Path $repoRoot '.tools/release-output'
 New-Item -ItemType Directory $output -Force | Out-Null
+$hwpxReport = "ADF-Verification-$version-Windows-HWPX.json"
 $token = [guid]::NewGuid().ToString('N')
 $installRoot = Join-Path ([IO.Path]::GetTempPath()) "adf-release-extract-$token"
 if (Test-Path -LiteralPath $installRoot) { throw 'Unexpected installation collision.' }
@@ -40,6 +41,8 @@ function Run-Installer([string]$Executable, [string[]]$Arguments) {
 }
 try {
     Run-Installer $setup @("/ADFACKNOTICE=$version", '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/ADFISOLATEDTEST=$token", ('/DIR="{0}"' -f $installRoot))
+    & python (Join-Path $PSScriptRoot 'test-frozen-hwpx.py') (Join-Path $installRoot 'ADF.exe') --report (Join-Path $output $hwpxReport)
+    if ($LASTEXITCODE -ne 0) { throw 'Packaged HWPX formatting validation failed.' }
     foreach ($prefix in @('ADF-Source', 'ADF-ThirdParty-Sources')) {
         $name = "$prefix-$version.zip"
         $file = Join-Path $installRoot "_internal/SOURCES/$name"
@@ -63,7 +66,7 @@ foreach ($name in $updates) {
 }
 $build = "ADF-Build-$version-Windows.json"
 Copy-Item -LiteralPath (Join-Path $download '.tools/ci/build-origin.json') -Destination (Join-Path $output $build)
-$uploads = @("ADF-Setup-$version.exe", "ADF-Source-$version.zip", "ADF-ThirdParty-Sources-$version.zip", "ADF-Guide-$version-Windows.html", $build) + $updates
+$uploads = @("ADF-Setup-$version.exe", "ADF-Source-$version.zip", "ADF-ThirdParty-Sources-$version.zip", "ADF-Guide-$version-Windows.html", $build, $hwpxReport) + $updates
 $sums = foreach ($name in $uploads) {
     $file = Join-Path $output $name
     (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $name
