@@ -75,8 +75,10 @@ def _append_tabs(run, parts):
 def _right_tab(doc, paragraph, block):
     """A right tab stop with a dot leader at the line's end (a contents entry)."""
     header = doc.oxml.headers[0]
+    # Hancom measures tab stops from the column (or cell) edge, not from
+    # the paragraph's indent.
     start = block.get('indent_left_pt', 0) + max(0, block.get('first_line_indent_pt', 0))
-    position = round((start + block['tab_stop_pt'] - block.get('indent_left_pt', 0)) * 100)
+    position = round((start + block['tab_stop_pt']) * 100)
     tab_id = header.ensure_tab_definition(tab_stops=[dict(pos=position, type='RIGHT', leader='CIRCLE')])
     base = paragraph.element.get('paraPrIDRef')
     paragraph.element.set('paraPrIDRef', style_variant(doc, 'paraPr', base, lambda shape: shape.set('tabPrIDRef', str(tab_id))))

@@ -131,7 +131,8 @@ def letter_spacing(spans, size):
             width = next((value for value in (glyph_width(name, char['c'], size) for name in names) if value),
                          char['bbox'][2] - char['bbox'][0])
             advance = following['origin'][0] - char['origin'][0]
-            if not char['c'].isspace() and not following['c'].isspace() and width > .2 * size:
+            if (not char['c'].isspace() and not following['c'].isspace() and width > .2 * size
+                    and char['c'] not in LEADER_DOTS):
                 ratios.append(advance / width - 1)
     if len(ratios) < 3:
         return None
@@ -145,12 +146,17 @@ def _kind(char):
     return 'wide' if 'ᄀ' <= char <= 'ᇿ' or '　' <= char <= '鿿' or '가' <= char <= '힣'         or '＀' <= char <= '￯' else 'narrow'
 
 
+# Dot leaders (a contents line) are set to fill a gap, not at the font's
+# spacing; they become a tab and are no sample of the letters' spacing.
+LEADER_DOTS = '·.․‥…ㆍ'
+
+
 def _spacing_by_kind(chars, font, size):
     """Letter spacing measured separately for wide (Korean) and other letters."""
     names = (font, font_name(font)) if font else ()
     ratios = {}
     for char, following in zip(chars, chars[1:]):
-        if char['c'].isspace() or following['c'].isspace():
+        if char['c'].isspace() or following['c'].isspace() or char['c'] in LEADER_DOTS:
             continue
         width = next((value for value in (glyph_width(name, char['c'], size) for name in names) if value),
                      char['bbox'][2] - char['bbox'][0])
@@ -749,7 +755,7 @@ class PdfFormatting:
         for span, value in measured:
             size = max(1., span['size'])
             pairs = [(char, following) for char, following in zip(span['chars'], span['chars'][1:])
-                     if char['c'] == ' ' and not following['c'].isspace()]
+                     if char['c'] == ' ' and not following['c'].isspace() and following['c'] not in LEADER_DOTS]
             if not pairs:
                 continue
             # Hancom applies letter spacing to spaces too; remove it to
@@ -774,7 +780,8 @@ class PdfFormatting:
                 natural = sorted(ratios)[len(ratios) // 10]
                 result[font] = exact or (len(ratios) >= 10 and natural <= own + .3 * (.5 - own))
             else:
-                result[font] = min(ratios) < .42
+                # Spaces clearly narrower than half an em, not one odd gap.
+                result[font] = sorted(ratios)[len(ratios) // 10] < .42
         return result
 
     def has_edge(self, direction, position, lo, hi):
