@@ -185,3 +185,16 @@ def test_two_up_sheet_writes_a_two_column_section_and_the_next_page_has_one(tmp_
         second = package.read('Contents/section1.xml').decode()
     assert 'colCount="2"' in first and 'columnBreak="1"' in first
     assert 'colCount="1"' in second
+
+
+@pytest.mark.skipif(not MALGUN.is_file(), reason='needs a Korean font')
+def test_first_line_indented_by_position_stays_in_its_paragraph():
+    with pymupdf.open() as pdf:
+        page = pdf.new_page()
+        page.insert_font(fontname='malgun', fontfile=str(MALGUN))
+        # The first line starts 10 pt in, set by position, not by spaces.
+        page.insert_textbox(pymupdf.Rect(82, 72, 460, 90), KOREAN[:34], fontsize=11, fontname='malgun',
+                            align=pymupdf.TEXT_ALIGN_JUSTIFY)
+        page.insert_textbox(pymupdf.Rect(72, 90, 460, 200), KOREAN[34:], fontsize=11, fontname='malgun')
+        paragraphs = [block for block in native_page(page)['blocks'] if block['kind'] == 'paragraph']
+    assert len(paragraphs) == 1 and paragraphs[0]['first_line_indent_pt'] > 5

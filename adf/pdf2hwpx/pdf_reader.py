@@ -203,8 +203,10 @@ def _same_left_edge(first, row, size):
     do not, and must stay separate paragraphs."""
     shift = row['box'].x0 - first['box'].x0
     text = _row_text(first)
+    # A first-line indent set by position (no leading spaces) is up to a
+    # few characters; the caller has checked that the first line is full.
     return (abs(shift) <= .6 * size or (shift > 0 and bool(LIST_MARKER.match(text)))
-            or (shift < 0 and text[:1].isspace()))
+            or (shift < 0 and (text[:1].isspace() or -shift <= 4 * size)))
 
 
 def _paragraph(group, region):
