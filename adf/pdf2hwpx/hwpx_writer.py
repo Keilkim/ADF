@@ -476,6 +476,13 @@ def _write_flow(doc, page, section, flow, area, available_height, border_cache, 
                     layout['indent_left_pt'] = max(0, layout['left_pt'] - area.x0)
                 elif 'indent_left_pt' not in layout:
                     layout['indent_left_pt'] = max(0, box.x0 - area.x0)
+            if layout.get('line_count', 1) == 1 and layout.get('runs') and '	' not in layout.get('text', ''):
+                # A line that fit in the PDF must not wrap here: one extra
+                # line moves everything below it on the page.
+                layout['runs'] = [dict(run) for run in layout['runs']]
+                indent = layout.get('indent_left_pt', 0) + max(0, layout.get('first_line_indent_pt', 0))
+                fit_line(layout, area.width - indent if layout.get('alignment', 'LEFT') in ('LEFT', 'JUSTIFY')
+                         else area.width, margin=.995, limit=1)
             add_runs(doc, paragraph, layout, before)
             if column_break:
                 paragraph.element.set('columnBreak', '1')

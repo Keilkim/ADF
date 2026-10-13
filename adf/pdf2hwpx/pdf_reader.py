@@ -395,20 +395,29 @@ def line_width(runs):
     return total
 
 
-def fit_line(paragraph, room):
+def fit_line(paragraph, room, margin=.97, limit=None):
     """Condense a one-line paragraph that Hancom would wrap in its room.
 
     The PDF line fitted; small width differences (a space, rounding) must
     not wrap it in a narrow table cell, which would make the row taller.
+    A cell keeps a margin (Hancom rounds glyph positions; a line filling
+    its cell exactly still wraps). With limit, the line only changes once
+    it is wider than limit times the room (a body line that would wrap).
     """
     runs = paragraph['runs']
     width = line_width(runs)
-    room *= .97  # Hancom rounds glyph positions; a line filling its cell exactly still wraps
-    if width is None or width <= room or room <= 0:
+    if width is None or room <= 0 or width <= room * (limit or margin):
         return
-    excess = (width - room) / width
-    for run in runs:
-        run['letter_spacing'] = max(-50, round((run.get('letter_spacing') or 0) - excess * 100 - .5))
+    room *= margin
+    # Letter spacing widens spaces only partly and is whole percents, so
+    # one step may fall short; repeat until the line fits or cannot shrink.
+    for _ in range(6):
+        excess = (width - room) / width
+        for run in runs:
+            run['letter_spacing'] = max(-50, round((run.get('letter_spacing') or 0) - excess * 100 - .5))
+        width = line_width(runs)
+        if width is None or width <= room or all(run['letter_spacing'] == -50 for run in runs):
+            break
 
 
 def fit_cell(cell, paragraphs, height):
