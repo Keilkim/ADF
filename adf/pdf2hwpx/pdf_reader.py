@@ -59,6 +59,10 @@ def _known(name):
         return 'Courier New'
     if name in {'Gothic', 'Droid Sans Fallback', 'Heiti', 'Mincho'}:
         return '맑은 고딕'
+    # Hanyang fonts embedded under their maker's name (HaanYGodic24).
+    for prefix, family in (('HaanYGodic', 'HY견고딕'), ('HaanYHead', 'HY헤드라인M'), ('HaanYMyungjo', 'HY견명조')):
+        if name.startswith(prefix):
+            return family
     return None
 
 
@@ -128,6 +132,24 @@ def letter_spacing(spans, size):
     return max(-50, min(50, value)) if value else None
 
 
+def _kind(char):
+    return 'wide' if 'ᄀ' <= char <= 'ᇿ' or '　' <= char <= '鿿' or '가' <= char <= '힣'         or '＀' <= char <= '￯' else 'narrow'
+
+
+def _spacing_by_kind(chars, font, size):
+    """Letter spacing measured separately for wide (Korean) and other letters."""
+    names = (font, font_name(font)) if font else ()
+    ratios = {}
+    for char, following in zip(chars, chars[1:]):
+        if char['c'].isspace() or following['c'].isspace():
+            continue
+        width = next((value for value in (glyph_width(name, char['c'], size) for name in names) if value),
+                     char['bbox'][2] - char['bbox'][0])
+        if width > .2 * size:
+            ratios.setdefault(_kind(char['c']), []).append((following['origin'][0] - char['origin'][0]) / width - 1)
+    return {kind: max(-50, min(50, round(median(values) * 100))) for kind, values in ratios.items() if len(values) >= 3}
+
+
 def _percent(pitch, size):
     return max(50, min(500, round(pitch / size * 100)))
 
@@ -136,9 +158,17 @@ def _row_text(row):
     return ''.join(run['text'] for run in row['runs'])
 
 
+def _body_size(row):
+    """The size most of a row's characters have (a bullet may be larger)."""
+    weights = {}
+    for run in row['runs']:
+        weights[run['font_size_pt']] = weights.get(run['font_size_pt'], 0) + len(run['text'].strip())
+    return max(weights, key=weights.get) if weights else row['size']
+
+
 def _continues(group, row, region):
     last = group[-1]
-    size = last['size']
+    size = _body_size(last)
     pitch = row['baseline'] - last['baseline']
     limit = 1.25 * median(b['baseline'] - a['baseline'] for a, b in zip(group, group[1:])) if len(group) > 1 else 2 * size
     left, right = last['box'].x0 - region.x0, region.x1 - last['box'].x1
@@ -151,7 +181,7 @@ def _continues(group, row, region):
     advance = row['box'].width / max(1, len(text))
     wrapped = last['box'].x1 + .5 * size + len(word) * advance > region.x1
     return ((last['box'].x1 >= region.x1 - max(1.2 * size, 3) or wrapped)
-            and abs(row['size'] - size) <= .6 and .8 * size <= pitch <= limit
+            and abs(_body_size(row) - size) <= .6 and .8 * size <= pitch <= limit
             and row['box'].x0 - region.x0 <= 4 * size
             and (len(group) == 1 or abs(row['box'].x0 - group[1]['box'].x0) <= .6 * size)
             and _same_left_edge(group[0], row, size)
@@ -412,14 +442,24 @@ def join_rows(row, piece):
     Columns of one visual line (date fields, a title and a name in one
     cell) are separate PDF lines; line breaks would stack them.
     """
-    size = max(piece['size'], row['size'])
     gap = piece['box'].x0 - row['box'].x1
-    previous = row['runs'][-1]['text']
+    carrier = row['runs'][-1]
+    previous = carrier['text']
     if not previous[-1:].isspace() and not piece['runs'][0]['text'][:1].isspace():
         previous += ' '
-    count = max(0, round(gap / (.5 * size)) - (len(previous) - len(previous.rstrip())))
+    # The spaces take the width Hancom gives them in the run that holds them.
+    own = glyph_width(carrier['font'], ' ', carrier['font_size_pt']) if carrier.get('font_space') else None
+    space = (own or .5 * carrier['font_size_pt']) * (1 + (carrier.get('letter_spacing') or 0) / 100)
+    count = max(0, round(gap / max(.5, space)) - (len(previous) - len(previous.rstrip())))
     row['runs'][-1]['text'] = previous + ' ' * count
-    row['runs'].extend(dict(run) for run in piece['runs'])
+    # A piece on another baseline (a small label beside a title) keeps its
+    # height through Hancom's character offset, a share of its size.
+    shift = piece['baseline'] - row['baseline']
+    for run in piece['runs']:
+        run = dict(run)
+        if abs(shift) > .15 * run['font_size_pt']:
+            run['baseline_shift'] = max(-100, min(100, round(shift / run['font_size_pt'] * 100)))
+        row['runs'].append(run)
     row['box'] = pymupdf.Rect(row['box']) | piece['box']
     row['chars'] = row.get('chars', 0) + sum(len(run['text']) for run in piece['runs'])
     row['size'] = max(row['size'], piece['size'])
@@ -446,6 +486,20 @@ def paragraphs_from_rows(rows, region=None, merge=True):
         else:
             groups.append([row])
     result = [_paragraph(group, region) for group in groups]
+    # Consecutive lines that end together but start apart are right aligned.
+    start = 0
+    while start < len(groups):
+        end = start
+        while (end + 1 < len(groups) and len(groups[end + 1]) == 1 and len(groups[start]) == 1
+               and abs(groups[end + 1][0]['box'].x1 - groups[start][0]['box'].x1) <= 1):
+            end += 1
+        lefts = [groups[index][0]['box'].x0 for index in range(start, end + 1)]
+        if end > start and max(lefts) - min(lefts) > groups[start][0]['size']:
+            for index in range(start, end + 1):
+                result[index]['alignment'] = 'RIGHT'
+                for key in ('indent_left_pt', 'first_line_indent_pt'):
+                    result[index].pop(key, None)
+        start = end + 1
     # A single-line paragraph has no internal pitch. Consecutive list or
     # note lines are set as tightly as in the PDF; separated paragraphs
     # receive the page's prevailing ratio later.
@@ -456,7 +510,30 @@ def paragraphs_from_rows(rows, region=None, merge=True):
         size = paragraph.get('line_size_pt', paragraph['font_size_pt'])
         if .9 * size <= pitch <= 1.9 * size and abs(groups[index + 1][0]['size'] - group[-1]['size']) <= .6:
             paragraph['line_spacing_percent'] = _percent(pitch, size)
+        elif pitch < .9 * size:
+            # Smaller text tucked under a large line (a subtitle): the line
+            # may take only the room down to it.
+            room = groups[index + 1][0]['box'].y0 - group[-1]['box'].y0
+            paragraph['line_spacing_percent'] = max(70, min(160, round(room / size * 100)))
     return result
+
+
+def _serif(span):
+    """Whether a font has serifs by its name; None when the name does not say."""
+    raw = re.sub(r'^[A-Z]{6}\+', '', span.get('font', ''))
+    try:
+        raw += ' ' + raw.encode('latin-1').decode('cp949')  # 'ÈÞ¸Õ¸íÁ¶' is 휴먼명조
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        pass
+    if re.search(r'Gothic|Godic|Dotum|Gulim|Sans|Malgun|GO\d|고딕|돋움|굴림', raw, re.IGNORECASE):
+        return False
+    if re.search(r'Myeong|Myungjo|Batang|Mincho|Serif|Times|명조|바탕|궁서', raw, re.IGNORECASE):
+        return True
+    return None
+
+
+SERIF_CANDIDATES = ('바탕', '함초롬바탕', 'HY신명조', 'HY견명조')
+SANS_CANDIDATES = ('맑은 고딕', '굴림', '함초롬돋움', 'HY중고딕', 'HY견고딕', 'HY헤드라인M')
 
 
 class PdfFormatting:
@@ -465,6 +542,16 @@ class PdfFormatting:
         flags = pymupdf.TEXTFLAGS_RAWDICT & ~pymupdf.TEXT_PRESERVE_IMAGES
         self.data = restore_text_spacing(page, page.get_text('rawdict', flags=flags, sort=True))
         self.lines = [line for block in self.data['blocks'] for line in block.get('lines', [])]
+        # Symbols in the Private Use Area only exist in the PDF's own font.
+        # The text keeps their room with an ideographic space; the symbol
+        # itself is placed as a picture where it was (see extract).
+        self.symbols = []
+        for line in self.lines:
+            for span in line['spans']:
+                for char in span['chars']:
+                    if '' <= char['c'] <= '':
+                        self.symbols.append(pymupdf.Rect(char['bbox']))
+                        char['c'] = '　'
         self.block_of = {id(line): index for index, block in enumerate(self.data['blocks'])
                          for line in block.get('lines', [])}
         # Bold without a bold font is drawn as filled and stroked glyphs
@@ -477,9 +564,15 @@ class PdfFormatting:
         except Exception:
             pass
         self.look = PageLook(page)
+        self.substitutes = self._substitutes()
         self.font_space = self._font_spaces()
         self.edges, self.fills, self.marks = [], [], []
         for drawing in page.get_drawings():
+            # A filled rectangle drawn as a closed path of straight sides.
+            if (drawing.get('fill') is not None and len(drawing['items']) >= 3
+                    and all(item[0] == 'l' and (abs(item[1].x - item[2].x) <= .1 or abs(item[1].y - item[2].y) <= .1)
+                            for item in drawing['items'])):
+                self.fills.append((pymupdf.Rect(drawing['rect']), color(drawing['fill'])))
             for item in drawing['items']:
                 segments = []
                 if item[0] not in ('l', 're'):
@@ -505,6 +598,39 @@ class PdfFormatting:
                     elif abs(a.x - b.x) <= .1:
                         self.edges.append(('v', (a.x + b.x) / 2, min(a.y, b.y), max(a.y, b.y), style))
         self.edges = _join_dots(self.edges)
+
+    def _substitutes(self):
+        """For fonts this PC lacks, the installed font of closest widths.
+
+        The PDF declares each glyph's width; the candidate whose widths
+        match the page's characters best keeps lines the same length.
+        """
+        samples, serif = {}, {}
+        for line in self.lines:
+            for span in line['spans']:
+                serif[span['font']] = _serif(span)
+                for char in span['chars']:
+                    if not char['c'].isspace():
+                        samples.setdefault(span['font'], []).append(
+                            (char['c'], (char['bbox'][2] - char['bbox'][0]) / max(1., span['size'])))
+        result = {}
+        for font, chars in samples.items():
+            mapped = font_name(font, bool(serif[font]))
+            if installed(font) is not False or len(chars) < 5 or (
+                    mapped not in ('바탕', '맑은 고딕') and installed(mapped) is not False):
+                continue
+            # PDF serif flags are often wrong (design tools); without a hint
+            # in the name both kinds compete on widths.
+            candidates = {True: SERIF_CANDIDATES, False: SANS_CANDIDATES}.get(
+                serif[font], SANS_CANDIDATES + SERIF_CANDIDATES)
+            scores = []
+            for candidate in candidates:
+                widths = [(glyph_width(candidate, char, 1), width) for char, width in chars[:400]]
+                if all(found is not None for found, _ in widths):
+                    scores.append((sum(abs(found - width) for found, width in widths), candidate))
+            if scores:
+                result[font] = min(scores)[1]
+        return result
 
     def _font_spaces(self):
         """Fonts whose text uses the font's own space width, per page.
@@ -558,8 +684,18 @@ class PdfFormatting:
         return any(axis == direction and abs(where - position) <= .8 and min(hi, end) - max(lo, start) >= .75 * (hi - lo)
                    for axis, where, start, end, style in self.edges)
 
-    def is_frame(self, rect):
-        """True when the drawings in rect only outline it, like a text box."""
+    def frame_style(self, rect):
+        """Line style of the top side of a frame, or None."""
+        rect = pymupdf.Rect(rect)
+        found = [edge for edge in self.edges if edge[0] == 'h' and abs(edge[1] - rect.y0) <= 1.5]
+        return dict(max(found, key=lambda edge: edge[3] - edge[2])[4]) if found else None
+
+    def is_frame(self, rect, contents=False):
+        """True when the drawings in rect only outline it, like a text box.
+
+        With contents, other drawings inside (a framed page's tables) are
+        allowed: only the four sides are required.
+        """
         rect, slack = pymupdf.Rect(rect), 1.5
         area = pymupdf.Rect(rect.x0 - slack, rect.y0 - slack, rect.x1 + slack, rect.y1 + slack)
         edges = [edge for edge in self.edges if area.contains(
@@ -569,6 +705,8 @@ class PdfFormatting:
                  ('left' if abs(position - rect.x0) <= slack else 'right' if abs(position - rect.x1) <= slack else None)
                  for direction, position, start, end, style in edges}
         inner = pymupdf.Rect(rect.x0 + slack, rect.y0 + slack, rect.x1 - slack, rect.y1 - slack)
+        if contents:
+            return {'top', 'bottom', 'left', 'right'} <= sides
         return (sides == {'top', 'bottom', 'left', 'right'}
                 and not any(mark.intersects(inner) for mark in self.marks)
                 and not any(fill.intersects(inner) and (fill & rect).get_area() < .9 * rect.get_area()
@@ -588,6 +726,7 @@ class PdfFormatting:
                 if not kept:
                     continue
                 style = span_style(span)
+                style['font'] = self.substitutes.get(span.get('font'), style['font'])
                 size = style['font_size_pt']
                 # The rendering decides the colour when the text data
                 # reports a colour other than the one drawn.
@@ -609,7 +748,18 @@ class PdfFormatting:
                     style['letter_spacing'] = spacing
                 if self.font_space.get(span.get('font')):
                     style['font_space'] = True
+                # Korean and other letters are measured apart: a substitute
+                # font matches the source's Hangul widths better than its
+                # Latin, digit and punctuation widths.
+                by_kind = _spacing_by_kind(kept, span.get('font', ''), size)
                 # Bold drawn by stroking can start or end inside a span.
+                if runs and kept and chars:
+                    # Between spans too, a gap made by positioning alone is
+                    # kept as spaces.
+                    last = chars[-1][1][-1]
+                    gap = kept[0]['origin'][0] - last['bbox'][2]
+                    if not last['c'].isspace() and not kept[0]['c'].isspace() and gap > .4 * size:
+                        runs[-1]['text'] += ' ' * max(1, round(gap / (.5 * size)))
                 for index, char in enumerate(kept):
                     stroked = (round(char['origin'][0], 1), round(char['origin'][1], 1)) in self.stroked
                     bold = style['bold'] or (stroked if not char['c'].isspace() else None)
@@ -621,10 +771,17 @@ class PdfFormatting:
                         gap = following['origin'][0] - char['bbox'][2]
                         if gap > .4 * size:
                             text += ' ' * max(1, round(gap / (.5 * size)))
-                    if runs and runs[-1]['span'] is span and (bold is None or runs[-1]['bold'] == bold):
+                    spacing = by_kind.get(_kind(char['c']), style.get('letter_spacing')) if not text.isspace() else None
+                    if (runs and runs[-1]['span'] is span and (bold is None or runs[-1]['bold'] == bold)
+                            and (spacing is None or runs[-1].get('letter_spacing') == spacing)):
                         runs[-1]['text'] += text
                     else:
-                        runs.append(dict(style, text=text, span=span, bold=bool(bold)))
+                        run = dict(style, text=text, span=span, bold=bool(bold))
+                        if spacing is not None:
+                            run['letter_spacing'] = spacing
+                        if not run.get('letter_spacing'):
+                            run.pop('letter_spacing', None)
+                        runs.append(run)
                 chars.append((span, kept))
             for run in runs:
                 del run['span']

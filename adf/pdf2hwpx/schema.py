@@ -34,6 +34,8 @@ def validate_format(value):
         raise ConversionError('셀 글자 방향을 확인해 주세요.')
     if value.get('vertical_alignment', 'CENTER') not in {'TOP', 'CENTER', 'BOTTOM'}:
         raise ConversionError('셀 세로 정렬을 확인해 주세요.')
+    if 'baseline_shift' in value and (type(value['baseline_shift']) is not int or not -100 <= value['baseline_shift'] <= 100):
+        raise ConversionError('글자 위치를 확인해 주세요.')
     if 'letter_spacing' in value and (type(value['letter_spacing']) is not int or not -50 <= value['letter_spacing'] <= 50):
         raise ConversionError('자간을 확인해 주세요.')
     if any(key in value and not number(value[key], low, 20000) for key, low in (

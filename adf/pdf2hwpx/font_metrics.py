@@ -70,7 +70,50 @@ def _registry():
                 # 'Batang & BatangChe & Gungsuh & GungsuhChe' share one file;
                 # only its first face is read, so only that name is listed.
                 files.setdefault(_key(name.split('&')[0]), str(path))
+    for folder in _hancom_font_folders():
+        _add_hancom_fonts(folder, files, families)
     return files, families
+
+
+def _hancom_font_folders():
+    """Font folders of installed Hancom Office versions."""
+    roots = [Path(os.environ.get(name, '')) for name in ('ProgramFiles(x86)', 'ProgramFiles')]
+    found = []
+    for root in roots:
+        for folder in (root / 'HNC').glob('*/HOffice*/Bin/Shared/Fonts') if root.parts else []:
+            found.append(folder)
+        for folder in (root / 'HNC').glob('*/HOffice*/Shared/Fonts') if root.parts else []:
+            found.append(folder)
+    return found
+
+
+def _add_hancom_fonts(folder, files, families):
+    """Fonts only Hancom Office draws: its own HFT fonts and bundled TTFs.
+
+    HFTInfo.dat lists 'Korean name=FILE.HFT,...,English name'. HFT widths
+    cannot be read, so these fonts count as available without widths and
+    the PDF's own glyph widths stand in (Hancom made those PDFs with them).
+    """
+    info = folder / 'HFTInfo.dat'
+    if info.is_file():
+        try:
+            text = info.read_bytes().decode('utf-16')
+        except UnicodeDecodeError:
+            text = ''
+        for line in text.splitlines():
+            name, _, value = line.partition('=')
+            if '.HFT' in value.upper():
+                families.add(_key(name))
+                english = value.split(',')[-1].strip()
+                if english:
+                    families.add(_key(english))
+    for path in list(folder.glob('*.ttf')) + list(folder.glob('*.TTF')):
+        try:
+            family = pymupdf.Font(fontfile=str(path)).name
+        except Exception:
+            continue
+        families.add(_key(family))
+        files.setdefault(_key(family), str(path))
 
 
 def registered_family(name):

@@ -24,6 +24,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from adf.pdf2hwpx import convert_document  # noqa: E402
 
 RENDERER = Path(__file__).with_name('hancom_render.py')
+
+
+def render(render_python, target, prefix):
+    """Run the Hancom renderer; Hancom automation fails now and then, so retry once."""
+    command = [*shlex.split(render_python), str(RENDERER), str(target), str(prefix)]
+    for attempt in (1, 2):
+        try:
+            return subprocess.run(command, check=True, capture_output=True, text=True, timeout=300).stdout
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            if attempt == 2:
+                raise
 DPI = 96
 
 
@@ -37,6 +48,13 @@ def text_lines(page):
                 x0, y0, x1, y1 = (pymupdf.Rect(line['bbox']) * page.rotation_matrix)
                 boxes.append((int(x0 * scale), int(y0 * scale), int(x1 * scale) + 1, int(y1 * scale) + 1))
     return boxes
+
+
+def glyph_columns(band):
+    """Columns holding glyph ink: a column inked from top to bottom of the
+    line is a cell border, not a letter."""
+    filled = band.mean(0)
+    return np.where(band.any(0) & (filled < .9))[0]
 
 
 def locate(source, target, box, reach=24):
@@ -56,7 +74,9 @@ def locate(source, target, box, reach=24):
     # Both images are read through the same window, so a neighbouring mark
     # (a bullet picture) counts the same on both sides.
     lo, hi = max(0, x0 - 20), min(target.shape[1], x1 + 20)
-    columns = np.where(source[y0:y1, lo:hi].any(0))[0]
+    columns = glyph_columns(source[y0:y1, lo:hi])
+    if not len(columns):
+        return None
     left, right = lo + columns[0], lo + columns[-1]
     candidates = []
     for dy in range(-reach, reach + 1):
@@ -72,7 +92,7 @@ def locate(source, target, box, reach=24):
     # nearest is the line itself, not its neighbour.
     top = max(candidate[0] for candidate in candidates)
     score, dy, band = min((c for c in candidates if c[0] >= top - .02), key=lambda c: abs(c[1]))
-    found = np.where(band.any(0))[0]
+    found = glyph_columns(band)
     if not len(found):
         return score, dy, 999, 999
     return score, dy, lo + found[0] - left, lo + found[-1] - right
@@ -145,8 +165,7 @@ def check(source, out, render_python, pages=None):
     result = convert_document(source, target)
     for old in folder.glob('hancom-*.bmp'):
         old.unlink()
-    subprocess.run([*shlex.split(render_python), str(RENDERER), str(target), str(folder / 'hancom-')],
-                   check=True, capture_output=True, timeout=300)
+    render(render_python, target, folder / 'hancom-')
     rendered = {int(path.stem.split('-')[1]) - 1: path for path in folder.glob('hancom-*.bmp')}
     with pymupdf.open(source) as pdf:
         mismatched, report, in_place = compare(pdf, rendered, folder)
@@ -174,8 +193,7 @@ def overflowing_pages(source, out, render_python):
         for old in [target, *folder.glob('hancom-*.bmp')]:
             old.unlink(missing_ok=True)
         convert_document(folder / 'source.pdf', target)
-        rendered = subprocess.run([*shlex.split(render_python), str(RENDERER), str(target), str(folder / 'hancom-')],
-                                  check=True, capture_output=True, text=True, timeout=300).stdout.split()
+        rendered = render(render_python, target, folder / 'hancom-').split()
         pages = int(rendered[-1])
         if pages != 1:
             overflow.append(number)

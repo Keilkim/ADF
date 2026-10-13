@@ -115,6 +115,72 @@ def _open_sides(formatting):
     return lines
 
 
+def _inside_frame(page, frame, slack=1.5):
+    """Clusters of the drawings inside frame, without the frame's own sides."""
+    def on_side(rect):
+        if all(abs(a - b) <= slack for a, b in zip(rect, frame)):
+            return True  # the frame drawn as one rectangle
+        thin = min(rect.width, rect.height) <= 2 * slack
+        return thin and (abs(rect.x0 - frame.x0) <= slack or abs(rect.x1 - frame.x1) <= slack
+                         or abs(rect.y0 - frame.y0) <= slack or abs(rect.y1 - frame.y1) <= slack)
+    drawings = [drawing for drawing in page.get_drawings()
+                if frame.contains(pymupdf.Rect(drawing['rect'])) and not on_side(pymupdf.Rect(drawing['rect']))]
+    # Boxes a little apart in one bar (a label and its title) stay together.
+    clusters = page.cluster_drawings(drawings=drawings, x_tolerance=12) if drawings else []
+    # Never the frame again, which would repeat forever.
+    return [rect for rect in clusters if not all(abs(a - b) <= slack for a, b in zip(rect, frame))]
+
+
+def _filled_row(rect, formatting, inside):
+    """A one-row table for shaded boxes in a row that hold text, or None.
+
+    The gaps between the boxes become empty cells without borders.
+    """
+    def light(colour):
+        # Light shading behind dark text; a coloured band of a designed page
+        # (white text on a strong colour) stays artwork.
+        try:
+            return min(int(colour[index:index + 2], 16) for index in (1, 3, 5)) >= 200
+        except (TypeError, ValueError):
+            return False
+    shaded = [(fill, colour) for fill, colour in formatting.fills
+              if (fill & rect).get_area() > .9 * fill.get_area() and fill.width > 8 and fill.height > 8]
+    if not shaded or not all(light(colour) for _, colour in shaded):
+        return None
+    fills = sorted({tuple(fill) for fill, _ in shaded})
+    fills = [pymupdf.Rect(fill) for fill in fills]
+    if not fills or sum(fill.get_area() for fill in fills) < .7 * rect.get_area():
+        return None
+    top, bottom = fills[0].y0, fills[0].y1
+    if any(abs(fill.y0 - top) > 1.5 or abs(fill.y1 - bottom) > 1.5 for fill in fills):
+        return None
+    if any(right.x0 < left.x1 - 1 for left, right in zip(fills, fills[1:])):
+        return None
+    # Every box holds text; one PDF line may run across several boxes.
+    if not inside(rect) or not all(any(pymupdf.Rect(line['bbox']).intersects(fill) for line in formatting.lines)
+                                   for fill in fills):
+        return None
+    # A highlight behind words of a longer line is not a box.
+    for line in formatting.lines:
+        box = pymupdf.Rect(line['bbox'])
+        if box.intersects(rect) and (box & rect).get_area() < .9 * box.get_area():
+            return None
+    boxes = []
+    for fill in fills:
+        if boxes and fill.x0 - boxes[-1].x1 > 1:
+            boxes.append(pymupdf.Rect(boxes[-1].x1, top, fill.x0, bottom))
+        boxes.append(pymupdf.Rect(fill.x0, top, fill.x1, bottom))
+    whole = pymupdf.Rect(boxes[0].x0, top, boxes[-1].x1, bottom)
+    cells = [dict(row=0, col=index, row_span=1, col_span=1, _rect=box, **formatting.cell(box, ''))
+             for index, box in enumerate(boxes)]
+    for cell in cells:
+        # A narrow gap cell must not be widened by Hancom's default padding.
+        cell.setdefault('margins_pt', dict(left=0, right=0, top=0, bottom=0))
+    return dict(kind='table', bbox=_bbox(whole, formatting.page), text='', font_size_pt=10, rows=1,
+                cols=len(boxes), cells=cells, bold=False, italic=False, alignment='LEFT',
+                column_widths_pt=[box.width for box in boxes], row_heights_pt=[whole.height])
+
+
 def _place_in_cell(info, image, tables, page):
     """Put an image that lies inside one table cell into that cell."""
     for table in tables:
@@ -209,9 +275,27 @@ def native_page(page):
     inside = lambda rect: [line for line in formatting.lines if pymupdf.Rect(line['bbox']).intersects(rect) and
                            (pymupdf.Rect(line['bbox']) & rect).get_area() > .5 * max(1, pymupdf.Rect(line['bbox']).get_area())]
     try:
-        for rectangle in page.cluster_drawings():
-            rect = pymupdf.Rect(rectangle)
-            if rect.get_area() < 400 or any((rect & table).get_area() > rect.get_area() * .5 for table in table_boxes):
+        clusters = page.cluster_drawings()
+        while clusters:
+            rect = pymupdf.Rect(clusters.pop(0))
+            if any((rect & table).get_area() > rect.get_area() * .5 for table in table_boxes):
+                # A table's own rules are skipped; a frame well outside the
+                # table (a page border) is still drawn below.
+                if not any(sum(gap > 3 for gap in (table.x0 - rect.x0, table.y0 - rect.y0, rect.x1 - table.x1,
+                                                   rect.y1 - table.y1)) >= 3
+                           and (rect & table).get_area() > .9 * table.get_area() for table in table_boxes):
+                    continue
+            if rect.get_area() < 400:
+                # A small mark beside a text line (a square bullet drawn as
+                # a shape) is placed where it was; other specks are dropped.
+                beside = any(min(rect.y1, line['bbox'][3]) - max(rect.y0, line['bbox'][1]) > .5 * rect.height
+                             and rect.height <= 2.5 * (line['bbox'][3] - line['bbox'][1])
+                             and not pymupdf.Rect(line['bbox']).contains(rect) for line in formatting.lines)
+                bbox = _bbox(rect, page)
+                if beside and rect.width > 2 and rect.height > 2 and bbox[0] < bbox[2] and bbox[1] < bbox[3]:
+                    blocks.append(dict(kind='image', bbox=bbox, text='', font_size_pt=10, bold=False, italic=False,
+                                       alignment='LEFT', rows=0, cols=0, cells=[], placement='BEHIND_TEXT',
+                                       text_image=True))
                 continue
             # A border around the whole page is decoration, not one giant
             # figure that should swallow all editable document content.
@@ -238,6 +322,18 @@ def native_page(page):
                                    column_widths_pt=[rect.width], row_heights_pt=[rect.height]))
                 table_boxes.append(rect)
                 continue
+            crossing = [pymupdf.Rect(line['bbox']) for line in formatting.lines
+                        if pymupdf.Rect(line['bbox']).intersects(rect)]
+            if crossing and all(rect.height <= 1.5 * line.height and not rect.contains(line) for line in crossing):
+                # A highlight behind words of a text line, not a figure.
+                continue
+            row = _filled_row(rect, formatting, inside)
+            if row and not any(image.intersects(rect) for image in images):
+                # Shaded boxes side by side around text (a title bar) stay
+                # editable as a one-row table.
+                blocks.append(row)
+                table_boxes.append(rect)
+                continue
             # A border around a section of text or tables is a container,
             # not a figure; a picture of it would lose the editable text.
             # Charts keep their few short labels and stay pictures.
@@ -245,6 +341,15 @@ def native_page(page):
             text_area = sum(pymupdf.Rect(line['bbox']).get_area() for line in lines)
             if (any((rect & table).get_area() > .5 * table.get_area() for table in table_boxes)
                     or (len(lines) >= 6 and text_area > .1 * rect.get_area())):
+                # Its outline (a dotted page frame) is drawn behind the text.
+                style = formatting.frame_style(rect) if formatting.is_frame(rect, contents=True) else None
+                if style:
+                    blocks.append(dict(kind='image', bbox=bbox, text='', font_size_pt=10, bold=False, italic=False,
+                                       alignment='LEFT', rows=0, cols=0, cells=[], placement='BEHIND_TEXT',
+                                       text_image=True, frame=style))
+                    # Shapes inside the frame (a title box) are judged on
+                    # their own, without the frame that joined them.
+                    clusters.extend(_inside_frame(page, rect))
                 continue
             figure_boxes.append(rect)
             blocks.append(dict(kind='image', bbox=bbox, text='', font_size_pt=10,
@@ -288,6 +393,11 @@ def native_page(page):
                 blocks.append(dict(kind='image', bbox=bbox, text='', font_size_pt=10, bold=False, italic=False,
                                    alignment='LEFT', rows=0, cols=0, cells=[], placement='BEHIND_TEXT',
                                    text_image=True))
+    for symbol in formatting.symbols:
+        bbox = _bbox(symbol, page)
+        if bbox[0] < bbox[2] and bbox[1] < bbox[3] and not any(symbol in figure for figure in figure_boxes):
+            blocks.append(dict(kind='image', bbox=bbox, text='', font_size_pt=10, bold=False, italic=False,
+                               alignment='LEFT', rows=0, cols=0, cells=[], placement='BEHIND_TEXT', text_image=True))
     covered = {id(line) for box in table_boxes + figure_boxes for line in inside(box)}
     rows = formatting.rows([line for line in formatting.lines if id(line) not in covered], keep_columns=True)
     items = split_columns(rows)

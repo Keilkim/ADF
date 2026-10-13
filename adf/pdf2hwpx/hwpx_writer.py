@@ -4,7 +4,7 @@ import json
 
 import pymupdf
 
-from .pdf_reader import clean_text
+from .pdf_reader import clean_text, fit_line
 
 
 HP = '{http://www.hancom.co.kr/hwpml/2011/paragraph}'
@@ -26,6 +26,13 @@ def add_runs(doc, paragraph, block, spacing_before_pt=0):
             # Spacing belongs to each run; None would let python-hwpx reuse
             # a style with any spacing.
             letter_spacing=run.get('letter_spacing') or 0)
+        if run.get('baseline_shift'):
+            def lower(shape, value=str(run['baseline_shift'])):
+                offset = shape.find(HH + 'offset')
+                if offset is not None:
+                    for key in list(offset.attrib):
+                        offset.set(key, value)
+            style = style_variant(doc, 'charPr', style, lower)
         if run.get('font_space'):
             # Use the font's own space width instead of Hancom's half em.
             style = style_variant(doc, 'charPr', style, lambda shape: shape.set('useFontSpace', '1'))
@@ -161,8 +168,15 @@ def apply_cell_format(doc, table, cell, block, cache, page=None):
         _add_picture(doc, page, host, image, clip, max(100, round(clip.width * 100)), max(100, round(clip.height * 100)))
     if 'width_pt' in cell and 'height_pt' in cell:
         target.set_size(round(cell['width_pt'] * 100), round(cell['height_pt'] * 100))
-    if cell.get('margins_pt'):
-        target.set_margins(**{key: round(value * 100) for key, value in cell['margins_pt'].items()})
+    margins = cell.get('margins_pt')
+    widths = block.get('column_widths_pt') or []
+    width = sum(widths[c:c + cell.get('col_span', 1)]) if len(widths) > c else None
+    if not margins and width is not None and width < 12:
+        # Hancom's default padding (5.1pt a side) would push a narrow
+        # spacer cell wider and move the whole table down.
+        margins = dict(left=0, right=0, top=0, bottom=0)
+    if margins:
+        target.set_margins(**{key: round(value * 100) for key, value in margins.items()})
     if 'borders' in cell or 'fill_color' in cell:
         table.set_cell_border_fill(r, c, cell_border_fill(doc, cell, cache))
     sublist = target.element.find(HP + 'subList')
@@ -301,10 +315,17 @@ def _free_page(doc, page, section, blocks, boxes, area):
         if block['kind'] == 'paragraph':
             width = box.width * 1.04 + 4
             rect = pymupdf.Rect(box.x0 - 2, box.y0, box.x0 - 2 + width, box.y0 + max(box.height, paragraph_height(block)))
-            layout = dict(block)
+            if block.get('alignment') == 'RIGHT':
+                rect = pymupdf.Rect(box.x1 + 2 - width, rect.y0, box.x1 + 2, rect.y1)
+            elif block.get('alignment') == 'CENTER':
+                rect = pymupdf.Rect(box.x0 + (box.width - width) / 2, rect.y0, box.x1 - (box.width - width) / 2, rect.y1)
+            layout = dict(block, runs=[dict(run) for run in block.get('runs', [])])
             if layout.get('alignment', 'LEFT') in ('LEFT', 'JUSTIFY'):
                 layout['indent_left_pt'] = max(0, layout['left_pt'] - rect.x0 if 'left_pt' in layout else
                                                layout.get('indent_left_pt', 0) - (box.x0 - area.x0))
+            if layout.get('line_count', 1) == 1 and layout['runs']:
+                # A placed line must not wrap inside its box.
+                fit_line(layout, rect.width - layout.get('indent_left_pt', 0))
             _text_box(doc, anchor, rect, [layout], {})
             counts['paragraphs'] += 1
         elif block['kind'] == 'table':
@@ -328,6 +349,18 @@ def _free_page(doc, page, section, blocks, boxes, area):
                           cell.get('vertical_alignment', 'CENTER'), cell.get('margins_pt'))
             counts['tables'] += 1
     return counts
+
+
+def _add_frame(anchor, rect, style):
+    """A drawn page frame: a rectangle behind the text in the PDF's line style."""
+    shape = anchor.add_rectangle(max(100, round(rect.width * 100)), max(100, round(rect.height * 100)),
+                                 treat_as_char=False)
+    line = next((child for child in shape.element.iter() if child.tag.endswith('}lineShape')), None)
+    if line is not None:
+        line.set('style', {'NONE': 'SOLID'}.get(style.get('type'), style.get('type', 'SOLID')))
+        line.set('color', style.get('color', '#000000'))
+        line.set('width', str(max(10, round(style.get('width_pt', .3) * 100))))
+    _float(shape.element, rect, 'BEHIND_TEXT')
 
 
 def _page_footer(blocks, boxes, height):
@@ -481,6 +514,9 @@ def write_page(doc, page, structured, index):
         # same as without it.
         clip = box_of(block) & page.rect
         if clip.is_empty:
+            continue
+        if block.get('frame'):
+            _add_frame(section.paragraphs[0], clip, block['frame'])
             continue
         _add_picture(doc, page, section.paragraphs[0], block, clip, max(100, round(clip.width * 100)),
                      max(100, round(clip.height * 100)), floating=True)

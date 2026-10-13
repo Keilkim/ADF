@@ -76,3 +76,28 @@ def test_line_ends_without_spaces_keep_word_spacing_and_ragged_alignment():
     words = ' '.join(KOREAN.split())
     assert ' '.join(paragraph['text'].split()).startswith(words[:60])
     assert '사업 기간' in paragraph['text'] and paragraph['alignment'] == 'LEFT'
+
+
+def test_page_frame_is_drawn_and_shaded_title_bar_stays_editable():
+    with pymupdf.open() as pdf:
+        page = pdf.new_page()
+        # A dotted frame around the page body, a shaded title bar of two
+        # boxes drawn as closed paths, and a table below.
+        page.draw_rect((50, 50, 545, 790), width=.4, dashes='[1 1] 0')
+        for x0, x1 in ((60, 120), (128, 535)):
+            shape = page.new_shape()
+            shape.draw_polyline([(x0, 60), (x1, 60), (x1, 88), (x0, 88), (x0, 60)])
+            shape.finish(color=None, fill=(.94, .94, .94), closePath=True)
+            shape.commit()
+        page.insert_text((70, 79), 'Note 1', fontsize=14)
+        page.insert_text((140, 79), 'Housing fund support', fontsize=14)
+        for row in range(5):
+            for col in range(3):
+                page.draw_rect((60 + col * 150, 120 + row * 30, 210 + col * 150, 150 + row * 30), width=.5)
+                page.insert_text((65 + col * 150, 140 + row * 30), f'cell {row} {col}', fontsize=10)
+        blocks = native_page(page)['blocks']
+    frames = [block for block in blocks if block.get('frame')]
+    assert len(frames) == 1 and frames[0]['frame']['type'] == 'DOT'
+    title = next(block for block in blocks if block['kind'] == 'table' and block['rows'] == 1)
+    assert title['cols'] == 3 and title['cells'][1]['margins_pt']['left'] == 0
+    assert 'Housing fund support' in title['cells'][2]['text']
