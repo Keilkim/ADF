@@ -9,6 +9,7 @@ import pymupdf
 from ..text_groups import restore_text_spacing
 from .appearance import PageLook, far, hex_colour
 from .font_metrics import glyph_width, installed, registered_family
+from .symbol_fonts import recover
 
 
 def clean_text(value):
@@ -555,6 +556,7 @@ class PdfFormatting:
         flags = pymupdf.TEXTFLAGS_RAWDICT & ~pymupdf.TEXT_PRESERVE_IMAGES
         self.data = restore_text_spacing(page, page.get_text('rawdict', flags=flags, sort=True))
         self.lines = [line for block in self.data['blocks'] for line in block.get('lines', [])]
+        self._recover_symbols()
         # Symbols in the Private Use Area only exist in the PDF's own font.
         # The text keeps their room with an ideographic space; the symbol
         # itself is placed as a picture where it was (see extract).
@@ -696,6 +698,27 @@ class PdfFormatting:
         """Whether a drawn line covers most of a cell side."""
         return any(axis == direction and abs(where - position) <= .8 and min(hi, end) - max(lo, start) >= .75 * (hi - lo)
                    for axis, where, start, end, style in self.edges)
+
+    def _recover_symbols(self):
+        """Symbol font characters the text layer lost (Wingdings ❷ read as a
+        control code) get their character back; a span of only such symbols
+        takes the line's text font, which draws the Unicode symbol."""
+        found = recover(self.page)
+        if not found:
+            return
+        for line in self.lines:
+            text_font = next((span['font'] for span in line['spans']
+                              if not any((round(char['origin'][0], 1), round(char['origin'][1], 1)) in found
+                                         for char in span['chars'])), None)
+            for span in line['spans']:
+                hits = 0
+                for char in span['chars']:
+                    text = found.get((round(char['origin'][0], 1), round(char['origin'][1], 1)))
+                    if text:
+                        char['c'], hits = text, hits + 1
+                if hits and text_font and all(not ('' <= text <= '') for text in
+                                              (char['c'] for char in span['chars'])):
+                    span['font'] = text_font
 
     def frame_style(self, rect):
         """Line style of the top side of a frame, or None."""

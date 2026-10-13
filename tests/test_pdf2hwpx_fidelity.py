@@ -127,3 +127,18 @@ def test_title_line_starts_where_hancom_puts_its_baseline():
     # Malgun Gothic's glyph box reaches far above; Hancom draws the
     # baseline 0.85 em below the line top.
     assert abs(title['bbox'][1] * height / 1000 - (300 - .85 * 30)) < 1
+
+
+WINGDINGS_FILE = Path(os.environ.get('WINDIR', 'C:/Windows')) / 'Fonts' / 'wingding.ttf'
+
+
+@pytest.mark.skipif(not WINGDINGS_FILE.is_file(), reason='needs Wingdings')
+def test_symbol_glyph_outline_names_its_wingdings_character():
+    from fontTools.ttLib import TTFont
+
+    from adf.pdf2hwpx.symbol_fonts import WINGDINGS, _codes_by_outline, _outline
+    font = TTFont(str(WINGDINGS_FILE))
+    glyph = next(table.cmap[0xF08D] for table in font['cmap'].tables if 0xF08D in table.cmap)
+    # A subset keeps this outline without a character map; it still names ❷.
+    assert _codes_by_outline(str(WINGDINGS_FILE))[_outline(font, glyph)] == 0x8D
+    assert WINGDINGS[0x8D] == '❷' and WINGDINGS[0x80] == '⓪' and WINGDINGS[0x81] == '①'
