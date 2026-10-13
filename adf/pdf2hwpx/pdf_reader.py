@@ -763,6 +763,18 @@ LATIN_SANS_CANDIDATES = ('Arial', 'Calibri', 'Segoe UI', 'Verdana', 'Tahoma', 'T
 LATIN_MONO_CANDIDATES = ('Consolas', 'Courier New', 'Lucida Console', 'Cascadia Mono')
 
 
+_SUBSTITUTES = {}
+
+
+def _document_substitutes(page):
+    """Substitutes already chosen for this page's document."""
+    document = page.parent
+    key = (id(document), getattr(document, 'name', ''), len(document))
+    if len(_SUBSTITUTES) > 32:
+        _SUBSTITUTES.clear()
+    return _SUBSTITUTES.setdefault(key, {})
+
+
 class PdfFormatting:
     def __init__(self, page):
         self.page = page
@@ -866,7 +878,12 @@ class PdfFormatting:
                     scores.append((sum(abs(found - width) for found, width in widths), candidate))
             if scores:
                 result[font] = min(scores)[1]
-        return result
+        # One PDF font takes one substitute through the whole document (the
+        # first page that measured it decides), so its pages edit alike.
+        chosen = _document_substitutes(self.page)
+        for font, substitute in result.items():
+            chosen.setdefault(font, substitute)
+        return {font: chosen[font] for font in result}
 
     def _font_spaces(self):
         """Fonts whose text uses the font's own space width, per page.
