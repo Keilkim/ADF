@@ -712,11 +712,28 @@ class PdfFormatting:
                 and not any(fill.intersects(inner) and (fill & rect).get_area() < .9 * rect.get_area()
                             for fill, _ in self.fills))
 
+    def _highlights(self, line):
+        """Fills behind some words of a line (a highlighter), with colours.
+
+        A fill holding the whole line is a cell or box background instead.
+        """
+        box = pymupdf.Rect(line['bbox'])
+        marks = [(fill, colour) for fill, colour in getattr(self, 'fills', [])
+                 if fill.intersects(box) and not fill.contains(box) and fill.height <= 2 * box.height
+                 and (fill & box).height > .6 * box.height and colour.upper() != '#FFFFFF']
+        if not marks:
+            return []
+        # Only shading that differs from what is around the line shows.
+        around = self.look.surround(box)
+        return [(fill, colour) for fill, colour in marks
+                if around is None or max(abs(int(colour[1 + 2 * i:3 + 2 * i], 16) - around[i]) for i in range(3)) >= 20]
+
     def _pieces(self, lines, rect):
         """One piece per PDF line: styled runs, glyph box and baseline."""
         pieces = []
         for line in lines:
             runs, chars = [], []
+            marks = self._highlights(line)
             for span in line['spans']:
                 # Characters the writer drops (control codes from broken
                 # encodings) must not widen the line's box either.
@@ -772,11 +789,16 @@ class PdfFormatting:
                         if gap > .4 * size:
                             text += ' ' * max(1, round(gap / (.5 * size)))
                     spacing = by_kind.get(_kind(char['c']), style.get('letter_spacing')) if not text.isspace() else None
+                    centre = pymupdf.Point((char['bbox'][0] + char['bbox'][2]) / 2, (char['bbox'][1] + char['bbox'][3]) / 2)
+                    shade = next((colour for mark, colour in marks if mark.contains(centre)), None)
                     if (runs and runs[-1]['span'] is span and (bold is None or runs[-1]['bold'] == bold)
-                            and (spacing is None or runs[-1].get('letter_spacing') == spacing)):
+                            and (spacing is None or runs[-1].get('letter_spacing') == spacing)
+                            and runs[-1].get('highlight') == shade):
                         runs[-1]['text'] += text
                     else:
                         run = dict(style, text=text, span=span, bold=bool(bold))
+                        if shade:
+                            run['highlight'] = shade
                         if spacing is not None:
                             run['letter_spacing'] = spacing
                         if not run.get('letter_spacing'):

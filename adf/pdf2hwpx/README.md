@@ -31,7 +31,7 @@ result = convert_document('in.pdf', 'out.hwpx')   # {'pages', 'paragraphs', 'tab
 쪽 = `{'blocks': [...], 'warnings': [...]}`. 위치 `bbox`는 쪽 기준 0~1000.
 
 - `paragraph`: `text`, `runs`(글자 모양별: `font`, `font_size_pt`, `bold`, `italic`, `color`,
-  `letter_spacing`, `font_space`), `alignment`, `line_spacing_percent`, `line_count`,
+  `letter_spacing`, `font_space`, `highlight`: 글자 뒤 강조 배경색 → 글자 모양 음영), `alignment`, `line_spacing_percent`, `line_count`,
   `indent_left_pt`, `first_line_indent_pt`, `left_pt`(쪽 기준 왼쪽), `line_size_pt`(줄의 최대 글자 크기),
   `wraps_inside_words`, `placement`(`IN_FIGURE`: 도형 위 글자, 자유 배치 쪽에서만 씀)
 - `table`: `rows`, `cols`, `cells`(`row`, `col`, `row_span`, `col_span`, `text`, `paragraphs`,
@@ -111,4 +111,3 @@ py -3 -m pip install pywin32        # 렌더러만 필요
 - 회전한 글자는 가로 문단으로 바꾼다. 기울임(합성 기울임)은 판정하지 않는다.
 - 유니코드 정보 없는 글꼴로 쓴 글줄은 읽을 수 없어 그 부분을 그림으로 넣는다(편집 불가).
 - 자유 배치 쪽의 도형·선은 그림이라 편집할 수 없다.
-- 글줄 일부 뒤의 강조 배경(형광펜 같은 채움)은 아직 재현하지 않는다.

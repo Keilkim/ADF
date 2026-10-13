@@ -101,3 +101,15 @@ def test_page_frame_is_drawn_and_shaded_title_bar_stays_editable():
     title = next(block for block in blocks if block['kind'] == 'table' and block['rows'] == 1)
     assert title['cols'] == 3 and title['cells'][1]['margins_pt']['left'] == 0
     assert 'Housing fund support' in title['cells'][2]['text']
+
+
+def test_highlight_behind_some_words_becomes_letter_shading():
+    with pymupdf.open() as pdf:
+        page = pdf.new_page()
+        page.insert_text((72, 99), '[Criteria] funds are limited and checked first.', fontsize=12)
+        word = page.search_for('Criteria')[0]
+        page.draw_rect(word + (-1, 1, 1, -1), color=None, fill=(.89, .97, 1), overlay=False)
+        paragraph = next(block for block in native_page(page)['blocks'] if block['kind'] == 'paragraph')
+    shaded = [run for run in paragraph['runs'] if run.get('highlight')]
+    assert shaded and 'Criteria' in ''.join(run['text'] for run in shaded)
+    assert 'limited' not in ''.join(run['text'] for run in shaded)

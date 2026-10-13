@@ -33,6 +33,9 @@ def add_runs(doc, paragraph, block, spacing_before_pt=0):
                     for key in list(offset.attrib):
                         offset.set(key, value)
             style = style_variant(doc, 'charPr', style, lower)
+        if run.get('highlight'):
+            # Shading behind these letters only (a highlighter).
+            style = style_variant(doc, 'charPr', style, lambda shape, colour=run['highlight']: shape.set('shadeColor', colour))
         if run.get('font_space'):
             # Use the font's own space width instead of Hancom's half em.
             style = style_variant(doc, 'charPr', style, lambda shape: shape.set('useFontSpace', '1'))
