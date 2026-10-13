@@ -326,4 +326,8 @@ def glyph_width(font_name, char, size):
         fallback = _measured().get('fallback', {}).get(_class(char))
         if fallback is not None:
             return fallback * size
+    if (metrics is not None or table) and char.isprintable() and not char.isspace():
+        # Other characters the font lacks (❍ ♢ ▴ in 바탕): Hancom's fallback
+        # draws them a full em, halfwidth forms half an em (measured).
+        return (.5 if 0xFF61 <= ord(char) <= 0xFFDC else 1.) * size
     return None
