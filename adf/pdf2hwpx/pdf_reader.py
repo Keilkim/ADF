@@ -283,7 +283,84 @@ def _paragraph(group, region):
         result['indent_left_pt'] = max(0., min(first, continuation) - region.x0)
         result['left_pt'] = min(first, continuation)  # on the page, for writers with other margins
         result['first_line_indent_pt'] = first - continuation
+    if len(group) > 1 and result['alignment'] in ('LEFT', 'JUSTIFY') and '	' not in result['text']:
+        _match_breaks(result, group, region)
     return result
+
+
+CONDENSE = .05  # paragraph shapes let Hancom shrink spaces by 5% (hwpx_writer.line_breaking_shape)
+
+
+def break_width(runs):
+    """The width Hancom compares with a line's room: spaces may shrink by
+    CONDENSE (measured: a line 2 pt over its room with nine half-em spaces
+    at 10 pt stays one line, 3 pt over wraps). None if a font is unknown."""
+    width = line_width(runs)
+    if width is None:
+        return None
+    letters = line_width([dict(run, text=run['text'].replace(' ', '')) for run in runs])
+    return width - CONDENSE * (width - letters)
+
+
+def _match_breaks(result, group, region):
+    """Shift the paragraph's letter spacing so Hancom breaks its lines
+    where the PDF did.
+
+    Each PDF line gives two conditions in Hancom's widths: its words fit
+    between its start and the right edge, and with the next line's first
+    word (or letter, for text wrapped inside words) they would not. Of the
+    spacings meeting the most conditions the one nearest the measured
+    spacing is kept, so a substitute font or other space widths still
+    break as the source.
+    """
+    inside = result.get('wraps_inside_words', False)
+    lines = []
+    for row, following in zip(group, group[1:] + [None]):
+        runs = [dict(run) for run in row['runs']]
+        while runs and not runs[-1]['text'].rstrip():
+            runs.pop()
+        if not runs:
+            return
+        runs[-1]['text'] = runs[-1]['text'].rstrip()
+        room = region.x1 - row['box'].x0
+        extra = None
+        if following is not None:
+            text = _row_text(following).lstrip()
+            # A line that broke inside a word continues it without a space;
+            # Hancom breaking by letter then tries the next letter alone.
+            within = bool(re.search(r'[가-힣]$', _row_text(row)) and re.match(r'[가-힣]', text))
+            unit = text[:1] if inside and re.match(r'[가-힣]', text) else text.split(' ')[0]
+            if unit:
+                carrier = dict(following['runs'][0] if following['runs'] else runs[-1])
+                gap = [] if within else [dict(runs[-1], text=' ')]
+                extra = gap + [dict(carrier, text=unit)]
+        lines.append((runs, extra, room))
+
+    def shifted(runs, delta):
+        return [dict(run, letter_spacing=max(-50, min(50, (run.get('letter_spacing') or 0) + delta))) for run in runs]
+
+    best = None
+    for delta in range(-30, 31):
+        met = 0
+        for runs, extra, room in lines:
+            width = break_width(shifted(runs, delta))
+            if width is None:
+                return
+            met += width <= room
+            if extra is not None:
+                more = break_width(shifted(runs + extra, delta))
+                met += more is None or more > room  # unknown widths count alike for every spacing
+        key = (met, -abs(delta))
+        if best is None or key > best[0]:
+            best = (key, delta)
+    delta = best[1]
+    if delta:
+        for run in result['runs']:
+            value = max(-50, min(50, (run.get('letter_spacing') or 0) + delta))
+            if value:
+                run['letter_spacing'] = value
+            else:
+                run.pop('letter_spacing', None)
 
 
 LEADER = re.compile(r'\s*[·.․‥…ㆍ]{4,}\s*(?=\S{1,8}\s*$)')

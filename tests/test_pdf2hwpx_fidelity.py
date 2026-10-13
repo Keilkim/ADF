@@ -198,3 +198,12 @@ def test_first_line_indented_by_position_stays_in_its_paragraph():
         page.insert_textbox(pymupdf.Rect(72, 90, 460, 200), KOREAN[34:], fontsize=11, fontname='malgun')
         paragraphs = [block for block in native_page(page)['blocks'] if block['kind'] == 'paragraph']
     assert len(paragraphs) == 1 and paragraphs[0]['first_line_indent_pt'] > 5
+
+
+@pytest.mark.skipif(not MALGUN.is_file(), reason='needs a Korean font')
+def test_hancom_break_width_lets_spaces_shrink_five_percent():
+    from adf.pdf2hwpx.pdf_reader import break_width
+    # Measured in Hancom: nine half-em spaces at 10 pt (45 pt) shrink by
+    # 2.25 pt, so a line 2 pt over its room stays one line.
+    runs = [dict(text=' '.join(['가나다'] * 10), font='맑은 고딕', font_size_pt=10)]
+    assert line_width(runs) - break_width(runs) == pytest.approx(45 * .05, abs=.01)
