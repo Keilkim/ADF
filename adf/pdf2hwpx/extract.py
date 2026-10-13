@@ -181,6 +181,32 @@ def _filled_row(rect, formatting, inside):
                 column_widths_pt=[box.width for box in boxes], row_heights_pt=[whole.height])
 
 
+def _inner_boxes(formatting, blocks, slack=1.5):
+    """Dotted rectangles inside a table cell that are not the cell itself."""
+    dotted = [edge for edge in formatting.edges if edge[4].get('type') == 'DOT']
+    across = [edge for edge in dotted if edge[0] == 'h']
+    down = [edge for edge in dotted if edge[0] == 'v']
+    cells = [cell['_rect'] for block in blocks if block['kind'] == 'table'
+             for cell in block['cells'] if cell.get('_rect') is not None]
+    found = []
+    for top in across:
+        for bottom in across:
+            if bottom[1] - top[1] < 6 or abs(top[2] - bottom[2]) > slack or abs(top[3] - bottom[3]) > slack:
+                continue
+            box = pymupdf.Rect(top[2], top[1], top[3], bottom[1])
+            sides = [edge for edge in down if top[1] - slack <= edge[2] and edge[3] <= bottom[1] + slack
+                     and edge[3] - edge[2] >= .8 * box.height]
+            if not (any(abs(edge[1] - box.x0) <= slack for edge in sides)
+                    and any(abs(edge[1] - box.x1) <= slack for edge in sides)):
+                continue
+            inside = [cell for cell in cells if cell.contains(box + (-slack, -slack, slack, slack))]
+            # Inside a cell, not one of the cells (a dotted grid line).
+            if inside and not any(all(abs(a - b) <= 3 for a, b in zip(cell, box)) for cell in cells):
+                if not any(all(abs(a - b) <= slack for a, b in zip(other, box)) for other, _ in found):
+                    found.append((box, dict(top[4])))
+    return found
+
+
 def _place_in_cell(info, image, tables, page):
     """Put an image that lies inside one table cell into that cell."""
     for table in tables:
@@ -360,6 +386,14 @@ def native_page(page, split=True):
                 warnings.append('표의 일부 경계를 주변 격자로 복원했습니다. 해당 셀을 원본과 대조하세요.')
     except Exception:
         warnings.append('로컬 표 분석에 실패해 해당 내용은 문단으로 추출했습니다.')
+    # A dotted box drawn inside a table cell (a note) joins the table's
+    # drawings, so it is found from its four sides and drawn on the paper.
+    for box, style in _inner_boxes(formatting, blocks):
+        bbox = _bbox(box, page)
+        if bbox[0] < bbox[2] and bbox[1] < bbox[3]:
+            blocks.append(dict(kind='image', bbox=bbox, text='', font_size_pt=10, bold=False, italic=False,
+                               alignment='LEFT', rows=0, cols=0, cells=[], placement='BEHIND_TEXT',
+                               text_image=True, frame=style))
     figure_boxes, designed = [], False
     image_infos = page.get_image_info(xrefs=True)
     images = [pymupdf.Rect(image['bbox']) for image in image_infos]
