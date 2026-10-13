@@ -1,19 +1,19 @@
 # XDF 아이콘과 컬러
 
-메인 로고는 사용자가 선택한 **첫 번째 XDF 워드마크 시안**입니다. Webflow와 SKIMS의 글자 무게감과 곡선을 참고해 내장 `image_gen`으로 만든 첫 시안의 형태를 제품용 벡터로 옮겼습니다. 넓고 연결된 X, 모서리가 둥근 D와 내부 공간, 곡선으로 마무리한 F의 두 팔과 촘촘한 간격을 유지합니다. 홈페이지와 앱 시작 화면에는 XDF 전체 로고를, 앱 아이콘·파비콘에는 워드마크에서 직접 추출한 동일한 X를 사용합니다. 첨부 컬러 참고 이미지의 주홍색 계열인 `#F04B2D`를 사용하며 배경은 투명합니다.
+로고는 2026-10-13에 선택한 정돈된 XDF 워드마크입니다. 기존의 넓고 부풀어 오른 형태에서 폭과 굵기를 줄이고, D의 기둥과 F의 끝을 곧게 정리했습니다. 홈페이지·앱 시작 화면·앱 아이콘·트레이·설치 화면·파비콘 모두 **XDF 세 글자 전체**를 사용합니다. 시그니처는 기존 주홍색에서 붉은 기를 조금 더한 `#F04436`이며 배경은 투명합니다. 화이트는 누런 기가 없는 아주 옅은 쿨톤을 사용합니다. [디자인 비교 시안](brand-exploration/xdf-design-study-20261013.html)에서 기존 로고와 실제 앱 화면을 비교할 수 있습니다.
 
 - 메인 벡터 원본: [xdf-wordmark.svg](xdf-wordmark.svg)
-- 메인 투명 PNG: [xdf-wordmark.png](xdf-wordmark.png), 1536×407 RGBA
-- 메인 로고에서 추출한 X: [xdf-mark.svg](xdf-mark.svg)
+- 메인 투명 PNG: [xdf-wordmark.png](xdf-wordmark.png), 1536×568 RGBA
+- 정사각형 아이콘용 XDF 전체 로고: [xdf-mark.svg](xdf-mark.svg)
 - 투명 PNG: [xdf.png](xdf.png), 1024×1024 RGBA
 - Windows: [xdf.ico](xdf.ico), 16·20·24·32·40·48·64·128·256px의 32비트 DIB 프레임
 - macOS: [xdf.icns](xdf.icns)
-- 홈페이지 벡터: [XDF](../site/assets/xdf-wordmark.svg), [X 아이콘](../site/assets/xdf-mark.svg)
-- 선택한 첫 생성 시안: [xdf-wordmark-reference.png](xdf-wordmark-reference.png)
+- 홈페이지 벡터: [XDF](../site/assets/xdf-wordmark.svg), [XDF 아이콘](../site/assets/xdf-mark.svg)
+- 이전 첫 생성 시안: [xdf-wordmark-reference.png](xdf-wordmark-reference.png)
 - 메인 로고·작은 아이콘 미리보기: [xdf-logo-preview.html](xdf-logo-preview.html), [PNG](xdf-logo-preview.png)
 - 사용한 프롬프트와 제작 기록: [xdf-logo-design.txt](xdf-logo-design.txt)
 
-`scripts/make-icon.py`가 메인 워드마크에서 X를 추출하고 투명 여백을 계산해 각 플랫폼의 아이콘과 홈페이지 로고를 내보냅니다. 앱의 컬러는 `adf/brand.py`, 홈페이지의 컬러는 `site/styles.css`의 CSS 변수에서 관리합니다. 작은 글자와 흰 글자의 버튼에는 더 진한 주홍색을, 선택·호버 배경에는 옅은 주홍색을 사용합니다.
+`scripts/make-icon.py`가 메인 워드마크 전체에 투명 여백을 계산해 각 플랫폼의 아이콘과 홈페이지·폰트 비교 화면의 파비콘을 내보냅니다. 앱의 컬러는 `adf/brand.py`, 홈페이지의 컬러는 `site/styles.css`의 CSS 변수에서 관리합니다. 작은 글자와 흰 글자의 버튼에는 더 진한 주홍색을, 선택·호버 배경에는 쿨톤 회색을 사용합니다.
 
 기존 `adf-mark-reference.png`와 `adf-icon-source.png`는 이전 디자인의 보관 자료이며 제품 로고로 사용하지 않습니다. 기존 사용자의 설정·도장 보관함·PDF 편집 기록·자동 업데이트와 이어지도록 내부 저장 식별자와 릴리즈 파일명은 유지합니다. 사용자에게 보이는 제품명·설치 화면·바로가기·탐색기 메뉴는 XDF입니다.
 

@@ -44,6 +44,7 @@ class ToolboxGrip(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             self.offset = None
             self.toolbox.side = 'right' if self.toolbox.side == 'left' else 'left'
+            self.toolbox.offset = None
             self.toolbox.position()
             self.toolbox.remember_position()
             event.accept()
@@ -65,18 +66,22 @@ class FloatingToolbox(QFrame):
             settings.setValue('toolbox_placement_version', 2)
         self.side = settings.value('toolbox_side', 'right')
         self.fraction = max(0., min(1., settings.value('toolbox_height', 0., type=float)))
+        # Distance from the nearer side, so a dragged toolbox stays where it was put.
+        self.offset = settings.value('toolbox_offset', None)
+        self.offset = None if self.offset in (None, '') else max(0, int(float(self.offset)))
         self.setObjectName('floatingToolbox')
+        self.setProperty('floating', True)
         self.setAccessibleName('편집 도구함')
         self.setStyleSheet('''
-            QFrame#floatingToolbox { background: #ffffff; border: 1px solid #d9e0e9; border-radius: 14px; }
+            QFrame#floatingToolbox { background: #ffffff; border: 1px solid #d9e0e9; border-radius: 6px; }
             QFrame#toolboxDivider { background: #e2e8f0; border: none; }
-            QToolButton { padding: 5px; border-radius: 9px; }
+            QToolButton { padding: 5px; border-radius: 6px; }
             QToolButton#drawingTool { padding: 5px; }
         ''')
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(18)
-        shadow.setOffset(0, 3)
-        shadow.setColor(QColor(30, 41, 59, 28))
+        shadow.setBlurRadius(8)
+        shadow.setOffset(0, 1)
+        shadow.setColor(QColor(30, 41, 59, 15))
         self.setGraphicsEffect(shadow)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 3, 6, 8)
@@ -127,7 +132,8 @@ class FloatingToolbox(QFrame):
 
     def position(self):
         viewport = self.parentWidget()
-        x = 36 if self.side == 'left' else viewport.width()-self.width()-14
+        offset = self.offset if self.offset is not None else 36 if self.side == 'left' else 14
+        x = offset if self.side == 'left' else viewport.width()-self.width()-offset
         y = 8 + max(0, viewport.height()-self.height()-16)*self.fraction
         self.move_clamped(QPoint(x, round(y)))
 
@@ -135,6 +141,8 @@ class FloatingToolbox(QFrame):
         viewport = self.parentWidget()
         self.side = 'left' if self.geometry().center().x() < viewport.width()/2 else 'right'
         self.fraction = max(0., min(1., (self.y()-8)/max(1, viewport.height()-self.height()-16)))
+        self.offset = self.x() if self.side == 'left' else viewport.width()-self.width()-self.x()
+        self.settings.setValue('toolbox_offset', self.offset)
         self.settings.setValue('toolbox_side', self.side)
         self.settings.setValue('toolbox_height', self.fraction)
 

@@ -369,6 +369,116 @@ class UpdateServiceTests(unittest.TestCase):
         self.assertIsNone(service.network)
         self.assertEqual(self.server.requests, [])
 
+    def follower(self):
+        # Each process has its own QSettings object, backed by the same store.
+        service = self.service()
+        service.settings = QSettings(self.settings.fileName(), QSettings.Format.IniFormat)
+        service.start()
+        return service
+
+    def test_other_process_follows_download_progress_and_manual_updates_promptly(self):
+        owner = self.service()
+        owner.start()
+        owner.timer.stop()
+        other = self.follower()
+        announced = []
+        other.notify.connect(lambda: announced.append(True))
+        owner.package = Package('0.3.28', 'ADF-Setup-0.3.28.exe', digest(self.setup), 'setup')
+        owner.percent = 42
+        owner._set('downloading')
+        wait_until(lambda: other.state == 'downloading')
+        self.assertEqual((other.package, other.percent), (owner.package, 42))
+        owner._manual('0.3.28', 'security')
+        wait_until(lambda: other.state == 'manual')
+        self.assertEqual((other.package, other.reason), (owner.package, 'security'))
+        self.assertEqual(announced, [])
+        self.assertIsNone(other.network)
+        self.assertEqual(self.server.requests, [])
+
+    def test_other_process_requests_one_download_from_the_owner(self):
+        self.publish(**{'ADF-Setup-0.3.28.exe': self.setup})
+        with patch.object(UpdateService, '_metered', return_value=True):
+            owner = self.checked(self.service())
+            other = self.follower()
+            self.assertEqual(other.state, 'available')
+            other.download()
+            self.assertFalse(other.busy)
+            self.assertIsNone(other.network)
+            wait_until(lambda: other.state == 'ready')
+        self.assertEqual(owner.state, 'ready')
+        self.assertEqual(other.staged().read_bytes(), self.setup)
+        self.assertEqual(len(self.server.downloaded('ADF-Setup-0.3.28.exe')), 1)
+        self.assertIsNone(self.settings.value('updates/download_requested'))
+
+    def test_other_process_takes_over_an_unfinished_download_when_the_owner_closes(self):
+        owner = self.service()
+        owner.start()
+        owner.timer.stop()
+        owner.package = Package('0.3.28', 'ADF-Setup-0.3.28.exe', digest(self.setup), 'setup')
+        owner._set('downloading')
+        other = self.follower()
+        self.assertEqual(other.state, 'downloading')
+        owner.shutdown()
+        wait_until(lambda: other.network is not None)
+        self.assertEqual(other.state, 'idle')
+        other.check()
+        wait_until(lambda: other.state == 'ready')
+        self.assertEqual(other.staged().read_bytes(), self.patch)
+
+    def test_background_agent_notifies_before_adf_opens_even_when_another_process_owns_updates(self):
+        from adf.agent import Agent
+        owner = self.service()
+        owner.start()
+        owner.timer.stop()
+        other = self.follower()
+        agent = Agent(other.settings, other)
+        self.addCleanup(lambda: agent.deleteLater())
+        self.addCleanup(agent.toast.dismiss)
+        self.addCleanup(agent.tray.hide)
+        owner.check()
+        wait_until(lambda: agent.toast.isVisible())
+        self.assertIsNone(agent.toast.parentWidget())
+        self.assertEqual(other.package.version, '0.3.28')
+        self.assertEqual(other.settings.value('updates/background_notified'), '0.3.28')
+        self.assertIsNone(other.network)
+
+    def test_owner_rechecks_a_staged_file_discarded_by_another_process(self):
+        owner = self.checked(self.service())
+        other = self.follower()
+        other.staged().write_bytes(b'damaged')
+        self.assertEqual(self.verified(other), [False])
+        wait_until(lambda: owner.state == 'idle')
+        self.assertIsNone(owner.package)
+        owner.check()
+        wait_until(lambda: owner.state == 'ready')
+        self.assertEqual(owner.staged().read_bytes(), self.patch)
+
+    def test_a_stopped_process_with_a_network_manager_cannot_check_without_ownership(self):
+        former = self.checked(self.service())
+        former.stop()
+        self.follower()
+        requests = len(self.server.requests)
+        former.check()
+        self.assertFalse(former.busy)
+        self.assertEqual(len(self.server.requests), requests)
+
+    def test_background_checking_resumes_when_auto_updates_are_enabled_in_another_process(self):
+        self.settings.setValue('updates/auto', False)
+        service = self.service()
+        service.start()
+        other_settings = QSettings(self.settings.fileName(), QSettings.Format.IniFormat)
+        self.assertIsNone(service.network)
+        other_settings.setValue('updates/auto', True)
+        other_settings.sync()
+        wait_until(lambda: service.network is not None)
+        service.check()
+        wait_until(lambda: service.state == 'ready')
+        other_settings.setValue('updates/auto', False)
+        other_settings.sync()
+        wait_until(lambda: service.lock is None)
+        self.assertFalse(service.timer.isActive())
+        self.assertTrue(service.owner_timer.isActive())
+
     def verified(self, service):
         results = []
         service.verify_staged(service.package, results.append)
@@ -518,6 +628,12 @@ class UpdateWindowTests(unittest.TestCase):
 
     def setUp(self):
         from adf.app import MainWindow
+        background = patch('adf.agent.running', return_value=False)
+        background.start()
+        self.addCleanup(background.stop)
+        stopping_background = patch('adf.agent.stop', return_value=False)
+        stopping_background.start()
+        self.addCleanup(stopping_background.stop)
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
@@ -607,10 +723,85 @@ class UpdateWindowTests(unittest.TestCase):
 
     def test_window_leaves_the_notice_to_a_running_background_agent(self):
         self.window.show()
-        with patch('adf.agent.running', return_value=True),              patch.object(self.window.update_notifier, 'show') as notified:
+        with patch('adf.agent.running', return_value=True), \
+             patch.object(self.window.update_notifier, 'show') as notified, \
+             patch.object(self.window, 'ask_to_update') as ask:
             self.ready()
+            self.window.offer_update()
+            self.found('ready')
+            QTest.qWait(50)
         self.assertFalse(self.window.update_toast.isVisible())
         notified.assert_not_called()
+        ask.assert_not_called()
+        self.assertFalse(self.window.update_button.isHidden())
+
+    def test_a_version_notified_in_the_background_is_not_offered_again_after_the_agent_quits(self):
+        self.window.show()
+        background_settings = QSettings(self.window.settings.fileName(), QSettings.Format.IniFormat)
+        background_settings.setValue('updates/background_notified', self.package.version)
+        background_settings.sync()
+        with patch('adf.agent.running', return_value=False), \
+             patch.object(self.window.update_notifier, 'show') as notified, \
+             patch.object(self.window, 'ask_to_update') as ask:
+            self.ready()
+            self.window.offer_update()
+            self.found('ready')
+            QTest.qWait(50)
+            self.assertTrue(self.window.open_path(self.pdf()))
+            QTest.qWait(50)
+        ask.assert_not_called()
+        notified.assert_not_called()
+        self.assertFalse(self.window.update_toast.isVisible())
+        self.assertTrue(self.window.update_button.isEnabled())
+
+    def test_a_background_notice_for_an_earlier_version_does_not_hide_a_new_version(self):
+        self.window.settings.setValue('updates/background_notified', '0.3.27')
+        self.window.show()
+        with patch('adf.agent.running', return_value=False), \
+             patch.object(self.window, 'ask_to_update', return_value=False) as ask:
+            self.ready()
+            self.window.offer_update()
+        ask.assert_called_once_with('0.3.28', False)
+        self.assertTrue(self.window.update_toast.isVisible())
+
+    def test_update_now_installs_a_background_notified_version_without_another_prompt(self):
+        self.window.settings.setValue('updates/background_notified', self.package.version)
+        self.window.show()
+        self.window.update_now = True
+        with patch('adf.agent.running', return_value=True), \
+             patch.object(self.window, 'ask_to_update') as ask, \
+             patch.object(self.window, 'install_update') as install:
+            self.ready()
+            self.window.offer_update()
+        ask.assert_not_called()
+        install.assert_called_once_with()
+
+    def test_download_progress_waits_for_the_process_that_owns_updates(self):
+        self.window.show()
+        self.service.package = self.package
+        self.service._set('available')
+        # Model the window following an owner in a separate process.
+        self.service.stop()
+        owner = UpdateService(self.window.settings, self.root/'updates', current='0.3.27',
+                              platform='win32', releases='http://127.0.0.1:9/releases')
+        self.addCleanup(owner.shutdown)
+        owner.start()
+        owner.timer.stop()
+        owner.package = self.package
+        owner._set('available')
+        self.service.start()
+        with patch.object(self.window, 'install_update') as install:
+            self.window.download_then_install()
+            self.assertTrue(self.service.download_pending)
+            self.assertIsNotNone(self.window.update_when_ready)
+            owner._set('downloading')
+            self.service._sync_owner()
+            self.assertFalse(self.service.download_pending)
+            self.assertIsNotNone(self.window.update_when_ready)
+            owner._set('ready')
+            self.service._sync_owner()
+        install.assert_called_once_with()
+        self.assertIsNone(self.window.update_when_ready)
 
     def test_update_now_installs_without_asking_even_when_snoozed(self):
         from adf.update_toast import snooze
@@ -984,6 +1175,7 @@ class BackgroundAgentTests(unittest.TestCase):
         self.ready()
         toast = self.agent.toast
         self.assertTrue(toast.isVisible())
+        self.assertEqual(self.settings.value('updates/background_notified'), self.package.version)
         self.assertIsNone(toast.parentWidget())
         area = QApplication.primaryScreen().availableGeometry()
         self.assertEqual(toast.resting_pos().x() + toast.width(), area.right() - 16)
@@ -1010,6 +1202,13 @@ class BackgroundAgentTests(unittest.TestCase):
         self.agent.refresh()
         self.assertFalse(self.agent.toast.isVisible())
 
+    def test_an_update_snoozed_before_detection_is_not_recorded_as_notified(self):
+        from adf.update_toast import snooze
+        snooze(self.settings)
+        self.ready()
+        self.assertFalse(self.agent.toast.isVisible())
+        self.assertIsNone(self.settings.value('updates/background_notified'))
+
     def test_close_message_stops_the_agent(self):
         with patch.object(QApplication, 'quit') as quit:
             self.agent.close()
@@ -1022,6 +1221,16 @@ class BackgroundAgentTests(unittest.TestCase):
             agent.ensure(self.settings)
         start.assert_not_called()
         autostart.assert_not_called()
+
+    def test_agent_is_found_and_closed_with_qts_native_display_name_suffix(self):
+        from adf import agent
+        for title in (agent.TITLE, agent.TITLE + ' - XDF'):
+            with self.subTest(title=title), patch('adf.agent.sys.platform', 'win32'), \
+                 patch('ctypes.windll', create=True) as windll:
+                windll.user32.FindWindowW.side_effect = lambda _, name: 123 if name == title else 0
+                self.assertTrue(agent.running())
+                self.assertTrue(agent.stop())
+                windll.user32.PostMessageW.assert_called_once_with(123, agent.WM_CLOSE, 0, 0)
 
 
 if __name__ == '__main__':

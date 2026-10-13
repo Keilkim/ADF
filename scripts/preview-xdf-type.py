@@ -32,7 +32,7 @@ def sheet():
          '<g font-family="Segoe UI,Malgun Gothic,sans-serif" fill="#72776b">',
          '<text x="40" y="53" font-size="12" letter-spacing="2">XDF / ORIGINAL LETTER DRAWINGS</text>',
          '<text x="40" y="105" font-size="30" fill="#242820">알파벳부터 한글 자모까지, 같은 곡선.</text>',
-         '<text x="1320" y="53" font-size="12" text-anchor="end">XEDOTUM BOLD / 0.200</text>',
+         '<text x="1320" y="53" font-size="12" text-anchor="end">XEDOTUM BOLD / 0.300</text>',
          '</g>']
     with TTFont(OUTPUT/'ttf/xedotum_bold.ttf') as font:
         for index,char in enumerate(chars):

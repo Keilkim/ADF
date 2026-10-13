@@ -101,7 +101,7 @@ class HelpPage(QWidget):
             'h2 { font-size: 19pt; color: #222c3b; margin-bottom: 18px; }'
             'h1 { font-size: 20pt; } p, li { line-height: 155%; }'
             'p { margin-bottom: 12px; } kbd, code { background-color: #eef1f6; }'
-            'a { color: #b8321a; text-decoration: underline; }')
+            'a { color: #b92f26; text-decoration: underline; }')
         row.addWidget(self.topics)
         row.addWidget(self.browser, 1)
         outer.addLayout(row, 1)

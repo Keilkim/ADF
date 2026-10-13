@@ -1,9 +1,10 @@
 """XDF's public identity; storage identifiers remain stable across the rename."""
 
 NAME = 'XDF'
-ACCENT = '#f04b2d'
-ACCENT_HOVER = '#d83c20'
-ACCENT_TEXT = '#b8321a'
-ACCENT_SOFT = '#fff0eb'
-ACCENT_SELECTED = '#ffd8cb'
-ACCENT_PDF = (240 / 255, 75 / 255, 45 / 255)
+ACCENT = '#f04436'
+ACCENT_HOVER = '#d7372d'
+ACCENT_TEXT = '#b92f26'
+# Cool neutral interaction fills keep the signature color for focused emphasis.
+ACCENT_SOFT = '#f0f3f8'
+ACCENT_SELECTED = '#e2e7ee'
+ACCENT_PDF = tuple(int(ACCENT[index:index + 2], 16) / 255 for index in (1, 3, 5))

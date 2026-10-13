@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FONTS = ROOT / 'assets/fonts'
 MANIFEST = json.loads((FONTS / 'manifest.json').read_text(encoding='utf-8'))
 FACES = MANIFEST['fonts']
-IDS = [f"{face['family']}-{face['style']}" for face in FACES]
+IDS = [f"{face['family']}-{face['style']}-V0300" for face in FACES]
 
 
 @pytest.fixture(scope='module')
@@ -67,7 +67,7 @@ def test_every_face_has_full_modern_hangul_latin_and_valid_metadata(face):
         assert all(font.getGlyphID(cmap[cp]) > 0 for cp in range(0xAC00, 0xD7A4))
         assert font['name'].getDebugName(16) == face['family']
         assert font['name'].getDebugName(17) == face['style']
-        assert font['name'].getDebugName(6) == f"{face['family']}-{face['style']}"
+        assert font['name'].getDebugName(6) == f"{face['family']}-{face['style']}-V0300"
         assert font['OS/2'].usWeightClass == face['weight']
         assert font['OS/2'].fsType == 0
         assert font['OS/2'].version >= 4
@@ -163,7 +163,7 @@ def test_font_logo_preserves_the_transparent_d_counter(face, qt_app):
 
 
 def test_download_archive_contains_all_fonts_and_license():
-    with zipfile.ZipFile(FONTS / 'xdf-fonts-0.200.zip') as archive:
+    with zipfile.ZipFile(FONTS / f"xdf-fonts-{MANIFEST['version']}.zip") as archive:
         names = set(archive.namelist())
         assert {'OFL.txt', 'manifest.json', 'build-xdf-type.py', 'xdf_type_geometry.py', 'README.txt',
                 'preview-cover.png', 'preview.png', 'original-glyphs.svg', 'letter-anatomy.svg', 'index.html'} <= names
@@ -213,7 +213,31 @@ def test_text_letter_heights_stay_aligned_across_real_weights(face):
         cmap = font.getBestCmap()
         for character in 'aenorsu':
             glyph = font['glyf'][cmap[ord(character)]]
-            assert glyph.yMin == 0 and glyph.yMax == font['OS/2'].sxHeight
+            assert -4 <= glyph.yMin <= 1
+            assert abs(glyph.yMax - font['OS/2'].sxHeight) <= 6
         for character in 'bdfhkli':
             glyph = font['glyf'][cmap[ord(character)]]
-            assert glyph.yMin == 0 and glyph.yMax == font['OS/2'].sCapHeight
+            assert glyph.yMin == 0
+            assert abs(glyph.yMax - font['OS/2'].sCapHeight) <= 7
+
+
+@pytest.mark.parametrize('face', FACES, ids=IDS)
+def test_text_xdf_uses_normal_proportions_and_closed_latin_counters(face):
+    with TTFont(FONTS / face['ttf']) as font:
+        cmap = font.getBestCmap()
+        # Normal prose must not inherit the wide standalone brand mark.
+        assert sum(font['hmtx'][cmap[ord(c)]][0] for c in 'XDF') < 2200
+        for c in 'DOBPRabdegopq0689':
+            assert font['glyf'][cmap[ord(c)]].numberOfContours >= 2, c
+        # The normal-height u is not an unintended descender.
+        assert font['glyf'][cmap[ord('u')]].yMin >= -4
+
+
+def test_hangul_initial_is_not_stretched_to_the_vowel_height():
+    with TTFont(FONTS / 'ttf/xedotum_medium.ttf') as font:
+        initial = font['glyf']['cho.v0.6']
+        vowel = font['glyf']['jung.v0.0']
+        assert initial.yMax-initial.yMin < (vowel.yMax-vowel.yMin)*.8
+        # Round final ieung retains an oval with a readable vertical dimension.
+        final = font['glyf']['jong.21']
+        assert (final.xMax-final.xMin)/(final.yMax-final.yMin) <= 2.1

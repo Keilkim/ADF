@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XDF — 디자인 방향 비교</title>
+  <style>
+    :root { font-family: "Segoe UI", "Malgun Gothic", sans-serif; color: #30343a; background: #fafbfe; font-synthesis: none; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 1320px; margin: auto; padding: 40px 36px 48px; }
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; padding-bottom: 24px; border-bottom: 1px solid #dce2eb; }
+    h1 { margin: 0; font-size: 24px; letter-spacing: -.04em; font-weight: 600; }
+    header p { margin: 0; color: #71757a; font-size: 12px; }
+    h2 { margin: 26px 0 14px; font-size: 15px; font-weight: 600; }
+    p { line-height: 1.7; word-break: keep-all; }
+    .intro { margin: 17px 0 0; max-width: 860px; color: #62666c; font-size: 14px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    article { background: #fff; border: 1px solid #dfe5ef; border-radius: 6px; overflow: hidden; }
+    .label { margin: 0; padding: 16px 20px; font-size: 12px; color: #62666c; border-bottom: 1px solid #e8edf4; }
+    .stage { height: 194px; display: flex; align-items: center; justify-content: center; padding: 32px; }
+    .stage img { width: 330px; max-width: 100%; height: 130px; object-fit: contain; }
+    .note { margin: 0; padding: 0 20px 18px; font-size: 13px; color: #62666c; }
+    .application { padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid #e8edf4; background: #f4f6fa; }
+    .application img { width: 84px; height: auto; }
+    .palette { display: flex; align-items: center; gap: 7px; }
+    .palette span { width: 18px; height: 18px; border-radius: 2px; background: var(--swatch); border: 1px solid rgba(0,0,0,.07); }
+    .palette small { color: #71757a; font-size: 11px; margin-left: 5px; }
+    .screen img { display: block; width: 100%; height: auto; }
+    .screen a { display: block; }
+    a:focus-visible, input:focus-visible { outline: 2px solid #b83d26; outline-offset: 3px; }
+    .screen .note { padding-top: 14px; }
+    .toggle { display: flex; align-items: center; gap: 9px; font-size: 13px; margin: 14px 0 0; color: #62666c; cursor: pointer; width: fit-content; }
+    .toggle input { accent-color: #30343a; width: 16px; height: 16px; margin: 0; }
+    .copy { padding: 24px 24px 22px; }
+    .copy strong { display: block; font-size: 27px; line-height: 1.4; font-weight: 600; letter-spacing: -.05em; }
+    .copy p { font-size: 13px; color: #62666c; margin: 14px 0 0; }
+    .copy .accent { color: #f04436; }
+    footer { margin-top: 26px; padding-top: 17px; border-top: 1px solid #dce2eb; color: #71757a; font-size: 12px; line-height: 1.7; }
+    @media (max-width: 760px) { main { padding: 24px 18px; } header { align-items: flex-start; flex-direction: column; gap: 8px; } h1 { font-size: 22px; } .grid { grid-template-columns: 1fr; gap: 14px; } .stage { height: 170px; } .application { flex-wrap: wrap; } .copy strong { font-size: 24px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header><h1>XDF, 더 정돈된 인상으로</h1><p>디자인 비교 시안 · 2026.10.13</p></header>
+    <p class="intro">로고의 부풀어 오른 곡선과 넓은 비례를 줄이고, 화면의 색과 모서리를 정돈하고, 화이트는 아주 옅은 쿨톤으로 맞췄습니다. 익숙한 문서 도구의 명료함을 기준으로 잡은 방향입니다.</p>
+    <h2>01 / 로고의 형태</h2>
+    <div class="grid">
+      <article>
+        <p class="label">기존</p>
+        <div class="stage"><img src="xdf-wordmark-before-20261013.svg" alt="현재 XDF 로고: 넓고 둥근 X와 두꺼운 D, F"></div>
+        <p class="note">넓은 X, 부풀어 오른 끝부분, 붙어 보이는 글자 간격.</p>
+        <div class="application"><img src="xdf-wordmark-before-20261013.svg" alt="현재 로고의 작은 크기"><div class="palette"><span style="--swatch:#f04b2d"></span><span style="--swatch:#f7e3e6"></span><span style="--swatch:#e9edf3"></span><small>기존 주홍 · 분홍 · 푸른 회색</small></div></div>
+      </article>
+      <article>
+        <p class="label">적용안</p>
+        <div class="stage"><img id="study-logo" src="xdf-wordmark-study-orange-20261013.svg" alt="제안 XDF 로고: 좁힌 X, 곧은 D 기둥, 평평한 F 끝부분"></div>
+        <p class="note">폭과 굵기를 줄이고, 글자 사이를 열고, 획의 끝을 평평하게.</p>
+        <div class="application"><img id="study-logo-small" src="xdf-wordmark-study-orange-20261013.svg" alt="제안 로고의 작은 크기"><div class="palette"><span style="--swatch:#30343a"></span><span style="--swatch:#e2e7ee"></span><span style="--swatch:#f04436"></span><small>쿨톤 화이트 · 주홍 포인트</small></div></div>
+      </article>
+    </div>
+    <label class="toggle"><input id="color-toggle" type="checkbox" checked>제안 로고도 주홍색으로 보기</label>
+    <h2>02 / 실제 편집 화면</h2>
+    <div class="grid">
+      <article class="screen"><p class="label">기존</p><a href="xdf-workspace-current-20261013.png" target="_blank" rel="noopener" aria-label="기존 앱 화면을 원래 크기로 보기"><img src="xdf-workspace-current-20261013.png" alt="기존 앱의 분홍색 선택 표시와 둥근 도구함" width="1640" height="1048"></a><p class="note">선택 상태에 분홍색을 사용하고, 버튼과 도구함의 모서리가 둥급니다.</p></article>
+      <article class="screen"><p class="label">적용안</p><a href="xdf-workspace-study-20261013.png" target="_blank" rel="noopener" aria-label="적용한 앱 화면을 원래 크기로 보기"><img src="xdf-workspace-study-20261013.png" alt="회색 선택 표시, 줄인 모서리 반경과 그림자를 적용한 실제 앱 화면" width="1640" height="1048"></a><p class="note">선택 상태는 쿨톤 회색으로, 시그니처 주홍색은 유지하고 모서리와 그림자는 더 작게.</p></article>
+    </div>
+    <h2>03 / 홈페이지의 문장과 강조</h2>
+    <div class="grid">
+      <article><p class="label">현재 문구</p><div class="copy"><strong>문서 작업,<br><span class="accent">내 PC에서 가볍게.</span></strong><p>읽고, 쓰고, 도장을 찍고.<br>문서를 마무리하는 일에만 집중하세요.</p></div></article>
+      <article><p class="label">제안 문구</p><div class="copy"><strong>PDF 편집과 정리.<br>한 작업 공간에서.</strong><p>필기, 페이지 정리, 도장과 문서 비교.<br>PDF를 열어 필요한 작업을 마무리하세요.</p></div></article>
+    </div>
+    <footer>로고·컬러·모서리 조정은 작업 소스에 반영했습니다. 편집 화면은 동일한 예시 문서를 실제 앱에서 촬영했습니다. 이미지를 누르면 원래 크기로 비교할 수 있습니다.</footer>
+  </main>
+  <script>
+    document.getElementById('color-toggle').addEventListener('change', (event) => {
+      for (const id of ['study-logo', 'study-logo-small']) {
+        document.getElementById(id).src = event.target.checked
+          ? 'xdf-wordmark-study-orange-20261013.svg'
+          : 'xdf-wordmark-study-20261013.svg';
+      }
+    });
+  </script>
+</body>
+</html>

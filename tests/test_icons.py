@@ -16,10 +16,12 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PIL import Image
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
+from adf.brand import ACCENT
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
+BRAND_RGB = tuple(int(ACCENT[index:index + 2], 16) for index in (1, 3, 5))
 
 
 def windows_icon_pixels(size):
@@ -81,7 +83,7 @@ class IconTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
-    def test_shipped_frames_have_transparent_background_and_vermilion_x(self):
+    def test_shipped_frames_have_transparent_background_and_vermilion_wordmark(self):
         with Image.open(ROOT / 'assets' / 'xdf.ico') as ico:
             self.assertEqual(ico.ico.sizes(), {(s, s) for s in SIZES})
             images = [ico.ico.getimage((s, s)).convert('RGBA') for s in SIZES]
@@ -102,7 +104,7 @@ class IconTests(unittest.TestCase):
                 # Flat brand fill stays consistent even at narrow counter edges.
                 self.assertTrue(all(abs(actual - expected) <= 3
                                     for pixel in opaque
-                                    for actual, expected in zip(pixel[:3], (240, 75, 45))))
+                                    for actual, expected in zip(pixel[:3], BRAND_RGB)))
 
     def test_qt_loads_all_menu_sizes_with_alpha(self):
         for name in ('xdf.png', 'xdf.ico'):

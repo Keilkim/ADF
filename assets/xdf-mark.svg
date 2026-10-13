@@ -1,5 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="-121.3074 -247.3328 972.6655 972.6655">
-  <title>XDF compact X</title>
-  <desc>The X glyph from the primary XDF wordmark, with square clear space for small icons.</desc>
-  <path id="xdf-x" d="       M80 0 H249       C296 0 314 21 344 77       C362 111 365 136 383 136       C409 136 430 112 453 65       C475 20 498 0 530 0 H699       C722 0 731 14 726 42       C707 119 662 161 598 191       C553 212 537 227 537 245       C537 267 559 283 603 304       C667 334 709 381 726 437       C735 465 728 478 704 478 H523       C483 478 462 459 435 413       C413 374 396 348 371 348       C347 348 329 373 305 413       C278 459 258 478 217 478 H28       C5 478 -5 464 3 441       C27 374 75 336 143 306       C187 287 222 269 223 247       C225 226 207 211 173 193       C86 151 52 116 35 51       C26 18 42 0 80 0 Z" fill="#f04b2d" />
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="-27.4681 -314.4681 948.9362 948.9362">
+  <title>XDF</title>
+  <desc>The complete XDF wordmark, centered without distortion on a transparent square icon canvas.</desc>
+  <g fill="#f04436">
+    <path id="xdf-x" d="M4 0 H88 C94 0 98 3 102 10 L149 94 C156 107 162 114 169 114 C176 114 182 107 189 94 L236 10 C240 3 244 0 250 0 H334 L237 159 L337 320 H246 L189 225 C182 213 176 206 169 206 C162 206 156 213 149 225 L92 320 H1 L101 159 Z" />
+    <path id="xdf-d" fill-rule="evenodd" d="M367 0 H478 C577 0 631 51 631 155 V165 C631 269 577 320 478 320 H367 Z M447 73 V247 H475 C526 247 548 221 548 165 V155 C548 99 526 73 475 73 Z" />
+    <path id="xdf-f" d="M671 0 H893 V74 H751 V139 H875 V211 H751 V320 H671 Z" />
+  </g>
 </svg>

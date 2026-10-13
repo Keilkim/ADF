@@ -229,13 +229,15 @@ class FullscreenReader(QObject):
                 self.update_pointer(event.globalPosition().toPoint())
         elif kind == QEvent.Type.MouseButtonDblClick and watched is self.window.view.viewport():
             if (event.button() == Qt.MouseButton.LeftButton and not self.window.view.pen.enabled
-                    and self.window.view.ink_selection is None):
+                    and self.window.view.ink_selection is None
+                    and not self.window.voice.enabled and not self.window.voice.card.isVisible()):
                 self.window.view.pen.cancel()
                 self.exit()
                 return True
         elif kind == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
             if (isinstance(watched, QWidget) and watched.window() is self.window
-                    and not QApplication.activePopupWidget() and not QApplication.activeModalWidget()):
+                    and not QApplication.activePopupWidget() and not QApplication.activeModalWidget()
+                    and not self.window.voice.enabled and not self.window.voice.card.isVisible()):
                 self.window.view.pen.cancel()
                 self.exit()
                 return True

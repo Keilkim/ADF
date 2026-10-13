@@ -13,7 +13,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialogButtonBox
 
 from adf.app import MainWindow
-from adf.dialogs import NumberingDialog, pdf_pixmap
+from adf.dialogs import MarkRemoveDialog, NumberingDialog, pdf_pixmap
 from adf.document import PdfDocument, MM_TO_PT, page_number_record
 
 
@@ -251,25 +251,35 @@ class NumberingTests(unittest.TestCase):
         self.assertEqual(self.model.page_marks()[0]['label'], 'First')
         self.assertEqual(self.model.page_marks()[0]['id'], item)
 
-    def test_dialog_suggests_a_header_after_a_number_and_joins_a_number_to_a_header(self):
+    def test_occupied_position_keeps_the_draft_and_combining_requires_selecting_the_item(self):
         self.model.number_pages(range(6), position='bottom-center')
         dialog = self.dialog()
         # With a number there, the next item is a header in a free place.
         self.assertEqual((dialog.kind.currentData(), dialog.position), ('text', 'top-center'))
-        self.assertEqual(dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).text(), '추가')
+        self.assertEqual(dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).text(), '문구 추가')
         dialog.label_text.setText('Plan')
         dialog._update_preview()
         self.model.number_pages(**dialog._options())
         self.assertEqual(sorted(item['kind'] for item in self.model.page_marks()), ['number', 'text'])
-        # Adding a number where the header is joins the two into one item.
+        # A placement click must not switch targets or silently combine the draft.
         dialog = self.dialog()
         header = next(item for item in dialog.items if item['kind'] == 'text')
         dialog.kind.setCurrentIndex(dialog.kind.findData('number'))
         self.assertIn('쪽 번호가 이미 하단 가운데에 있습니다', dialog.item_hint.text())
+        dialog.start.setValue(7)
         dialog._choose_position(0, 'top-center')
+        dialog._update_preview()
+        self.assertEqual((dialog.editing, dialog.kind.currentData(), dialog.start.value()), (None, 'number', 7))
+        self.assertFalse(dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled())
+        self.assertIn('기존 항목', dialog.preview_status.text())
+        self.assertEqual(sorted(item['kind'] for item in self.model.page_marks()), ['number', 'text'])
+        row = next(index for index in range(dialog.item_list.count())
+                   if dialog.item_list.item(index).data(Qt.ItemDataRole.UserRole) == header['id'])
+        dialog.item_list.setCurrentRow(row)
+        dialog.kind.setCurrentIndex(dialog.kind.findData('both'))
         self.assertEqual((dialog.editing, dialog.kind.currentData()), (header['id'], 'both'))
         self.assertEqual(dialog.label_text.text(), 'Plan')
-        self.assertIn('쪽 번호를 붙입니다', dialog.item_hint.text())
+        self.assertIn('한 줄', dialog.item_hint.text())
         dialog.label_side.setCurrentIndex(0)
         dialog._update_preview()
         self.model.number_pages(**dialog._options())
@@ -310,7 +320,7 @@ class NumberingTests(unittest.TestCase):
         dialog.item_list.setCurrentRow(0)
         self.assertIsNotNone(dialog.editing)
         self.assertEqual(dialog.affix.currentData(), ('p.', ''))
-        self.assertEqual(dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).text(), '수정')
+        self.assertEqual(dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).text(), '쪽 번호 수정')
         dialog.affix.setCurrentIndex(0)
         dialog.start.setValue(40)
         dialog._update_preview()
@@ -328,7 +338,7 @@ class NumberingTests(unittest.TestCase):
         self.app.processEvents()
         dialog._update_preview()
         self.assertEqual([page['index'] for page in dialog.preview.pages], [1, 2])
-        self.assertEqual([page['position'] for page in dialog.preview.pages], ['bottom-left', 'bottom-right'])
+        self.assertEqual([page['position'] for page in dialog.preview.pages], ['bottom-center', 'bottom-center'])
         button = dialog.preview.position_buttons[0]['top-left']
         QTest.mouseClick(button, Qt.MouseButton.LeftButton)
         dialog.color_button.value.setText('#2878A9')
@@ -405,4 +415,110 @@ class NumberingTests(unittest.TestCase):
             else:
                 self.assertLess(rect.right(), midpoint)
                 self.assertTrue(dialog.preview.position_buttons[1]['top-left'].isHidden())
-            self.assertEqual(self.model.page_count, 6)
+        self.assertEqual(self.model.page_count, 6)
+
+    def test_page_scope_explains_numbering_and_preview_navigation_does_not_change_scope(self):
+        dialog = self.dialog()
+        dialog.ranges.setText('2, 4-5')
+        dialog.start.setValue(1)
+        dialog._update_preview()
+        self.assertIn('PDF 2쪽 → 1', dialog.range_hint.text())
+        self.assertIn('PDF 4쪽 → 2', dialog.range_hint.text())
+        self.assertIn('PDF 5쪽 → 3', dialog.range_hint.text())
+        self.assertIsNone(dialog.preview.pages[0]['position'])
+        dialog.preview_page.setValue(4)
+        dialog._update_preview()
+        self.assertEqual(dialog._options()['indices'], [1, 3, 4])
+        self.assertEqual(dialog.preview.pages[0]['label'], '2')
+
+    def test_switching_items_restores_new_and_existing_drafts_even_with_invalid_values(self):
+        key = self.model.number_pages(range(6), position='bottom-center')
+        dialog = self.dialog()
+        dialog.label_text.setText('New draft')
+        dialog.ranges.setText('2-4')
+        dialog.color_button.value.setText('#2878A9')
+        dialog.item_list.setCurrentRow(0)
+        dialog.start.setValue(40)
+        dialog.color_button.value.setText('#XYZ')
+        dialog.item_list.setCurrentRow(dialog.item_list.count() - 1)
+        self.assertIsNone(dialog.editing)
+        self.assertEqual(dialog.label_text.text(), 'New draft')
+        self.assertEqual(dialog.ranges.text(), '2-4')
+        self.assertEqual(dialog.color_button.value.text(), '#2878A9')
+        self.assertAlmostEqual(dialog.color_button.rgb[0], 40 / 255)
+        dialog.item_list.setCurrentRow(0)
+        self.assertEqual(dialog.editing, key)
+        self.assertEqual(dialog.start.value(), 40)
+        self.assertEqual(dialog.color_button.value.text(), '#XYZ')
+        self.assertEqual(self.model.page_marks()[0]['start'], 1)
+
+    def test_editing_a_smaller_scope_explains_removal_and_preview_matches_the_edit(self):
+        self.model.number_pages(range(6), prefix='p.', position='bottom-center')
+        dialog = self.dialog()
+        dialog.item_list.setCurrentRow(0)
+        dialog.ranges.setText('2-5')
+        dialog._update_preview()
+        self.assertIn('PDF 1, 6쪽', dialog.preview_status.text())
+        self.assertIn('제거됩니다', dialog.preview_status.text())
+        self.assertIsNone(dialog.preview.pages[0]['position'])
+        expected = dialog.preview.pages[0]['image'].toImage()
+        self.model.number_pages(**dialog._options())
+        self.assertEqual(expected, pdf_pixmap(self.model.doc[0], 950, 1200).toImage())
+        self.assertEqual(self.model.page_marks()[0]['pages'], [1, 2, 3, 4])
+
+    def test_mirrored_occupied_positions_are_validated_on_pages_outside_the_preview(self):
+        self.model.number_pages([3], kind='text', label='Plan', position='bottom-right')
+        dialog = self.dialog(current_page=0)
+        dialog.kind.setCurrentIndex(dialog.kind.findData('number'))
+        dialog._choose_position(0, 'bottom-left')
+        dialog.mirror.setChecked(True)
+        dialog._update_preview()
+        self.assertEqual(dialog._shown_indices(), [0, 1])
+        self.assertFalse(dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled())
+        self.assertIn('PDF 4쪽 하단 오른쪽', dialog.preview_status.text())
+        dialog.ranges.setText('1-3')
+        dialog._update_preview()
+        self.assertTrue(dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled())
+        self.model.number_pages(**dialog._options())
+        self.assertEqual(len(self.model.page_marks()), 2)
+
+    def test_remove_dialog_selects_the_edited_item_and_counts_each_page_once(self):
+        header = self.model.number_pages(range(6), kind='text', label='Plan', position='top-center')
+        number = self.model.number_pages(range(6), position='bottom-center')
+        dialog = MarkRemoveDialog(self.model.page_marks(), selected_ids=[number])
+        self.dialogs.append(dialog)
+        self.assertEqual(dialog.ids, [number])
+        self.assertIn('1개 항목', dialog.summary.text())
+        dialog._select_all(True)
+        self.assertEqual(set(dialog.ids), {header, number})
+        self.assertIn('PDF 1-6쪽', dialog.summary.text())
+        dialog._select_all(False)
+        self.assertFalse(dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled())
+        standalone = MarkRemoveDialog(self.model.page_marks())
+        self.dialogs.append(standalone)
+        self.assertEqual(standalone.ids, [])
+
+    def test_editing_preserves_custom_number_affixes(self):
+        self.model.number_pages(range(6), prefix='[', suffix=']', position='bottom-center')
+        dialog = self.dialog()
+        dialog.item_list.setCurrentRow(0)
+        self.assertEqual(dialog.affix.currentData(), ('[', ']'))
+        dialog.start.setValue(40)
+        self.model.number_pages(**dialog._options())
+        self.assertIn('[40]', self.model.doc[0].get_text())
+
+    def test_new_item_on_different_pages_does_not_replace_an_item_at_the_same_position(self):
+        original = self.model.number_pages([0], kind='text', label='Cover', position='top-center')
+        dialog = self.dialog()
+        dialog.kind.setCurrentIndex(dialog.kind.findData('text'))
+        dialog.label_text.setText('Body')
+        dialog.ranges.setText('2-끝')
+        dialog._choose_position(1, 'top-center')
+        dialog._update_preview()
+        self.assertTrue(dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled())
+        added = self.model.number_pages(**dialog._options())
+        self.assertNotEqual(original, added)
+        self.assertIn('Cover', self.model.doc[0].get_text())
+        self.assertNotIn('Body', self.model.doc[0].get_text())
+        self.assertIn('Body', self.model.doc[1].get_text())
+        self.assertEqual(len(self.model.page_marks()), 2)

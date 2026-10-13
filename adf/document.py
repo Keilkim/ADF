@@ -365,6 +365,30 @@ class PdfDocument:
         self._saved_state = self._state
         return saved
 
+    def add_voice_note(self, page_index, point, audio, duration, context=''):
+        from .voice_notes import add_note
+        _indices([page_index], self.page_count)
+        with self._edit() as doc:
+            return add_note(doc[page_index], point, audio, duration, context)
+
+    def delete_voice_note(self, identifier):
+        from .voice_notes import find_note
+        if not find_note(self._require_doc(), identifier):
+            return False
+        with self._edit() as doc:
+            page, annotation, _ = find_note(doc, identifier)
+            page.delete_annot(annotation)
+        return True
+
+    def complete_voice_note(self, identifier, text, raw_text, error=''):
+        from .voice_notes import complete_note, find_note
+        if not find_note(self._require_doc(), identifier):
+            return False
+        with self._edit() as doc:
+            page, annotation, note = find_note(doc, identifier)
+            complete_note(annotation, text, raw_text, error)
+        return True
+
     def add_ink(self, page_index, paths, color, width, kind='pencil', pressures=None):
         _indices([page_index], self.page_count)
         if not math.isfinite(width) or not .2 <= width <= 12:
@@ -721,17 +745,57 @@ class PdfDocument:
             return doc[page_index].insert_image(target, stream=data, rotate=rotate % 360,
                                                 keep_proportion=True, overlay=True)
 
-    def move_object(self, page_index, object_id, delta):
-        from .pdf_objects import edit_object
+    def move_object(self, page_index, object_id, transform):
+        """Move or resize an object or clipping group: (dx, dy) or a page-space Matrix."""
+        from .pdf_objects import transform_object
         _indices([page_index], self.page_count)
         with self._edit() as doc:
-            return edit_object(doc[page_index], object_id, delta)
+            return transform_object(doc[page_index], object_id, transform)
+
+    def reshape_object(self, page_index, object_id, parts):
+        from .pdf_objects import reshape_path
+        _indices([page_index], self.page_count)
+        with self._edit() as doc:
+            return reshape_path(doc[page_index], object_id, parts)
 
     def remove_object(self, page_index, object_id):
-        from .pdf_objects import edit_object
+        from .pdf_objects import delete_object
         _indices([page_index], self.page_count)
         with self._edit() as doc:
-            return edit_object(doc[page_index], object_id)
+            return delete_object(doc[page_index], object_id)
+
+    def draw_shape(self, page_index, kind, start, end, fill=None, stroke=(0., 0., 0.), width=.5):
+        """Draw a rectangle, ellipse or line between two unrotated page points; returns its object id."""
+        from .pdf_objects import page_objects
+        _indices([page_index], self.page_count)
+        if kind not in ("rect", "ellipse", "line"):
+            raise ValueError("그릴 도형 종류가 올바르지 않습니다.")
+        start, end = pymupdf.Point(start), pymupdf.Point(end)
+        if kind == "line":
+            fill = None
+        if stroke is None and fill is None:
+            raise ValueError("채움색 또는 외곽선 중 하나는 지정해 주세요.")
+        width = float(width)
+        if not math.isfinite(width) or width < 0 or not all(map(math.isfinite, (*start, *end))):
+            raise ValueError("도형 좌표나 선 두께가 올바르지 않습니다.")
+        with self._edit() as doc:
+            page = doc[page_index]
+            shape = page.new_shape()
+            if kind == "line":
+                shape.draw_line(start, end)
+            elif kind == "ellipse":
+                shape.draw_oval(pymupdf.Rect(start, end).normalize())
+            else:
+                shape.draw_rect(pymupdf.Rect(start, end).normalize())
+            shape.finish(color=stroke, fill=fill, width=width if stroke is not None else 0,
+                         closePath=kind != "line")
+            shape.commit(overlay=True)
+            object_id = len(page_objects(page)) - 1
+            if stroke is not None and width == 0:
+                # PyMuPDF leaves width 0 at PDF's default of 1; 0 is the thinnest line.
+                from .pdf_objects import style_object
+                style_object(page, object_id, width=0.)
+            return object_id
 
     def style_object(self, page_index, object_id, **changes):
         from .pdf_objects import style_object
@@ -832,6 +896,10 @@ def replace_page_text(page: pymupdf.Page, rect, text: str, font_size: float = 11
         raise ValueError("이 페이지에 기존 교정 표시가 있습니다. 다른 PDF 편집기에서 먼저 처리해 주세요.")
     if text:
         font_size, lines, line_step = _fit_text(text, metrics, font_size, target, fit, lineheight)
+    # Redaction also deletes hyperlinks over the edited text; restore them on
+    # the replacement, moved with the text box.
+    links = [link for link in page.get_links()
+             if any(pymupdf.Rect(link['from']).intersects(area) for area in sources)] if text else []
     # An empty source_rects list writes new text without removing anything.
     if sources:
         for area in sources:
@@ -847,6 +915,9 @@ def replace_page_text(page: pymupdf.Page, rect, text: str, font_size: float = 11
                     fontsize=font_size, fontname=name, fontfile=file, color=color, overlay=True)
                 if written != 1:
                     raise ValueError("텍스트를 모두 넣지 못했습니다. 상자를 넓혀 주세요.")
+        shift = target.tl - source.tl
+        for link in links:
+            page.insert_link({**link, 'from': pymupdf.Rect(link['from']) + (shift.x, shift.y, shift.x, shift.y)})
 
 
 class _BuiltinCjkMetrics:
@@ -1303,6 +1374,15 @@ def compress_pdf(doc_or_bytes, output: str | Path, mode: str = "images", dpi: in
                     # Retain the encrypted document container so passwords and
                     # permissions survive. Replace only the page artwork.
                     candidate.bake()
+                    # Page artwork becomes an image, but links stay clickable.
+                    # The raster page is unrotated, so keep displayed positions.
+                    matrices = [page.rotation_matrix for page in candidate]
+                    links = []
+                    for page, matrix in zip(candidate, matrices):
+                        links.append([{**link, 'from': pymupdf.Rect(link['from']) * matrix,
+                                       **({'to': pymupdf.Point(link['to']) * matrices[link['page']]}
+                                          if link.get('to') is not None and 0 <= link.get('page', -1) < len(matrices) else {})}
+                                      for link in page.get_links()])
                     for index in range(candidate.page_count):
                         page = candidate[index]
                         pixmap = page.get_pixmap(dpi=candidate_dpi, colorspace=pymupdf.csRGB, alpha=False)
@@ -1319,6 +1399,10 @@ def compress_pdf(doc_or_bytes, output: str | Path, mode: str = "images", dpi: in
                         for key in ("Rotate", "CropBox", "Annots"):
                             candidate.xref_set_key(original_xref, key, "null")
                         candidate.delete_page(candidate.page_count - 1)
+                    for index, page_links in enumerate(links):
+                        page = candidate[index]
+                        for link in page_links:
+                            page.insert_link(link)
                 encoded = candidate.tobytes(garbage=4, deflate=True, use_objstms=1,
                                             encryption=pymupdf.PDF_ENCRYPT_KEEP)
             if best_bytes is None or len(encoded) < len(best_bytes):

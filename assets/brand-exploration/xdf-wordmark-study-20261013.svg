@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="909" height="336" viewBox="-8 -8 909 336">
+  <title>XDF — restrained wordmark study</title>
+  <desc>An exploratory XDF wordmark with narrower proportions, open spacing, a solid X crossing, a straight D stem and flat F terminals.</desc>
+  <g fill="#30343a">
+    <path d="M4 0 H88 C94 0 98 3 102 10 L149 94 C156 107 162 114 169 114 C176 114 182 107 189 94 L236 10 C240 3 244 0 250 0 H334 L237 159 L337 320 H246 L189 225 C182 213 176 206 169 206 C162 206 156 213 149 225 L92 320 H1 L101 159 Z"/>
+    <path fill-rule="evenodd" d="M367 0 H478 C577 0 631 51 631 155 V165 C631 269 577 320 478 320 H367 Z M447 73 V247 H475 C526 247 548 221 548 165 V155 C548 99 526 73 475 73 Z"/>
+    <path d="M671 0 H893 V74 H751 V139 H875 V211 H751 V320 H671 Z"/>
+  </g>
+</svg>

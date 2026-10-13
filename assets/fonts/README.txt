@@ -1,97 +1,77 @@
-XDF Type — Original outline prototype, Version 0.200
+﻿XDF Type — Original text-outline prototype, Version 0.300
 
-현재 index.html은 새 세리프·산세리프 이미지 시안을 보여줍니다.
-이 README의 0.200 실제 폰트와 새 이미지 시안은 별도 작업입니다.
-이전 0.200 실제 폰트 비교 화면은 prototype-0200.html에 보관합니다.
-이미지 제작 방향과 프롬프트: concepts/design-brief.txt
+Xebatang (세리프) / Xedotum (산세리프)
+각 Light 300 / Medium 500 / Bold 700 / ExtraBold 800
+영문 대·소문자, 숫자, 문장부호, 현대 한글 11,172자.
 
-Xebatang / 부드러운 끝 처리와 가로·세로 획의 대비
-Xedotum / 단정한 비례, 둥근 내부 공간, 부드러운 접합부
-두 서체 × Light 300 · Medium 500 · Bold 700 · ExtraBold 800.
-각 파일에 영문과 현대 한글이 함께 들어 있습니다.
-요청에 쓰인 "dedium"은 Medium으로 표기했습니다.
+제작 방식
+글자 윤곽을 scripts/xdf_type_geometry.py에서 자체 설계합니다.
+프로그램은 굵기 보정, 자모 조합, 간격, TTF/WOFF2 파일 생성을 담당합니다.
+기성 폰트의 윤곽을 추출하거나 변형하지 않습니다.
+Apple, Google, 배민, Gmarket은 인상과 용도에 대한 참고입니다.
+해당 회사의 폰트 파일이나 글리프는 빌드 입력에 사용하지 않습니다.
 
-제작 출처
-0.100은 Noto KR을 변형한 버전이었고, 사용자가 그 방향을 거절했습니다.
-이 0.200은 그 윤곽을 사용하지 않습니다. 기존 글꼴 파일을 읽거나
-글자를 변형하지 않고 알파벳·숫자·문장부호·한글 자모를 직접 구성합니다.
-자체 XDF 워드마크의 X·D·F 곡선은 일반 글자의 원본으로 사용하되,
-본문에 맞는 단정한 폭으로 좁혔습니다. 다른 글자는 그 둥근 내부 공간,
-곡선 접합부, 짧은 끝 처리를 디테일로 이어받아 새로 그렸습니다.
-Xebatang의 끝 처리는 짧고 부드러운 돌출부로 설계했습니다.
-획과 끝 처리는 굵기에 맞춰 다시 계산하며, 브라우저의 가짜 굵기를 쓰지 않습니다.
-로고의 D·F를 가볍게 만든 글자에는 자체 로고 윤곽의 안쪽 오프셋을 사용합니다.
+0.300 변경
+- 자음을 칸 전체에 억지로 늘리던 방식을 제거했습니다.
+- 세로 모음보다 짧은 초성, 좁고 높은 원형 받침으로 비례를 조정했습니다.
+- ㅇ/O/o는 둥근 사각형 대신 실제 타원의 곡률을 사용합니다.
+- 본문의 X/D/F는 일반 문자 비례로 그립니다. 원래 로고는 선택 기능입니다.
+- Xedotum은 가로·세로 굵기의 작은 차이와 넓은 속공간을 사용합니다.
+- Xebatang은 방향에 따른 획 대비와 짧은 세리프를 사용합니다.
+- 두 서체의 XDF 디테일은 안쪽 연결의 작은 곡선과 획 끝의 얕은 절삭입니다.
 
-공통 조형 규칙
-1. 기준선과 비례: 1000 UPM, 영문 대문자 높이 760, 소문자 높이 550,
-   한글 글자 폭 1000, 영문 좌우 기본 여백 28을 공통 기준으로 사용합니다.
-2. 접합부의 곡률: Xebatang은 획 두께의 10%, Xedotum은 16%를 기본값으로
-   사용하며, 작은 내부 공간이 막히지 않도록 문맥별 상한을 둡니다.
-3. 획 끝: 기본 수평 획의 끝 돌출은 두께의 8%로 제한합니다.
-   Xebatang의 세리프는 세로 획 폭의 1.30배를 기준으로 짧게 만듭니다.
-4. 같은 원리의 굵기: 좁은 한글 자모는 획을 점진적으로 제한하여
-   Bold와 ExtraBold가 같은 획으로 합쳐지지 않도록 설계합니다.
-규칙의 실제 수치는 manifest.json과 xdf_type_geometry.py에 포함합니다.
+현재 수준
+실제 설치 가능한 창작 초안입니다. 상용 서체 수준의 교정 완료본이 아닙니다.
+한글 전체를 조합했지만 모든 글자의 육안 검수를 마친 것은 아닙니다.
+자소별 세밀한 비례, 전체 자간, 작은 화면 크기의 힌팅은 추가 작업이 필요합니다.
+한자, 옛한글, 일본어, 확장 라틴 문자는 포함하지 않습니다.
+굵기는 각각 별도 윤곽의 정적 폰트입니다. 가변 폰트가 아닙니다.
 
-한글 구성
-직접 그린 초성·중성·종성을 받침 유무와 모음 방향에 따라 여섯 가지
-문맥별 배치로 조합합니다. 각 글자는 실제 TrueType 합성 글리프입니다.
-현대 한글 U+AC00–U+D7A3 11,172자를 모두 포함합니다.
-조합형 한글을 같은 글자로 표시하는 OpenType ccmp 기능도 제공합니다.
-이번 버전은 독립 제작한 첫 프로토타입입니다. 긴 본문과 작은 크기에 대한
-전체 글자별 광학 보정·힌팅·확장 커닝은 아직 마무리 단계가 아닙니다.
-미리보기에서 공문 제목, 11~12pt 본문과 표를 확인할 수 있습니다.
-
-포함 파일
-  ttf/                 설치용 실제 굵기 파일 8개
-  woff2/               같은 글자를 담은 웹용 파일 8개
-  fonts.css            두 서체와 네 가지 굵기의 대응
-  index.html           문장·크기·자간을 바꾸는 미리보기와 공문 예시
-  preview-cover.png    실제 폰트 8종을 나란히 보는 이미지
-  preview.png          전체 미리보기 페이지 이미지
-  preview-document.png 실제 12pt 공문 예시 이미지
-  letter-anatomy.svg   일반 글자 X D F O M ㅁ ㅇ ㄹ의 실제 윤곽
-  original-glyphs.svg  TTF에서 직접 추출한 알파벳·자모·대표 한글 도면
-  xdf_type_geometry.py 모든 자체 글자의 조형 원본
-  build-xdf-type.py    폰트 생성, 조합 및 패키징 소스
-  preview-xdf-type.py  실제 글리프 도면 생성 소스
-  requirements-build.txt / OFL-1.1.txt / xdf-wordmark.svg / xdf-mark.svg
-  manifest.json        제작 출처, 문자 수, 해시, 각 파일 정보
-  OFL.txt              XDF 저작권 고지와 SIL OFL 1.1
+미리보기
+index.html            실제 0.300 파일로 표시하는 한글·영문 8종 비교
+preview-cover.png     실제 8개 폰트에서 렌더링한 비교 이미지
+preview-document.png  실제 Xebatang Medium / Xedotum Bold 공문 예시
+preview-document.pdf  같은 글자 파일을 임베딩한 A4 PDF
+original-glyphs.svg   실제 Xedotum Bold에서 추출한 글자 도면
+letter-anatomy.svg    실제 Xedotum Medium에서 추출한 도면
+concepts.html         이전 AI 이미지 시안, 실제 폰트 출력과 구별
 
 설치
-TTF 파일을 열어 운영체제의 설치 기능을 사용하세요.
-Xebatang / Xedotum과 Light / Medium / Bold / ExtraBold를 선택합니다.
-구형 Windows 프로그램에서는 일부 굵기가 별도 서체명으로 보일 수 있습니다.
-이 제작 과정에서 운영체제에 폰트를 자동 설치하지는 않습니다.
+Windows에서 ttf 폴더의 8개 파일을 선택하고 설치하세요.
+이전 XDF 버전이 있다면 새 버전으로 교체하고 사용 중인 문서 앱을 다시 여세요.
+서체 이름: Xebatang / Xedotum, 굵기: Light / Medium / Bold / ExtraBold.
+일부 오래된 Windows 프로그램에서는 굵기가 별도 가족명으로 보일 수 있습니다.
+빌드 스크립트는 OS에 폰트를 설치하지 않습니다.
 
 웹 사용
-  <link rel="stylesheet" href="fonts.css">
-  font-family: 'Xedotum', sans-serif;
-  font-weight: 500; /* 300 / 700 / 800 */
-  font-synthesis: none;
-기본 X·D·F는 각각 독립 글자입니다. 선택형 dlig 기능을 켜면 원래
-로고의 넓은 비례와 촘촘한 간격을 유지하는 단일 로고 글리프로 표시합니다.
-  .brand { font-feature-settings: 'dlig' 1; }
+<link rel="stylesheet" href="fonts.css">
+font-family: 'Xedotum', sans-serif;
+font-weight: 500; /* 300 / 700 / 800 */
+font-synthesis: none;
+기본 X·D·F는 독립 글자입니다.
+font-feature-settings: 'dlig' 1; 로 원래 XDF 로고 형태를 켤 수 있습니다.
 
-지원 범위
-영문 A–Z / a–z, 숫자 0–9, ASCII 문장부호, ₩ $ € £ ¥,
-주요 따옴표·대시·가운뎃점·줄임표, 현대 한글 자모와 완성형 전체.
-한자·옛한글·일본어·확장 라틴 문자는 이번 버전에 포함하지 않습니다.
+검증과 출처
+manifest.json에 각 TTF/WOFF2의 SHA-256 해시, 문자 수와 소스 해시가 있습니다.
+브라우저에서 커스텀 폰트의 실제 이름을 확인한 뒤 미리보기를 만듭니다.
+미리보기용 본문에 다른 폰트의 윤곽이나 이미지 글자를 사용하지 않습니다.
+미리보기 페이지의 UI 라벨과 설명에는 시스템 글꼴을 사용합니다.
+OFL.txt: Copyright 2026 XDF contributors / SIL Open Font License 1.1.
+이전 0.100/0.200 실험은 저장소에서 따로 보관하며 0.300 ZIP에 포함하지 않습니다.
 
-재생성
-저장소에서:
-  python -m pip install -r scripts/requirements-brand-fonts.txt
-  python scripts/build-xdf-type.py
-  python scripts/preview-xdf-type.py
-기존 글꼴 다운로드나 시스템 폰트 추출을 하지 않습니다.
-소스 ZIP에서 재생성할 때는 별도 폴더 아래 다음 구조로 복사하세요.
-  scripts/build-xdf-type.py
-  scripts/xdf_type_geometry.py
-  scripts/preview-xdf-type.py
-  scripts/OFL-1.1.txt
-  scripts/requirements-brand-fonts.txt  (requirements-build.txt를 이 이름으로)
-  assets/xdf-wordmark.svg
-  assets/xdf-mark.svg
-생성한 8종과 라이선스·소스는 assets/fonts/에 출력됩니다.
-스크린샷은 실제 브라우저에서 폰트 로딩을 확인한 뒤 별도로 만듭니다.
+재생성 (저장소)
+python -m pip install -r scripts/requirements-brand-fonts.txt
+python scripts/build-xdf-type.py
+python scripts/preview-xdf-type.py
+폰트 스크린샷과 PDF는 브라우저에서 별도로 렌더링한 후 아래 명령으로 패키징합니다.
+python scripts/build-xdf-type.py --package-only
+
+소스 ZIP에서 재생성하려면 다음 구조로 복사하세요.
+scripts/build-xdf-type.py
+scripts/xdf_type_geometry.py
+scripts/preview-xdf-type.py
+scripts/OFL-1.1.txt
+scripts/requirements-brand-fonts.txt (requirements-build.txt의 이름 변경)
+assets/xdf-wordmark.svg
+assets/xdf-mark.svg
+생성 파일은 assets/fonts/에 출력됩니다.

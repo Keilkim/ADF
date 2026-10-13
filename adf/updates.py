@@ -8,8 +8,8 @@ installer; the Mac app downloads the new disk image when the user asks for it.
 When the installer cannot run here, the 'manual' state sends the user to the
 download page; `reason` says why.
 
-Only one ADF process per user checks and downloads. The others show the staged
-update that the owner recorded in the settings.
+Only one ADF process per user checks and downloads. The others follow its state
+through shared settings, including while an update is still being downloaded.
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ RECONNECT_DELAY = 5_000           # let a new connection settle before using it
 RECHECK = 60*60*1000              # while ADF stays open; also on return after a longer pause
 RETRY = 30*60*1000                # offline, behind a login page or GitHub unreachable
 LATER = 60*60*1000                # the release is still being assembled, or the disk is full
-OWNER_RETRY = 10*60*1000          # another ADF window owns updates; take over when it closes
+OWNER_RETRY = 2_000              # share state and user requests; take over when the owner closes
 HASH_CHUNK = 8 << 20
 SUMS_LIMIT = 256 << 10
 SPACE_MARGIN = 512 << 20          # left free beside a download: the installer and Windows need room too
@@ -177,6 +177,7 @@ class UpdateService(QObject):
         self.reason = None                # why the state is 'manual': failed, blocked, security or mismatch
         self.percent = 0
         self.requested = False            # the user asked for this download
+        self.download_pending = False     # another process is accepting that request
         self.checked_at = None            # wall-clock time of the last check; timers stop while the PC sleeps
         self.lock = None
         self.network = None
@@ -190,7 +191,7 @@ class UpdateService(QObject):
         self.timer.timeout.connect(self.check)
         self.owner_timer = QTimer(self)
         self.owner_timer.setInterval(OWNER_RETRY)
-        self.owner_timer.timeout.connect(self.start)
+        self.owner_timer.timeout.connect(self._sync_owner)
 
     @property
     def enabled(self):
@@ -198,23 +199,34 @@ class UpdateService(QObject):
 
     def set_enabled(self, enabled):
         self.settings.setValue('updates/auto', bool(enabled))
-        self.start() if enabled else self.stop()
+        if not enabled:
+            self.stop()
+        self.start()
 
     def start(self):
-        if not self.enabled or self.closed or self.paused:
+        if self.closed or self.paused:
+            return
+        self.owner_timer.start()
+        if not self.enabled:
             return
         try:
             self.folder.mkdir(parents=True, exist_ok=True)
         except OSError:
             return
+        owned = self.lock is not None and self.lock.isLocked()
         if not self._own():
-            self.owner_timer.start()
-            self._load_ready(announce=False)
+            if not self._load_shared():
+                self._load_ready(announce=False)
             return
-        self.owner_timer.stop()
+        if not owned:
+            # A former owner's unfinished download is checked again by the new
+            # owner; a copied 'downloading' state must not suppress that check.
+            self.package, self.reason, self.percent = None, None, 0
+            self._set('idle')
         self._review_attempt()
         self._clean()
         self._load_ready(announce=True)
+        self._publish()
         if self.network is None:
             self.network = QNetworkAccessManager(self)
             # Corporate networks often configure a proxy or PAC file for all apps.
@@ -253,6 +265,8 @@ class UpdateService(QObject):
     def check(self):
         if not self.enabled or self.closed or self.paused or self.network is None:
             return
+        if self.lock is None or not self.lock.isLocked():
+            return
         if self.busy:
             return self.timer.start(RETRY)
         self.busy = True
@@ -274,6 +288,18 @@ class UpdateService(QObject):
         package = self.package
         if package is None or package.kind == 'manual' or self.busy or self.closed or self.paused:
             return
+        if not self._own():
+            # The checking process owns the files too; ask it instead of writing
+            # the same partial download from a second process.
+            self.settings.setValue('updates/download_requested', json.dumps(asdict(package)))
+            self.settings.sync()
+            self.download_pending = True
+            return
+        if self.network is None:
+            self.start()
+        if self.network is None:
+            return
+        self.download_pending = False
         self.busy = True
         for path in self.folder.glob('ADF-*'):
             if path.name not in (package.name, package.name + '.part'):
@@ -372,6 +398,73 @@ class UpdateService(QObject):
             return True
         self.lock = None
         return False
+
+    def _sync_owner(self):
+        """Keep windows and the background agent current without duplicate requests."""
+        self.settings.sync()
+        if self.closed or self.paused:
+            return
+        if not self.enabled:
+            if self.lock is not None or self.busy:
+                self.stop()
+                self.owner_timer.start()
+            return
+        if self.lock is None:
+            self.start()
+            return
+        if self.state == 'ready' and not self.staged().is_file():
+            # A window discarded a damaged staged file after verifying it.
+            self.package, self.reason = None, None
+            self._set('idle')
+            self._retry(RECONNECT_DELAY)
+        requested = self._stored('updates/download_requested')
+        if requested is not None and self.package is not None:
+            self.settings.remove('updates/download_requested')
+            self.settings.sync()
+            if requested == asdict(self.package) and self.state == 'available':
+                self.requested = True
+                self.download()
+
+    def _publish(self):
+        if self.lock is None or not self.lock.isLocked():
+            return
+        self.settings.setValue('updates/status', json.dumps({
+            'state': self.state, 'package': asdict(self.package) if self.package else None,
+            'reason': self.reason, 'percent': self.percent,
+        }))
+        self.settings.sync()
+
+    def _load_shared(self):
+        stored = self._stored('updates/status')
+        if stored is None:
+            return False
+        state = stored.get('state')
+        if state not in ('idle', 'available', 'downloading', 'ready', 'manual'):
+            return False
+        try:
+            package = Package(**stored['package']) if stored.get('package') is not None else None
+        except (TypeError, KeyError):
+            return False
+        if state != 'idle':
+            if package is None or not is_newer(package.version, self.current):
+                return False
+            if state == 'manual':
+                if package.kind != 'manual' or package.name or package.sha256:
+                    return False
+            elif not package.valid():
+                return False
+            if state == 'ready' and not self.staged(package).is_file():
+                return False
+        percent = stored.get('percent', 0)
+        if not isinstance(percent, int) or not 0 <= percent <= 100:
+            return False
+        reason = stored.get('reason')
+        if state != 'available' or package != self.package:
+            self.download_pending = False
+        if (self.state, self.package, self.reason, self.percent) != (state, package, reason, percent):
+            self.package, self.reason, self.percent = package, reason, percent
+            self._set(state)
+        return True
 
     def _stored(self, key):
         self.settings.sync()
@@ -559,6 +652,7 @@ class UpdateService(QObject):
             percent = min(99, int(100*(transfer.offset+received)/(transfer.offset+total)))
             if percent != self.percent:
                 self.percent = percent
+                self._publish()
                 self.changed.emit()
 
     def _downloaded(self, reply, package, part, transfer):
@@ -640,6 +734,7 @@ class UpdateService(QObject):
 
     def _set(self, state, announce=False):
         self.state = state
+        self._publish()
         self.changed.emit()
         if announce:
             self.notify.emit()

@@ -76,15 +76,15 @@ class IntroDialog(QDialog):
         bottom.addWidget(self.start_button)
         layout.addLayout(bottom)
         self.setStyleSheet('''
-            QFrame#tourCard { background: #fafafa; border: none; border-radius: 18px; }
+            QFrame#tourCard { background: #fafbfe; border: none; border-radius: 8px; }
             QLabel { background: transparent; color: #505054; font-size: 10pt; }
             QLabel#tourTitle { color: #252528; font-size: 15pt; font-weight: 600; }
             QLabel#tourCounter { color: #7a7a7e; font-size: 9pt; }
             QPushButton { color: #626268; background: transparent; border: none; border-radius: 8px; padding: 7px 10px; }
-            QPushButton:hover, QPushButton:focus { background: #e5e5e8; }
+            QPushButton:hover, QPushButton:focus { background: #e6eaf0; }
             QPushButton:pressed { background: #ceced2; }
-            QPushButton#tourNext { background: #d83c20; color: white; font-weight: 600; }
-            QPushButton#tourNext:hover, QPushButton#tourNext:focus { background: #b8321a; }
+            QPushButton#tourNext { background: #d7372d; color: white; font-weight: 600; }
+            QPushButton#tourNext:hover, QPushButton#tourNext:focus { background: #b92f26; }
         ''')
         self.window.installEventFilter(self)
         self.window.toolbar.installEventFilter(self)

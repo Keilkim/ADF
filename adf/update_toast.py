@@ -106,8 +106,8 @@ class UpdateToast(QFrame):
             QPushButton { border-radius: 8px; padding: 6px 12px; font-size: 9pt; }
             QPushButton#updateToastLater { background: transparent; color: #c9c9cf; border: 1px solid #5c5c62; }
             QPushButton#updateToastLater:hover { background: #4a4a4f; }
-            QPushButton#updateToastProceed { background: #d83c20; color: white; border: none; font-weight: 600; }
-            QPushButton#updateToastProceed:hover { background: #b8321a; }
+            QPushButton#updateToastProceed { background: #d7372d; color: white; border: none; font-weight: 600; }
+            QPushButton#updateToastProceed:hover { background: #b92f26; }
             QPushButton#updateToastProceed:disabled { background: #6a6a70; color: #d0d0d4; }
         ''')
         self.animation = QPropertyAnimation(self, b'pos', self)

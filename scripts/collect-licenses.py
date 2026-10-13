@@ -68,7 +68,8 @@ def main() -> None:
             if not source.is_file():
                 raise RuntimeError("Run scripts/build-shell.ps1 before collecting native runtime notices")
             shutil.copyfile(source, native / source.name)
-    packages = ["PyMuPDF", "PySide6", "PySide6_Essentials", "PySide6_Addons", "shiboken6", "Pillow", "fonttools", "PyInstaller"]
+    packages = ["PyMuPDF", "PySide6", "PySide6_Essentials", "PySide6_Addons", "shiboken6", "Pillow", "fonttools", "PyInstaller",
+                "python-hwpx", "lxml", "cryptography", "cffi", "pycparser"]
     packages += [name for name in ocr_packages(ROOT) if name.lower() not in {entry.lower() for entry in packages}]
     installed = {}
     for name in packages:
@@ -113,7 +114,7 @@ def main() -> None:
         'rapid-table': ('RapidAI/RapidTable', '22592283c1f9d7c5a014c96c4ecc57de0b3ebfce'),
         'rapidocr': ('RapidAI/RapidOCR', '095232a4c94f7f0e6600ba5bba1177010ad696d4'),
     }
-    for package in dict.fromkeys(['pymupdf', 'pillow', 'fonttools', *ocr_packages(ROOT)]):
+    for package in dict.fromkeys(['pymupdf', 'pillow', 'fonttools', 'python-hwpx', 'lxml', 'cryptography', 'cffi', 'pycparser', *ocr_packages(ROOT)]):
         try:
             version = importlib.metadata.version(package)
         except importlib.metadata.PackageNotFoundError:
@@ -130,7 +131,7 @@ def main() -> None:
         sources.append({"name": package, "version": version, "url": source["url"], "filename": source["filename"], "sha256": source["digests"]["sha256"]})
     qt_version = installed["PySide6"]
     qt_base = f"https://download.qt.io/official_releases/qt/{'.'.join(qt_version.split('.')[:2])}/{qt_version}/submodules"
-    qt_sources = {name: f"{qt_base}/{name}-everywhere-src-{qt_version}.tar.xz" for name in ("qtbase", "qtsvg", "qtimageformats")}
+    qt_sources = {name: f"{qt_base}/{name}-everywhere-src-{qt_version}.tar.xz" for name in ("qtbase", "qtsvg", "qtimageformats", "qtmultimedia")}
     qt_sources["pyside-setup"] = f"https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-{qt_version}-src/pyside-setup-everywhere-src-{qt_version}.tar.xz"
     for name, url in qt_sources.items():
         with urllib.request.urlopen(url + ".sha256", timeout=30) as response:

@@ -101,7 +101,14 @@ class NumberingPreview(QWidget):
                 button.move(round(bx), round(by))
                 button.setProperty('page', page['index'])
                 button.setChecked(page['position'] == position)
-                button.setAccessibleName(f"{page['index'] + 1}쪽 {dict(POSITIONS)[position]}")
+                title = f"PDF {page['index'] + 1}쪽 {dict(POSITIONS)[position]}"
+                occupied = position in page.get('occupied', {})
+                button.setToolTip(title + (' · 기존 항목 있음: 오른쪽 목록에서 선택해 수정' if occupied else ' · 이 위치에 배치'))
+                button.setAccessibleName(button.toolTip())
+                if button.property('occupied') != occupied:
+                    button.setProperty('occupied', occupied)
+                    button.style().unpolish(button)
+                    button.style().polish(button)
                 button.show()
             x += width + gap
         self.update()
@@ -120,7 +127,9 @@ class NumberingPreview(QWidget):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(rect)
             painter.setPen(QColor('#65758b'))
-            caption = f"{page['index'] + 1}쪽" + (f" · {page['label']}" if page['label'] else ' · 적용 제외')
+            caption = f"PDF {page['index'] + 1}쪽" + (f" · {page['label']}" if page['label'] else
+                       ' · 설정 확인 필요' if page.get('error') else ' · 적용 제외')
+            caption = painter.fontMetrics().elidedText(caption, Qt.TextElideMode.ElideRight, round(rect.width() + 10))
             painter.drawText(QRectF(rect.x() - 5, rect.bottom() + 40, rect.width() + 10, 24), Qt.AlignmentFlag.AlignCenter, caption)
 
 
@@ -141,7 +150,7 @@ class NumberColor(QWidget):
         self.swatch.clicked.connect(self._choose)
         self.value = QLineEdit('#222222')
         self.value.setAccessibleName('글자 색 HEX 값')
-        self.value.setToolTip('색상 코드 · 예: #F04B2D')
+        self.value.setToolTip('색상 코드 · 예: #F04436')
         self.value.setFixedWidth(85)
         self.value.setMaxLength(7)
         self.value.textChanged.connect(self._typed)
@@ -162,7 +171,7 @@ class NumberColor(QWidget):
     @property
     def rgb(self):
         if not re.fullmatch(r'#?[0-9a-fA-F]{6}', self.value.text().strip()):
-            raise ValueError('글자 색을 6자리 색상 코드로 입력해 주세요. 예: #F04B2D')
+            raise ValueError('글자 색을 6자리 색상 코드로 입력해 주세요. 예: #F04436')
         return self.color.redF(), self.color.greenF(), self.color.blueF()
 
     def _choose(self):

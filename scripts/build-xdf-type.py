@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: OFL-1.1
-"""Build XDF's original bilingual outline families (version 0.200).
+"""Build XDF's original bilingual outline families (version 0.300).
 
 The Latin alphabet and six contextual Hangul layouts are constructed in
 xdf_type_geometry.py. No Noto, system-font, or other typeface outlines are used.
@@ -142,13 +142,13 @@ def build_one(key,style,weight):
         metrics[name]=(metrics[name][0],getattr(glyph,'xMin',0))
     builder.setupHorizontalMetrics(metrics)
     builder.setupHorizontalHeader(ascent=1000,descent=-300,lineGap=0)
-    family=FAMILIES[key];ps=f'{family}-{style}'
+    family=FAMILIES[key];ps=f'{family}-{style}-V0300'
     builder.setupNameTable(dict(familyName=family if style=='Bold' else family+' '+style,
-        styleName='Bold' if style=='Bold' else 'Regular',uniqueFontIdentifier=f'XDF:0.200:{ps}',
-        fullName=family+' '+style,psName=ps,version='Version 0.200',
+        styleName='Bold' if style=='Bold' else 'Regular',uniqueFontIdentifier=f'XDF:0.300:{ps}',
+        fullName=family+' '+style,psName=ps,version='Version 0.300',
         typographicFamily=family,typographicSubfamily=style,
         copyright='Copyright 2026 XDF contributors. Original Latin and Hangul outlines.',
-        description='Original XDF modular type: broad proportions, sculpted joins, rounded counters.',
+        description='Original XDF text type: natural Hangul proportions, oval counters, restrained terminals.',
         licenseDescription='This Font Software is licensed under the SIL Open Font License, Version 1.1.',
         licenseInfoURL='https://openfontlicense.org/'))
     builder.setupOS2(version=4,usWeightClass=weight,usWidthClass=5,fsType=0,
@@ -158,7 +158,7 @@ def build_one(key,style,weight):
     builder.setupPost(keepGlyphNames=True)
     builder.setupMaxp()
     font=builder.font
-    font['head'].fontRevision=.2;font['head'].macStyle=1 if weight>=700 else 0
+    font['head'].fontRevision=.3;font['head'].macStyle=1 if weight>=700 else 0
     font['head'].created=font['head'].modified=3873657600;font.recalcTimestamp=False
     gasp=newTable('gasp');gasp.gaspRange={65535:15};font['gasp']=gasp
     pairs=['AV','AW','AY','VA','WA','YA','TA','To','Te','Ty','Yo','Wo','FA','LT','LY']
@@ -178,16 +178,16 @@ def build_one(key,style,weight):
 
 
 def package(items):
-    css=['/* Original XDF Type 0.200. SIL OFL 1.1. */']
+    css=['/* Original XDF Type 0.300. SIL OFL 1.1. */']
     for f in items:
         css.append("@font-face {font-family:'%s';font-style:normal;font-weight:%s;font-display:swap;src:url('./%s') format('woff2');}"%(f['family'],f['weight'],f['woff2']))
     (OUTPUT/'fonts.css').write_text('\n'.join(css)+'\n',encoding='utf-8')
     license_source=ROOT/'scripts/OFL-1.1.txt'
     (OUTPUT/'OFL.txt').write_text('Copyright 2026 XDF contributors.\nOriginal XDF Latin and Hangul outlines.\n\n'+license_source.read_text(encoding='utf-8'),encoding='utf-8')
-    manifest=dict(version='0.200',date='2026-10-01',license='OFL-1.1',origin='Original XDF Latin, numbers, punctuation and contextual Hangul components; no upstream font outlines.',
-        upstream_typefaces=[],replaces='Rejected 0.100 Noto derivatives; archived separately, not included in this release.',
+    manifest=dict(version='0.300',status='design-prototype',date='2026-10-01',license='OFL-1.1',origin='Original XDF Latin, numbers, punctuation and contextual Hangul components; no upstream font outlines.',
+        upstream_typefaces=[],replaces='Rejected 0.100 derivatives and 0.200 geometric experiment, archived separately.',
         design_rules={'units_per_em':1000,'cap_height':760,'x_height':550,'hangul_advance':1000,
-                      'latin_sidebearing':28,'contextual_hangul_layouts':6,'families':FAMILY_RULES},
+                      'latin_sidebearing':40,'contextual_hangul_layouts':6,'hangul_component_policy':'draw at intended size; no ink-bound stretching','signature':'small inner join radius and shallow terminal cut','families':FAMILY_RULES},
         build_source='../../scripts/build-xdf-type.py',geometry_source='../../scripts/xdf_type_geometry.py',
         geometry_sha256=digest(ROOT/'scripts/xdf_type_geometry.py'),
         logo_source='../xdf-wordmark.svg',fonts=items)
@@ -198,21 +198,27 @@ def package(items):
                      (ROOT/'assets/xdf-mark.svg','xdf-mark.svg')]:
         shutil.copyfile(src,OUTPUT/dest)
     names=['OFL.txt','OFL-1.1.txt','fonts.css','manifest.json','build-xdf-type.py','xdf_type_geometry.py','preview-xdf-type.py','requirements-build.txt','xdf-wordmark.svg','xdf-mark.svg']
-    for optional in ['README.txt','index.html','preview-cover.png','preview.png','preview-document.png','preview-document.pdf','original-glyphs.svg','letter-anatomy.svg']:
+    for optional in ['README.txt','index.html','concepts.html','preview-cover.png','preview.png','preview-document.png','preview-document.pdf','original-glyphs.svg','letter-anatomy.svg','design-rules.md','install-fonts.ps1']:
         if (OUTPUT/optional).exists(): names.append(optional)
-    with zipfile.ZipFile(OUTPUT/'xdf-fonts-0.200.zip','w',zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(OUTPUT/'xdf-fonts-0.300.zip','w',zipfile.ZIP_DEFLATED) as archive:
         for name in names: archive.write(OUTPUT/name,name)
+        for concept in sorted((OUTPUT/'concepts').glob('*')):
+            if concept.is_file(): archive.write(concept,concept.relative_to(OUTPUT).as_posix())
         for item in items:
             for kind in ('ttf','woff2'): archive.write(OUTPUT/item[kind],item[kind])
 
 
 def main():
+    if sys.argv[1:]==['--package-only']:
+        package(json.loads((OUTPUT/'manifest.json').read_text(encoding='utf-8'))['fonts'])
+        print('Repacked current fonts with actual rendered previews',flush=True)
+        return
     for d in ['ttf','woff2']: (OUTPUT/d).mkdir(parents=True,exist_ok=True)
     with ProcessPoolExecutor(max_workers=2) as pool:
         futures=[pool.submit(build_one,key,style,weight) for key in FAMILIES for style,weight in STYLES]
         items=[f.result() for f in futures]
     package(items)
-    print('Original XDF 0.200: eight bilingual faces exported',flush=True)
+    print('Original XDF 0.300: eight bilingual faces exported',flush=True)
 
 
 if __name__=='__main__': main()

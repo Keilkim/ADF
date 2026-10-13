@@ -218,7 +218,7 @@ class AdaptiveToolbar(QFrame):
         gap = 12  # a divider with its margins
         items = self.file_items + self.edit_items + self.tail_items
         required = sum(widget.sizeHint().width() for widget in items) + len(items)*3 + len(tool_groups)*gap + 50
-        two_rows = bool(tool_groups) and width < max(1180, required)
+        two_rows = bool(tool_groups) and width < required
         if two_rows:
             groups = [self.file_items + [None] + self.tail_items]
             row, used = [], 0
@@ -391,6 +391,7 @@ class MainWindow(QMainWindow):
         a('split', '분할', self.split, None, 'split')
         a('extract', '선택 페이지 추출…', self.extract_pages, None, 'extract')
         a('markdown', 'OCR · Markdown 내보내기…', self.export_markdown, None, 'ocr')
+        a('hwpx', '한글(HWPX)로 변환…', self.export_hwpx, None, 'hwpx')
         a('number', '페이지 번호 및 머리말 편집', self.number, None, 'number_edit')
         a('number_remove', '페이지 번호 및 머리말 제거', self.remove_numbers, None, 'number_remove')
         self.actions['number'].setToolTip('페이지 번호 및 머리말 편집 · 추가·수정·제거')
@@ -459,10 +460,14 @@ class MainWindow(QMainWindow):
         self.pointer_actions.addAction(a('region_tool', '영역 복사', lambda: self.toggle_drawing_tool('region_tool'),
                                         None, 'capture', checkable=True))
         self.actions['region_tool'].setToolTip('드래그한 영역을 그림으로 복사합니다 · 표·그래프·글 포함')
+        self.pointer_actions.addAction(a('voice_tool', 'STT 마킹하기',
+                                        lambda: self.toggle_drawing_tool('voice_tool'), None, 'voice', checkable=True))
+        self.actions['voice_tool'].setToolTip('마우스 음성 메모 · PDF를 클릭하면 바로 녹음 · Esc 취소\n설정은 편집 → 음성 메모 설정')
+        a('voice_settings', '음성 메모 설정…', lambda: self.voice.settings_dialog())
 
     def create_menus(self):
-        groups = [('파일', ['open','save','save_as','close',None,'compare','merge','combine','split','extract','compress','markdown',None,'print','default']),
-                  ('편집',['undo','redo',None,'copy','copy_region','region_tool','paste','image','stamps','text','object_tool','select_image']),
+        groups = [('파일', ['open','save','save_as','close',None,'compare','merge','combine','split','extract','compress','markdown','hwpx',None,'print','default']),
+                  ('편집',['undo','redo',None,'copy','copy_region','region_tool','paste','image','stamps','text','object_tool','select_image',None,'voice_tool','voice_settings']),
                   ('페이지',['rotate','rotate_left','blank','replace','delete',None,'up','down','number']),
                   ('보기',['find','fullscreen',None,'select_tool','hand_tool','pen','eraser',None,'snap','settings']),
                   ('도움말',['help','licenses','sources',None,'intro','auto_update','background','about'])]
@@ -476,11 +481,21 @@ class MainWindow(QMainWindow):
         for key, label, icon_only in [
             ('open','열기',True), ('save','저장',True), ('save_as','다른 이름 저장',True), ('compress','저용량 저장',True),
             ('print','인쇄',True), ('undo','실행 취소',True), ('redo','다시 실행',True), ('find','찾기',True),
-            ('compare','비교',True), ('markdown','OCR · MD',True), ('number','페이지 번호 및 머리말 편집',True),
+            ('compare','비교',True), ('markdown','OCR · MD',True), ('hwpx','한글 변환',False),
+            ('number','페이지 번호 및 머리말 편집',True),
         ]:
             button = self.toolbar.button(self.actions[key], label, 'file', icon_only)
-            if key == 'number':
+            if key in ('number', 'hwpx'):
                 button.setIconSize(QSize(24,24))
+        from .voice_widgets import VoiceMarkButton, VoiceVisibility
+        self.voice_button = VoiceMarkButton(self.actions['voice_tool'], self.toolbar)
+        self.voice_button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.voice_button.customContextMenuRequested.connect(lambda pos: self.voice.settings_dialog())
+        self.toolbar.widget(self.voice_button, 'edit')
+        self.toolbar.section()
+        self.voice_visibility = VoiceVisibility(self.settings.value('voice/visibility', 'half'), self.toolbar)
+        self.voice_visibility.visibilityChanged.connect(lambda mode: self.voice.set_visibility(mode))
+        self.toolbar.widget(self.voice_visibility, 'edit')
         self.toolbar.reflow(self.width())
 
     def build_home(self):
@@ -643,11 +658,17 @@ class MainWindow(QMainWindow):
             self.side_buttons[key] = b
         sl.addLayout(side_tools)
         self.view = PdfView()
+        from .voice_controller import VoiceController
+        self.voice = VoiceController(self)
+        self.view.voice = self.voice
         from .toolbox_widgets import FloatingToolbox
         self.toolbox = FloatingToolbox(self.view, self.actions, self.settings, self.show_pen_options)
         from .shape_widgets import ShapeProperties
-        self.shape_properties = ShapeProperties(self.view, self.toolbox)
+        self.shape_properties = ShapeProperties(self.view, self.toolbox, self.shape_defaults())
+        self.view.shape_style = dict(self.shape_properties.defaults)
         self.shape_properties.changed.connect(self.style_selected_object)
+        self.shape_properties.defaultsChanged.connect(self.save_shape_defaults)
+        self.shape_properties.drawKindChanged.connect(self.choose_shape_kind)
         self.view.objectSelectionChanged.connect(self.shape_properties.set_target)
         self.toolbox.objectOptionsRequested.connect(self.show_shape_options)
         self.toolbox.cancelRequested.connect(self.escape)
@@ -678,6 +699,8 @@ class MainWindow(QMainWindow):
         self.view.pan.changed.connect(self.show_temporary_pan)
         self.view.inkTransformed.connect(self.transform_ink)
         self.view.objectTransformed.connect(self.transform_object)
+        self.view.nodesChanged.connect(self.reshape_object)
+        self.view.shapeDrawn.connect(self.draw_shape)
         self.view.objectDeleteRequested.connect(self.delete_selection)
         reader_pane = QWidget()
         reader_layout = QVBoxLayout(reader_pane)
@@ -854,13 +877,15 @@ class MainWindow(QMainWindow):
         self.actions['pen'].setEnabled(editable)
         self.actions['eraser'].setEnabled(editable)
         self.actions['object_tool'].setEnabled(editable)
+        self.actions['voice_tool'].setEnabled(editable and not self.worker)
+        self.voice_visibility.setEnabled(loaded)
         if not editable:
             self.stop_pen()
         if not editable and self.active_stamp_id:
             self.stop_stamp()
         if self.stamp_dock:
             self.stamp_dock.set_editable(editable)
-        for key in ['save','save_as','close','split','extract','compress','markdown','find','print','copy','next','previous','settings','fullscreen']:
+        for key in ['save','save_as','close','split','extract','compress','markdown','hwpx','find','print','copy','next','previous','settings','fullscreen']:
             self.actions[key].setEnabled(loaded)
         for key in ['merge','number','number_remove','image','paste','text','text_add','select_image','rotate','rotate_left','delete','blank','replace','up','down']:
             self.actions[key].setEnabled(editable)
@@ -898,6 +923,8 @@ class MainWindow(QMainWindow):
         return self.save() if box.clickedButton()==save else box.clickedButton()==discard
 
     def resolve_placement(self):
+        if hasattr(self, 'voice') and not self.voice.apply():
+            return False
         if getattr(self.view, 'text_placement', None):
             if self.text_selection_dirty and not self.apply_text():
                 return False
@@ -1046,6 +1073,10 @@ class MainWindow(QMainWindow):
         self.notice.clearMessage()
 
     def show_empty_workspace(self):
+        self.voice.shutdown()
+        self.voice.set_enabled(False)
+        self.pointer_mode = 'select_tool'
+        self.actions['select_tool'].setChecked(True)
         self.fullscreen.exit()
         self.stop_stamp()
         self.search_timer.stop()
@@ -1546,6 +1577,41 @@ class MainWindow(QMainWindow):
         except Exception as error:
             self.error(error)
 
+    def export_hwpx(self):
+        if self.worker or not self.document.page_count or not self.resolve_placement():
+            return
+        from .document import _require_permission
+        from .hwpx_widgets import HwpxOptionsDialog, run_hwpx_job
+        try:
+            _require_permission(self.document.doc, pymupdf.PDF_PERM_COPY)
+            dialog = HwpxOptionsDialog(self.document, self.current, self.selected_pages(), self)
+            if not dialog.exec():
+                dialog.deleteLater()
+                return
+            options = dialog.options
+            dialog.deleteLater()
+            result = run_hwpx_job(self, dict(operation='convert', options=options))
+            if result is None:
+                self.notice.showMessage('HWPX 변환을 취소했습니다', 8000)
+                return
+            self.notice.showMessage(f'HWPX 저장 완료 · {options["output"]}', 15000)
+            message = (f'{result["pages"]}쪽 · 편집 가능한 문단 {result["paragraphs"]}개 · '
+                       f'표 {result["tables"]}개 · 그림 {result["figures"]}개\n\n{options["output"]}')
+            if result['warnings']:
+                message += '\n\n원본과 대조할 항목:\n' + '\n'.join(
+                    (f'{item["page"]}쪽: ' if item['page'] else '') + item['message']
+                    for item in result['warnings'][:4])
+                if len(result['warnings']) > 4:
+                    message += f'\n외 {len(result["warnings"]) - 4}개 항목'
+            box = QMessageBox(QMessageBox.Icon.Information, 'HWPX 변환 완료', message,
+                              QMessageBox.StandardButton.Close, self)
+            folder_button = box.addButton('저장 폴더 열기', QMessageBox.ButtonRole.ActionRole)
+            box.exec()
+            if box.clickedButton() == folder_button:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(options['output']).parent)))
+        except Exception as error:
+            self.error(error)
+
     def show_stamps(self):
         from .stamps import StampLibrary
         from .stamp_widgets import StampDock
@@ -1689,7 +1755,9 @@ class MainWindow(QMainWindow):
     def toggle_text(self, checked, add=False):
         """Edit the paragraph under the pointer, or create text in empty space."""
         key, other = ('text_add', 'text') if add else ('text', 'text_add')
-        self.stop_pen()
+        if self.stop_pen() is False:
+            self.actions[key].setChecked(False)
+            return
         self.stop_stamp()
         if not checked and self.text_selection_dirty and not self.apply_text():
             self.actions[key].setChecked(True)
@@ -1720,7 +1788,9 @@ class MainWindow(QMainWindow):
             self.notice.showMessage('텍스트 수정 내용은 문서에 반영되었습니다 · 저장할 때 한 번에 기록됩니다')
 
     def toggle_image_select(self,checked):
-        self.stop_pen()
+        if self.stop_pen() is False:
+            self.actions['select_image'].setChecked(False)
+            return
         self.stop_stamp()
         if self.text_selection_dirty and not self.apply_text():
             self.actions['select_image'].setChecked(False)
@@ -1960,7 +2030,7 @@ class MainWindow(QMainWindow):
             return False
 
     def change_pointer(self, mode):
-        if mode in ('pen', 'eraser', 'object_tool') and (not self.document.editable or self.worker):
+        if mode in ('pen', 'eraser', 'object_tool', 'voice_tool') and (not self.document.editable or self.worker):
             self.actions[self.pointer_mode].setChecked(True)
             return False
         if mode == 'region_tool' and not self.copy_allowed():
@@ -1973,6 +2043,7 @@ class MainWindow(QMainWindow):
             self.actions[self.pointer_mode].setChecked(True)
             return
         self.pointer_mode = mode
+        self.voice.set_enabled(mode == 'voice_tool')
         self.actions[mode].setChecked(True)
         if hasattr(self, 'pen_menu'):
             self.pen_menu.hide()
@@ -1984,6 +2055,9 @@ class MainWindow(QMainWindow):
         self.view.text_mode = False
         self.view.image_mode = False
         self.view.object_mode = mode == 'object_tool'
+        if mode != 'object_tool':
+            self.view.shape_kind = None
+            self.shape_properties.set_draw_kind(None)
         self.view.copy_region_mode = mode == 'region_tool'
         self.actions['text'].setChecked(False)
         self.actions['text_add'].setChecked(False)
@@ -1995,7 +2069,9 @@ class MainWindow(QMainWindow):
         if mode == 'region_tool':
             self.notice.showMessage('복사할 영역을 드래그하세요 · 표·그래프·글을 함께 이미지로 복사 · Esc 종료', 6000)
         elif mode == 'object_tool':
-            self.notice.showMessage('도형·이미지·필기를 클릭하세요 · 끌어서 이동 · Delete로 삭제 · Esc로 해제', 6000)
+            self.notice.showMessage('도형·이미지·필기를 클릭하세요 · 끌어서 이동 · 모서리로 크기 조절 · 더블클릭 노드 편집 · Delete 삭제', 6000)
+        elif mode == 'voice_tool':
+            self.notice.showMessage('PDF에서 메모할 곳을 클릭하세요 · 바로 녹음 · 적용 또는 다음 위치 클릭으로 저장 · Esc 취소', 6000)
         return True
 
     def toggle_hand_tool(self):
@@ -2042,6 +2118,12 @@ class MainWindow(QMainWindow):
         self.pen_menu.popup(button.mapToGlobal(button.rect().bottomLeft()))
 
     def stop_pen(self):
+        if hasattr(self, 'voice') and self.voice.enabled:
+            if not self.voice.apply():
+                return False
+            self.voice.set_enabled(False)
+            self.pointer_mode = 'select_tool'
+            self.actions['select_tool'].setChecked(True)
         if hasattr(self, 'pen_menu'):
             self.pen_menu.hide()
         if self.pointer_mode in ('pen', 'eraser', 'region_tool', 'object_tool'):
@@ -2093,19 +2175,84 @@ class MainWindow(QMainWindow):
             self.view.clear_ink_selection()
             self.error(error)
 
-    def transform_object(self, index, object_id, delta):
+    def transform_object(self, index, object_id, transform):
         if self.worker or not self.document.editable:
             self.view.clear_object_selection()
             return
         try:
-            self.document.move_object(index,object_id,delta)
+            self.document.move_object(index,object_id,transform)
             self.view.invalidate_page(index)
             self.thumbnails.invalidate_page(index)
             self.view.select_object(index,object_id)
             self.refresh_actions()
-            self.notice.showMessage('객체를 이동했습니다 · Delete로 삭제 · Ctrl+Z 취소 · Ctrl+S 저장', 4000)
+            moved = (transform.a, transform.b, transform.c, transform.d) == (1, 0, 0, 1)
+            self.notice.showMessage(('객체를 이동했습니다' if moved else '크기를 바꿨습니다')
+                                    +' · Delete로 삭제 · Ctrl+Z 취소 · Ctrl+S 저장', 4000)
         except Exception as error:
             self.view.clear_object_selection()
+            self.error(error)
+
+    def reshape_object(self, index, object_id, parts):
+        if self.worker or not self.document.editable:
+            self.view.clear_object_selection()
+            return
+        try:
+            self.document.reshape_object(index,object_id,parts)
+            self.view.invalidate_page(index)
+            self.thumbnails.invalidate_page(index)
+            self.view.edit_nodes(index,object_id)
+            self.refresh_actions()
+            self.notice.showMessage('노드를 옮겼습니다 · Esc로 노드 편집 끝내기 · Ctrl+Z 취소', 4000)
+        except Exception as error:
+            self.view.clear_object_selection()
+            self.error(error)
+
+    def shape_defaults(self):
+        """New shapes: no fill and a thin black outline unless the user chose otherwise."""
+        style = dict(fill=None, stroke=(0., 0., 0.), width=.5)
+        try:
+            values = json.loads(self.settings.value('shape_defaults', '') or '{}')
+            for field in ('fill', 'stroke'):
+                color = values.get(field, style[field])
+                style[field] = None if color is None else tuple(max(0., min(1., float(v))) for v in color)
+                if style[field] is not None and len(style[field]) != 3:
+                    raise ValueError
+            style['width'] = max(0., min(1000., float(values.get('width', .5))))
+            if style['fill'] is None and style['stroke'] is None:
+                raise ValueError
+            return style
+        except (TypeError, ValueError, AttributeError):
+            return dict(fill=None, stroke=(0., 0., 0.), width=.5)
+
+    def save_shape_defaults(self, style):
+        self.view.shape_style = dict(style)
+        self.settings.setValue('shape_defaults', json.dumps(style))
+
+    def choose_shape_kind(self, kind):
+        if kind is not None and self.pointer_mode != 'object_tool' and not self.change_pointer('object_tool'):
+            self.shape_properties.set_draw_kind(None)
+            return
+        self.view.shape_kind = kind
+        self.shape_properties.set_draw_kind(kind)
+        self.view.update_content_cursor()
+        if kind is not None:
+            self.view.clear_object_selection()
+            name = {'rect': '사각형', 'ellipse': '타원', 'line': '선'}[kind]
+            self.notice.showMessage(name+'을 페이지에서 끌어 그리세요 · Shift 정비율 · Esc로 그리기 끝내기', 6000)
+
+    def draw_shape(self, index, kind, points):
+        if self.worker or not self.document.editable:
+            return
+        style = self.view.shape_style
+        try:
+            object_id = self.document.draw_shape(index, kind, *points, fill=style['fill'],
+                                                 stroke=style['stroke'], width=style['width'])
+            self.view.invalidate_page(index)
+            self.thumbnails.invalidate_page(index)
+            self.view.select_object(index, object_id)
+            self.refresh_actions()
+            self.notice.showMessage('도형을 그렸습니다 · 계속 끌어 더 그리기 · Esc로 그리기 끝내기 · Ctrl+Z 취소', 4000)
+        except Exception as error:
             self.error(error)
 
     def clear_content_selection(self):
@@ -2126,14 +2273,14 @@ class MainWindow(QMainWindow):
             return
         if self.pointer_mode != 'object_tool' and not self.change_pointer('object_tool'):
             return
-        selection = self.view.object_selection
+        selection = self.view.object_selection or self.view.node_editor
         if hasattr(self, 'pen_menu'):
             self.pen_menu.hide()
         self.shape_properties.set_target(selection.target if selection is not None else None)
         self.shape_properties.popup()
 
     def style_selected_object(self, changes):
-        selection = self.view.object_selection
+        selection = self.view.object_selection or self.view.node_editor
         if selection is None or self.worker or not self.document.editable:
             return
         target = selection.target
@@ -2154,7 +2301,10 @@ class MainWindow(QMainWindow):
             self.document.style_object(index,object_id,**changes)
             self.view.invalidate_page(index)
             self.thumbnails.invalidate_page(index)
-            self.view.select_object(index,object_id)
+            if self.view.node_editor is selection:
+                self.view.edit_nodes(index,object_id)
+            else:
+                self.view.select_object(index,object_id)
             self.refresh_actions()
             self.notice.showMessage('도형 속성을 바꿨습니다 · Ctrl+Z 취소 · Ctrl+S 저장',4000)
         except Exception as error:
@@ -2248,7 +2398,14 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, self.fullscreen.exit)
 
     def escape(self):
-        if self.shape_properties.isVisible():
+        if self.voice.draft:
+            self.voice.cancel()
+        elif self.voice.enabled:
+            self.change_pointer('select_tool')
+        elif self.voice.card.isVisible():
+            self.voice.player.stop()
+            self.voice.card.hide()
+        elif self.shape_properties.isVisible():
             self.shape_properties.hide()
             self.view.setFocus()
         elif hasattr(self, 'pen_menu') and self.pen_menu.isVisible():
@@ -2259,6 +2416,11 @@ class MainWindow(QMainWindow):
             self.fullscreen.exit()
         elif self.view.pen.enabled:
             self.change_pointer('select_tool')
+        elif self.view.node_editor is not None:
+            editor = self.view.node_editor
+            self.view.select_object(editor.index, editor.object_id)
+        elif self.view.shape_kind is not None:
+            self.choose_shape_kind(None)
         elif self.view.copy_region_mode or self.view.object_mode or self.view.image_mode:
             self.change_pointer('select_tool')
         elif self.pointer_mode == 'hand_tool':
@@ -2684,7 +2846,6 @@ class MainWindow(QMainWindow):
         return True
 
     def refresh_update_toast(self):
-        from . import agent
         from .update_toast import toast_content
         toast, service = getattr(self, 'update_toast', None), self.updates
         if toast is None:
@@ -2692,7 +2853,7 @@ class MainWindow(QMainWindow):
         content = toast_content(service) if service is not None else None
         # With XDF running in the background, its notice at the screen's corner is the one to show.
         if (content is None or self.installing_update or self.update_when_ready is not None
-                or self.update_snoozed() or agent.running()):
+                or self.update_snoozed() or self.background_update_notified()):
             toast.dismiss()
         elif self.isVisible():
             toast.present(*content)
@@ -2719,13 +2880,22 @@ class MainWindow(QMainWindow):
         from .update_toast import manual_reason
         return manual_reason(self.updates)
 
+    def background_update_notified(self):
+        """The background notice owns prompts for this version, also after it quits."""
+        from . import agent
+        if agent.running():
+            return True
+        self.settings.sync()
+        package = self.updates.package if self.updates is not None else None
+        return (package is not None
+                and self.settings.value('updates/background_notified', '') == package.version)
+
     def announce_update(self):
         """Windows stacks these with other apps' notifications at the bottom right."""
         service = self.updates
         package = service.package
-        from . import agent
         if (package is None or self.installing_update or self.update_when_ready is not None
-                or self.update_snoozed() or agent.running()):
+                or self.update_snoozed() or self.background_update_notified()):
             return
         if service.state == 'ready' and service.platform == 'darwin':
             self.update_notifier.show('XDF 새 버전 받기 완료',
@@ -2745,14 +2915,17 @@ class MainWindow(QMainWindow):
     def offer_update(self):
         """Ask to install a downloaded update when XDF or a document opens.
 
-        Asked once per version and session. A download that finishes during work
-        only shows the notification and the menu bar button: a dialog appearing
-        while the user types could take an Enter meant for the document.
+        The background agent handles prompts when it runs or already notified
+        this version. Otherwise ask once per version and session. A download
+        that finishes during work only shows the notification and the menu bar
+        button: a dialog appearing while the user types could take an Enter
+        meant for the document.
         """
         service = self.updates
         self.refresh_update_toast()
         if (service is None or service.state != 'ready' or service.package is None or self.installing_update
                 or (self.update_snoozed() and not self.update_now)
+                or (self.background_update_notified() and not self.update_now)
                 or self.update_offered == service.package.version or not self.isVisible()
                 or self.worker is not None or self.loading_dialog is not None
                 or QApplication.activeModalWidget() is not None):
@@ -2773,7 +2946,7 @@ class MainWindow(QMainWindow):
             return
         first, self.update_checked = not self.update_checked, True
         if (not first or service.state not in ('available', 'downloading', 'ready') or self.installing_update
-                or self.update_snoozed()
+                or self.update_snoozed() or self.background_update_notified()
                 or self.update_offered == service.package.version or not self.isVisible()
                 or self.worker is not None or self.loading_dialog is not None
                 or QApplication.activeModalWidget() is not None):
@@ -2810,7 +2983,7 @@ class MainWindow(QMainWindow):
         progress, service = self.update_when_ready, self.updates
         if progress is None:
             return
-        if service.state == 'downloading':
+        if service.state == 'downloading' or (service.state == 'available' and service.download_pending):
             progress.setValue(service.percent)
         elif service.state == 'ready':
             self.stop_following_update()
@@ -3013,6 +3186,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self.closed_document = self.document.path
+        self.voice.shutdown()
         self.fullscreen.exit()
         self.stop_stamp()
         if not self.smoke:
@@ -3230,16 +3404,24 @@ def main():
     parser.add_argument('--shell-request')
     parser.add_argument('--tool-smoke-test')
     parser.add_argument('--worker')
+    parser.add_argument('--voice-worker')
     parser.add_argument('--load-worker')
     parser.add_argument('--markdown-worker')
+    parser.add_argument('--hwpx-worker')
     parser.add_argument('--compare-worker')
     parser.add_argument('--smoke-test')
     parser.add_argument('--help-section', choices=['guide', 'licenses', 'sources'])
     parser.add_argument('--update-now', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.voice_worker:
+        from .voice_transcription import voice_worker
+        return voice_worker(args.voice_worker)
     if args.markdown_worker:
         from .markdown_export import markdown_worker
         return markdown_worker(args.markdown_worker)
+    if args.hwpx_worker:
+        from .hwpx_export import hwpx_worker
+        return hwpx_worker(args.hwpx_worker)
     if args.load_worker:
         from .loading import loading_worker
         return loading_worker(args.load_worker)
@@ -3344,6 +3526,7 @@ def main():
                     numbering.start.setValue(99)
                     numbering.zero_pad.setChecked(True)
                     numbering.affix.setCurrentIndex(1)
+                    numbering._choose_position(1, 'bottom-left')
                     numbering.mirror.setChecked(True)
                     numbering._update_preview()
                     assert [p['index'] for p in numbering.preview.pages] == [1, 2]
