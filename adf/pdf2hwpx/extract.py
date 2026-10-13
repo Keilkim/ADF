@@ -238,7 +238,7 @@ def _moved(value, dx, page_width, half_width):
         if key == 'bbox':
             moved[key] = [(item[0] * half_width / 1000 + dx) * 1000 / page_width, item[1],
                           (item[2] * half_width / 1000 + dx) * 1000 / page_width, item[3]]
-        elif key == 'left_pt':
+        elif key in ('left_pt', 'right_pt'):
             moved[key] = item + dx
         elif key == 'box_pt':
             moved[key] = [item[0] + dx, item[1], item[2] + dx, item[3]]

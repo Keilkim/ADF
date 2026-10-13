@@ -8,7 +8,7 @@ import pymupdf
 
 from ..text_groups import restore_text_spacing
 from .appearance import PageLook, far, hex_colour
-from .font_metrics import glyph_width, hancom_family, installed, registered_family
+from .font_metrics import glyph_width, hancom_family, installed, registered_family, styled_face
 from .symbol_fonts import recover
 
 
@@ -283,6 +283,9 @@ def _paragraph(group, region):
         result['indent_left_pt'] = max(0., min(first, continuation) - region.x0)
         result['left_pt'] = min(first, continuation)  # on the page, for writers with other margins
         result['first_line_indent_pt'] = first - continuation
+        # Where the lines may reach on the page; a wider block elsewhere on
+        # the page (a figure) must not widen this paragraph in Hancom.
+        result['right_pt'] = region.x1
     if len(group) > 1 and result['alignment'] in ('LEFT', 'JUSTIFY') and '	' not in result['text']:
         _match_breaks(result, group, region)
     return result
@@ -468,12 +471,13 @@ def line_width(runs):
     total = 0.
     for run in runs:
         size, scale = run['font_size_pt'], 1 + (run.get('letter_spacing') or 0) / 100
+        face = styled_face(run['font'], bool(run.get('italic')))
         for char in run['text']:
             if char == ' ':
-                own = glyph_width(run['font'], ' ', size)
+                own = glyph_width(face, ' ', size)
                 width = own if run.get('font_space') and own else size / 2
             else:
-                width = glyph_width(run['font'], char, size)
+                width = glyph_width(face, char, size) or glyph_width(run['font'], char, size)
                 if width is None:
                     return None
             total += width * scale
@@ -966,7 +970,8 @@ class PdfFormatting:
                     if seen is not None and far(seen, reported):
                         style['color'] = hex_colour(seen)
                 # Measured against the font Hancom draws (a substitute too).
-                spacing = letter_spacing([dict(chars=kept, font=style['font'])], size)
+                drawn = styled_face(style['font'], style['italic'])
+                spacing = letter_spacing([dict(chars=kept, font=drawn)], size)
                 if spacing is None and len(kept) < 4:
                     spacing = letter_spacing([dict(other, font=self.substitutes.get(other['font'], other['font']))
                                               for other in line['spans']], size)
@@ -983,7 +988,7 @@ class PdfFormatting:
                 # Korean and other letters are measured apart: a substitute
                 # font matches the source's Hangul widths better than its
                 # Latin, digit and punctuation widths.
-                by_kind = _spacing_by_kind(kept, style['font'], size)
+                by_kind = _spacing_by_kind(kept, drawn, size)
                 # Bold drawn by stroking can start or end inside a span.
                 if runs and kept and chars:
                     # Between spans too, a gap made by positioning alone is

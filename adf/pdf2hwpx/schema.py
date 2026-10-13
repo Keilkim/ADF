@@ -39,7 +39,8 @@ def validate_format(value):
     if 'letter_spacing' in value and (type(value['letter_spacing']) is not int or not -50 <= value['letter_spacing'] <= 50):
         raise ConversionError('자간을 확인해 주세요.')
     if any(key in value and not number(value[key], low, 20000) for key, low in (
-            ('indent_left_pt', 0), ('first_line_indent_pt', -20000), ('top_pt', -20000), ('left_pt', -20000))):
+            ('indent_left_pt', 0), ('indent_right_pt', 0), ('first_line_indent_pt', -20000), ('top_pt', -20000),
+            ('left_pt', -20000), ('right_pt', -20000))):
         raise ConversionError('문단 들여쓰기를 확인해 주세요.')
     if 'line_count' in value and (type(value['line_count']) is not int or not 1 <= value['line_count'] <= 10000):
         raise ConversionError('문단 줄 수를 확인해 주세요.')

@@ -295,6 +295,19 @@ def _class(char):
     return None
 
 
+@lru_cache(maxsize=256)
+def styled_face(font_name, italic):
+    """The face whose widths Hancom uses for a run: an italic run takes the
+    family's italic face when one is installed (measured: Times New Roman,
+    Cambria, Constantia italic draw at their italic advances). Bold keeps
+    the regular advances, so it needs no face of its own."""
+    if italic:
+        for candidate in (f'{font_name} Italic', f'{ALIASES.get(font_name, font_name)} Italic'):
+            if _exact(candidate) in _faces():
+                return candidate
+    return font_name
+
+
 def glyph_width(font_name, char, size):
     """Advance width Hancom gives char in font_name at size, or None if unknown."""
     metrics = _metrics(font_name)

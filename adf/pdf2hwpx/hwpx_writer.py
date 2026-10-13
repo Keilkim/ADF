@@ -140,6 +140,7 @@ def paragraph_format(doc, paragraph, block, spacing_before_pt=0):
     doc.styles.apply_paragraph_format(paragraphs=[paragraph], alignment=block.get('alignment', 'LEFT'),
         line_spacing_percent=block.get('line_spacing_percent', 160),
         indent_left_mm=millimeters(block.get('indent_left_pt', 0)),
+        indent_right_mm=millimeters(block.get('indent_right_pt', 0)),
         first_line_indent_mm=millimeters(block.get('first_line_indent_pt', 0)),
         spacing_before_pt=round(spacing_before_pt * 2) / 2, spacing_after_pt=0)
 
@@ -362,7 +363,10 @@ def _free_page(doc, page, section, blocks, boxes, area):
     _picture_source_size(picture.element, pixmap.width, pixmap.height)
     for block, box in zip(blocks, boxes):
         if block['kind'] == 'paragraph':
-            width = box.width * 1.04 + 4
+            # Justified lines stretch to the box edge: their box keeps the
+            # PDF width (the break matching keeps their words on the line).
+            justified = block.get('alignment') == 'JUSTIFY' and block.get('line_count', 1) > 1
+            width = box.width + .5 if justified else box.width * 1.04 + 4
             rect = pymupdf.Rect(box.x0 - 2, box.y0, box.x0 - 2 + width, box.y0 + max(box.height, paragraph_height(block)))
             if block.get('alignment') == 'RIGHT':
                 rect = pymupdf.Rect(box.x1 + 2 - width, rect.y0, box.x1 + 2, rect.y1)
@@ -482,13 +486,16 @@ def _write_flow(doc, page, section, flow, area, available_height, border_cache, 
                     layout['indent_left_pt'] = max(0, layout['left_pt'] - area.x0)
                 elif 'indent_left_pt' not in layout:
                     layout['indent_left_pt'] = max(0, box.x0 - area.x0)
+                if 'right_pt' in layout:
+                    layout['indent_right_pt'] = max(0, area.x1 - layout['right_pt'])
             if layout.get('line_count', 1) == 1 and layout.get('runs') and '	' not in layout.get('text', ''):
                 # A line that fit in the PDF must not wrap here: one extra
                 # line moves everything below it on the page.
                 layout['runs'] = [dict(run) for run in layout['runs']]
                 indent = layout.get('indent_left_pt', 0) + max(0, layout.get('first_line_indent_pt', 0))
-                fit_line(layout, area.width - indent if layout.get('alignment', 'LEFT') in ('LEFT', 'JUSTIFY')
-                         else area.width, margin=.995, limit=1)
+                fit_line(layout, area.width - indent - layout.get('indent_right_pt', 0)
+                         if layout.get('alignment', 'LEFT') in ('LEFT', 'JUSTIFY') else area.width,
+                         margin=.995, limit=1)
             add_runs(doc, paragraph, layout, before)
             if column_break:
                 paragraph.element.set('columnBreak', '1')
