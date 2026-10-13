@@ -144,14 +144,21 @@ def test_symbol_glyph_outline_names_its_wingdings_character():
     assert WINGDINGS[0x8D] == '❷' and WINGDINGS[0x80] == '⓪' and WINGDINGS[0x81] == '①'
 
 
-def test_contents_leader_becomes_a_right_tab_with_dots():
+def test_contents_line_keeps_its_dots_and_right_aligns_the_page_number():
     with pymupdf.open() as pdf:
         page = pdf.new_page()
         page.insert_text((72, 100), '1. Project outline ' + '.' * 60, fontsize=10)
         page.insert_text((480, 100), '12', fontsize=10)
+        dots_end = page.search_for('.' * 60)[0].x1
         paragraph = next(block for block in native_page(page)['blocks'] if block['kind'] == 'paragraph')
-    assert paragraph['text'].rstrip().endswith('\t12') and '....' not in paragraph['text']
+    # The number set apart takes a right tab; the PDF's dots stay, spaced to
+    # end where they did (Hancom's leaders draw dashes or large circles).
+    assert paragraph['text'].rstrip().endswith('\t12') and paragraph['tab_leader'] == 'NONE'
     assert paragraph['tab_stop_pt'] > 400
+    label, dots = paragraph['runs'][0], paragraph['runs'][1]
+    assert dots['text'] == '.' * 60
+    if line_width([label]) is not None:
+        assert 72 + line_width([label, dots]) == pytest.approx(dots_end, abs=2)
 
 
 def _two_up(pdf):

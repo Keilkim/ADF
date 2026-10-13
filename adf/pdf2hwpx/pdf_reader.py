@@ -382,17 +382,51 @@ def _tab_leader(result, group):
     match = LEADER.search(result['text'])
     if match is None or not result['text'][:match.start()].strip():
         return False
+    row = group[0]
+    joins = row.get('joins', [])
+    # Dots that stop short of the page number (the number set apart in its
+    # own piece) stay as the PDF's own dots, spaced to end where they did;
+    # only the number takes a right tab. Hancom's leaders (dashes or large
+    # circles) would not look like them.
+    apart = bool(joins) and row['box'].x1 - joins[-1] > 2 and len(result['text'][match.end():].strip()) <= 8
+    if apart:
+        text = result['text']
+        dots_start = match.start() + len(match.group()) - len(match.group().lstrip())
+        dots_end = match.start() + len(match.group().rstrip())
+        pieces, offset = [], 0
+        for run in result['runs']:
+            low, offset = offset, offset + len(run['text'])
+            for lo, hi, kind in ((0, dots_start, 'label'), (dots_start, dots_end, 'dots'),
+                                 (dots_end, match.end(), 'gap'), (match.end(), len(text), 'number')):
+                part = run['text'][max(lo, low) - low:max(0, min(hi, offset) - low)]
+                if part and max(lo, low) < min(hi, offset):
+                    pieces.append((kind, dict(run, text=part)))
+        label = [run for kind, run in pieces if kind == 'label']
+        dots = [run for kind, run in pieces if kind == 'dots']
+        number = [run for kind, run in pieces if kind == 'number']
+        before, plain = line_width(label), line_width([dict(run, letter_spacing=0) for run in dots])
+        if before is not None and plain:
+            room = joins[-1] - row['box'].x0 - before
+            spacing = max(-50, min(50, round((room / plain - 1) * 100)))
+            dots = [dict(run, letter_spacing=spacing) for run in dots]
+            if number:
+                number[0] = dict(number[0], text='\t' + number[0]['text'].lstrip())
+            result['runs'] = label + dots + number
+            result['text'] = ''.join(run['text'] for run in result['runs'])
+            result['tab_stop_pt'] = row['box'].x1 - row['box'].x0
+            result['tab_leader'] = 'NONE'
+            return True
     start, end, offset = match.start(), match.end(), 0
     for run in result['runs']:
         text, low = run['text'], offset
         offset += len(text)
         cut_from, cut_to = max(start, low) - low, min(end, offset) - low
         if cut_from < cut_to:
-            run['text'] = text[:cut_from] + ('	' if low <= start < offset else '') + text[cut_to:]
+            run['text'] = text[:cut_from] + ('\t' if low <= start < offset else '') + text[cut_to:]
     result['runs'] = [run for run in result['runs'] if run['text']]
     result['text'] = ''.join(run['text'] for run in result['runs'])
     # From the line's start to the number's right edge.
-    result['tab_stop_pt'] = group[0]['box'].x1 - group[0]['box'].x0
+    result['tab_stop_pt'] = row['box'].x1 - row['box'].x0
     return True
 
 
@@ -622,6 +656,7 @@ def join_rows(row, piece):
         if abs(shift) > .15 * run['font_size_pt']:
             run['baseline_shift'] = max(-100, min(100, round(shift / run['font_size_pt'] * 100)))
         row['runs'].append(run)
+    row.setdefault('joins', []).append(row['box'].x1)  # where the row ended before this piece
     row['box'] = pymupdf.Rect(row['box']) | piece['box']
     row['chars'] = row.get('chars', 0) + sum(len(run['text']) for run in piece['runs'])
     row['size'] = max(row['size'], piece['size'])
