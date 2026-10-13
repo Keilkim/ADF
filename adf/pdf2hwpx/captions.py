@@ -21,6 +21,13 @@ TABLE_WORDS = ('표', '도표', 'table', 'tab')
 FIGURE_WORDS = ('그림', '도', '사진', 'figure', 'fig', 'chart', 'photo', 'image')
 
 
+def names_several(text):
+    """True when one line holds two captions side by side ('[표 1] ...   [그림 2] ...'):
+    each belongs to its own object, which a single paragraph cannot serve."""
+    parts = [part for part in re.split(r'\s{3,}|	', (text or '').strip()) if part]
+    return sum(1 for part in parts if OPENING.match(part)) > 1
+
+
 def caption_kind(text):
     """'table' or 'figure' when text opens like a caption, else None."""
     match = OPENING.match(text or '')
@@ -53,7 +60,7 @@ def attach_captions(blocks, width, height):
                 or len(paragraph.get('text', '').strip()) > 300):
             continue
         kind = caption_kind(paragraph.get('text', ''))
-        if kind is None:
+        if kind is None or names_several(paragraph['text']):
             continue
         p0, p1, p2, p3 = _area(paragraph, width, height)
         size = paragraph.get('line_size_pt') or paragraph.get('font_size_pt', 10)

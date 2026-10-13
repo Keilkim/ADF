@@ -7,7 +7,7 @@ import pymupdf
 import pytest
 
 from adf.pdf2hwpx import convert_document, native_page
-from adf.pdf2hwpx.captions import attach_captions, caption_kind, detach_captions
+from adf.pdf2hwpx.captions import attach_captions, caption_kind, detach_captions, names_several
 
 MALGUN = Path(os.environ.get('WINDIR', 'C:/Windows')) / 'Fonts' / 'malgun.ttf'
 needs_korean_font = pytest.mark.skipif(not MALGUN.is_file(), reason='needs a Korean font')
@@ -100,3 +100,11 @@ def test_a_wide_heading_that_names_no_object_is_left_alone():
     blocks = [dict(kind='paragraph', bbox=[100, 100, 900, 120], text='표 1. 제목이 아주 넓은 안내문입니다.', font_size_pt=11),
               dict(kind='table', bbox=[300, 125, 600, 300], text='', rows=1, cols=1, cells=[], font_size_pt=10)]
     assert attach_captions(blocks, 612, 792) == 0 and len(blocks) == 2
+
+
+def test_two_captions_on_one_line_belong_to_two_objects():
+    assert names_several('[ 표 1-2-2 표고분석 ]                     [ 그림 1-2-3 지형도 ]')
+    assert not names_several('표 1. 지역별 매출 현황 (단위: 백만 원)')
+    blocks = [dict(kind='paragraph', bbox=[100, 100, 500, 120], text='[ 표 1 가 ]          [ 그림 2 나 ]', font_size_pt=11),
+              dict(kind='table', bbox=[100, 125, 300, 300], text='', rows=1, cols=1, cells=[], font_size_pt=10)]
+    assert attach_captions(blocks, 612, 792) == 0

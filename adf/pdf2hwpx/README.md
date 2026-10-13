@@ -34,6 +34,7 @@ from pdf2hwpx import convert_document, native_page, write_page   # 쪽 단위로
 | `symbol_fonts.py` | 글자 정보 없이 내장된 기호 글꼴(Wingdings의 ❷ 등)을 설치 글꼴의 같은 윤곽선으로 찾아 복원 |
 | `text_spacing.py` | PDF 글자층이 감춘 공백 복원(빈 글리프 '$', 위치로만 띄운 한국어 단어 사이) |
 | `__main__.py`, `requirements.txt` | 명령줄 실행과 의존성 목록(폴더째 재사용) |
+| `captions.py` | 표·그림 캡션 인식("표 1.", "<그림 2>", "Table 3:", "Figure 4:"로 시작하고 표·그림 바로 위/아래에 붙은 짧은 문단)과 객체에 붙이기. 쓰는 쪽은 한글의 진짜 캡션(`hp:caption`)으로 넣는다 |
 | `columns.py` | 다단(신문식 단) 감지 → 테두리 없는 표 |
 | `extract.py` | 한 쪽 → 블록 목록(문단·표·그림). 표 감지 보강(열린 표, 점선, 병합), 그림 배치 판정 |
 | `schema.py` | 블록 구조 검증(`validate_page`). AI 응답도 같은 구조 |
@@ -53,6 +54,9 @@ from pdf2hwpx import convert_document, native_page, write_page   # 쪽 단위로
 - `table`: `rows`, `cols`, `cells`(`row`, `col`, `row_span`, `col_span`, `text`, `paragraphs`,
   `borders`, `fill_color`, `margins_pt`, `vertical_alignment`, `text_direction`, `images`),
   `column_widths_pt`, `row_heights_pt`
+- 표·그림 블록의 `caption`: `side`(TOP/BOTTOM), `gap_pt`(객체와의 간격), `paragraph`(캡션 문단), `object`(캡션을 뺀 객체
+  자신의 위치). 블록의 `bbox`는 캡션까지 합친 범위다. 한글 캡션은 마지막 줄 아래에 줄간격이 붙지 않아(실측)
+  높이가 (줄 수−1)×줄 간격+글자 크기이고, 간격(gap)은 거기에 맞춰 계산한다. 자유 배치 쪽은 캡션을 다시 문단으로 푼다.
 - `image`: `placement`(`BEHIND_TEXT`: 배경·글 옆 아이콘), `xref`(원본 비트맵),
   `frame`(글·표를 둘러싼 테두리: 선 종류·두께·색 → 글 뒤 사각형 도형으로 그림)
 
