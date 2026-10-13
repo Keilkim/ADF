@@ -135,3 +135,23 @@ def validate_page(value):
         if len(occupied) != rows * cols:
             raise ConversionError('표에 인식되지 않은 셀이 있습니다. 다른 모델로 다시 시도해 주세요.')
     return value
+
+
+def sanitize_cells(cells, rows, cols):
+    """Cells that fit the grid: a grid read wrong (missing rules) can give
+    spans past the table's edge or merged cells over each other, which
+    Hancom cannot hold. Spans are cut at the edge and an overlapping cell
+    shrinks to its own slot; a cell whose slot is taken is dropped."""
+    taken, kept = set(), []
+    for cell in sorted(cells, key=lambda cell: (cell['row'], cell['col'])):
+        r, c = cell['row'], cell['col']
+        if not (0 <= r < rows and 0 <= c < cols) or (r, c) in taken:
+            continue
+        rs, cs = max(1, min(cell['row_span'], rows - r)), max(1, min(cell['col_span'], cols - c))
+        slots = {(row, col) for row in range(r, r + rs) for col in range(c, c + cs)}
+        if slots & taken:
+            rs = cs = 1
+            slots = {(r, c)}
+        taken |= slots
+        kept.append(dict(cell, row_span=rs, col_span=cs))
+    return kept

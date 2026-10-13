@@ -5,7 +5,7 @@ import pymupdf
 
 from .columns import split_columns
 from .pdf_reader import PdfFormatting, clean_text as _text, paragraphs_from_rows
-from .schema import ConversionError, validate_page
+from .schema import ConversionError, sanitize_cells as _sanitize_cells, validate_page
 
 
 def _bbox(rect, page):
@@ -54,12 +54,13 @@ def _merge_unruled(cells, xs, ys, formatting):
     Neighbours merge when no line is drawn between them and a text line
     crosses that boundary or one of them is empty.
     """
+    boxes = [tuple(line['bbox']) for line in formatting.lines]
+
     def crossing(direction, position, lo, hi):
-        for line in formatting.lines:
-            box = pymupdf.Rect(line['bbox'])
-            if direction == 'v' and box.x0 < position - 1 < position + 1 < box.x1 and lo <= (box.y0 + box.y1) / 2 <= hi:
+        for x0, y0, x1, y1 in boxes:
+            if direction == 'v' and x0 < position - 1 < position + 1 < x1 and lo <= (y0 + y1) / 2 <= hi:
                 return True
-            if direction == 'h' and box.y0 < position - 1 < position + 1 < box.y1 and lo <= (box.x0 + box.x1) / 2 <= hi:
+            if direction == 'h' and y0 < position - 1 < position + 1 < y1 and lo <= (x0 + x1) / 2 <= hi:
                 return True
         return False
 
@@ -364,6 +365,7 @@ def native_page(page, split=True):
                 for cell in cells:
                     cell['_rect'] = pymupdf.Rect(xs[cell['col']], ys[cell['row']], xs[cell['col'] + cell['col_span']],
                                                  ys[cell['row'] + cell['row_span']])
+            cells = _sanitize_cells(cells, rows, cols)
             block = dict(kind='table', bbox=_bbox(table_bbox, page), text='', font_size_pt=10,
                          rows=rows, cols=cols, cells=cells, bold=False, italic=False, alignment='LEFT')
             if len(xs) == cols + 1 and len(ys) == rows + 1:

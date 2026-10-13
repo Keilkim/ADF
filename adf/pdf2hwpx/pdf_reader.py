@@ -1043,16 +1043,23 @@ class PdfFormatting:
         """One piece per PDF line: styled runs, glyph box and baseline."""
         pieces = []
         for line in lines:
+            if rect is not None and not pymupdf.Rect(line['bbox']).intersects(rect):
+                continue  # a table cell reads only its own lines
             runs, chars = [], []
-            marks = self._highlights(line)
             # The line's own baseline: where most of its characters sit.
             weights = {}
             for span in line['spans']:
                 key = round(span['origin'][1], 1)
                 weights[key] = weights.get(key, 0) + len(span['chars']) * span['size']
             main_baseline = max(weights, key=weights.get) if weights else None
-            rules = self._underlines(line, main_baseline, max(span['size'] for span in line['spans'])) \
-                if main_baseline is not None and line['spans'] else []
+            # Shading and rules near a line do not depend on the region read:
+            # each line is compared with the page's drawings once.
+            cache = self.__dict__.setdefault('_line_marks', {})
+            if id(line) not in cache:
+                cache[id(line)] = (self._highlights(line), self._underlines(
+                    line, main_baseline, max(span['size'] for span in line['spans']))
+                    if main_baseline is not None and line['spans'] else [])
+            marks, rules = cache[id(line)]
             for span in line['spans']:
                 # Characters the writer drops (control codes from broken
                 # encodings) must not widen the line's box either.

@@ -138,3 +138,29 @@ def test_hancom_font_names_and_shadow_text():
         page.insert_text((100, 100), 'Shadowed title', fontsize=20)
         texts = [block['text'] for block in native_page(page)['blocks'] if block['kind'] == 'paragraph']
     assert texts == ['Shadowed title']
+
+
+def test_cells_of_a_misread_grid_are_kept_inside_the_table():
+    from adf.pdf2hwpx.schema import sanitize_cells
+    cells = [dict(row=0, col=0, row_span=3, col_span=2), dict(row=0, col=2, row_span=1, col_span=1),
+             dict(row=0, col=3, row_span=3, col_span=2), dict(row=1, col=1, row_span=1, col_span=1),
+             dict(row=5, col=0, row_span=1, col_span=1)]
+    kept = sanitize_cells(cells, 3, 4)
+    slots = [(r, c) for cell in kept for r in range(cell['row'], cell['row'] + cell['row_span'])
+             for c in range(cell['col'], cell['col'] + cell['col_span'])]
+    assert len(slots) == len(set(slots)) and all(0 <= r < 3 and 0 <= c < 4 for r, c in slots)
+    assert (5, 0) not in {(cell['row'], cell['col']) for cell in kept}
+
+
+def test_an_unreadable_page_becomes_a_picture_and_the_document_still_converts(tmp_path, monkeypatch):
+    import pymupdf
+    import adf.pdf2hwpx.convert as convert
+    source = tmp_path / 'two.pdf'
+    with pymupdf.open() as pdf:
+        for text in ('First page', 'Second page'):
+            pdf.new_page().insert_text((72, 100), text, fontsize=12)
+        pdf.save(source)
+    real = convert.native_page
+    monkeypatch.setattr(convert, 'native_page', lambda page: real(page) if page.number == 0 else 1 / 0)
+    result = convert.convert_document(str(source), str(tmp_path / 'two.hwpx'))
+    assert result['pages'] == 2 and any('쪽 그림' in warning['message'] for warning in result['warnings'])

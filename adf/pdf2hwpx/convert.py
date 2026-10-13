@@ -54,7 +54,14 @@ def convert_document(source, output, *, provider='local', model=DEFAULT_MODEL, p
         for index, page in enumerate(pdf):
             label = numbers[index]
             progress(dict(stage='페이지 분석', completed=index, total=len(pdf), detail=f'원본 {label}쪽 · {model if client else "로컬 추출"}'))
-            native = native_page(page)
+            try:
+                native = native_page(page)
+            except Exception:
+                # One unreadable page must not stop the document: it goes in
+                # as a picture of the page, with a warning to check it.
+                native = dict(blocks=[dict(kind='image', bbox=[0, 0, 1000, 1000], text='', font_size_pt=10, bold=False,
+                                           italic=False, alignment='LEFT', rows=0, cols=0, cells=[])],
+                              warnings=['이 쪽은 구조를 읽지 못해 쪽 그림으로 넣었습니다(편집 불가). 원본과 대조하세요.'])
             if client is None:
                 structured = native
                 if any(page.annots() or []) or any(page.widgets() or []):

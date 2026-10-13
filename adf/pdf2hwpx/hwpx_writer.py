@@ -5,6 +5,7 @@ import json
 import pymupdf
 
 from .pdf_reader import clean_text, fit_line
+from .schema import sanitize_cells
 
 
 HP = '{http://www.hancom.co.kr/hwpml/2011/paragraph}'
@@ -289,13 +290,36 @@ def _bitmap(page, block, clip):
             return pixmap, pixmap.tobytes('jpg', jpg_quality=90), 'jpg'
         except Exception:
             pass
-    pixmap = page.get_pixmap(clip=clip, dpi=180, alpha=False)
+    for dpi in (180, 96, 48):
+        try:
+            pixmap = page.get_pixmap(clip=clip, dpi=dpi, alpha=False)
+            return pixmap, pixmap.tobytes('png'), 'png'
+        except Exception:  # an image too large for MuPDF to decode at this size
+            continue
+    pixmap = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 1, 1), 0)
+    pixmap.clear_with(255)
     return pixmap, pixmap.tobytes('png'), 'png'
+
+
+_MEDIA = {}
+
+
+def _media(doc, data, kind):
+    """The document's id for an image, storing identical bytes once: a page
+    of repeated marks (thousands of small icons) would otherwise exceed the
+    number of parts an HWPX package may hold."""
+    import hashlib
+    key = (id(doc), hashlib.sha1(data).hexdigest())
+    if key not in _MEDIA:
+        if len(_MEDIA) > 20000:
+            _MEDIA.clear()
+        _MEDIA[key] = str(doc.media.add_image(data, kind))
+    return _MEDIA[key]
 
 
 def _add_picture(doc, page, host, block, clip, width, height, floating=False):
     pixmap, data, kind = _bitmap(page, block, clip)
-    image_id = str(doc.media.add_image(data, kind))
+    image_id = _media(doc, data, kind)
     if floating:
         picture = host.add_picture(image_id, width=width, height=height, treat_as_char=False, text_wrap='BEHIND_TEXT',
                                    pos_overrides=dict(horzRelTo='PAPER', vertRelTo='PAPER', horzAlign='LEFT',
@@ -358,7 +382,7 @@ def _free_page(doc, page, section, blocks, boxes, area):
     counts = dict(paragraphs=0, tables=0, figures=1)
     anchor = section.paragraphs[0]
     pixmap, data, kind = _artwork(page)
-    picture = anchor.add_picture(str(doc.media.add_image(data, kind)), width=round(page.rect.width * 100),
+    picture = anchor.add_picture(_media(doc, data, kind), width=round(page.rect.width * 100),
                                  height=round(page.rect.height * 100), treat_as_char=False, text_wrap='BEHIND_TEXT',
                                  pos_overrides=dict(horzRelTo='PAPER', vertRelTo='PAPER', horzAlign='LEFT',
                                                     vertAlign='TOP', horzOffset=0, vertOffset=0))
@@ -530,22 +554,26 @@ def _write_flow(doc, page, section, flow, area, available_height, border_cache, 
         if block['kind'] == 'table':
             table_width = min(available_width, max(100, round(box.width * 100)))
             table_height = max(100, round(box.height * 100))
+            if block.get('row_heights_pt') and len(block['row_heights_pt']) != block['rows']:
+                block = dict(block, row_heights_pt=None)  # a grid read wrong; Hancom sizes the rows
             if block.get('row_heights_pt'):
                 table_height = max(100, round(sum(block['row_heights_pt']) * 100))
             host = section.paragraphs[0] if state['first'] else doc.add_paragraph(section=section, include_run=False, inherit_style=False)
-            table = host.add_table(block['rows'], block['cols'], width=table_width, height=table_height)
             state['first'] = False
-            for cell in block['cells']:
-                r, c = cell['row'], cell['col']
-                if cell['row_span'] > 1 or cell['col_span'] > 1:
-                    table.merge_cells(r, c, r + cell['row_span'] - 1, c + cell['col_span'] - 1)
-                apply_cell_format(doc, table, cell, block, border_cache, page)
-                if block.get('row_heights_pt'):
-                    table.cell(r, c).set_size(height=round(sum(
-                        block['row_heights_pt'][r:r + cell['row_span']]) * 100))
-            if block.get('column_widths_pt'):
-                table.set_column_widths(block['column_widths_pt'])
-            counts['tables'] += 1
+            try:
+                _write_table(doc, host, block, table_width, table_height, border_cache, page)
+                counts['tables'] += 1
+            except (ValueError, IndexError, KeyError):
+                # A grid Hancom cannot hold goes in as a picture of the table
+                # rather than stopping the document.
+                for run in list(host.element):
+                    if any(child.tag.endswith('}tbl') for child in run.iter()):
+                        host.element.remove(run)
+                clip = box & page.rect
+                if not clip.is_empty:
+                    _add_picture(doc, page, host, dict(block, kind='image', xref=None), clip, table_width,
+                                 max(100, round(table_width * clip.height / clip.width)))
+                    counts['figures'] += 1
         else:
             host = section.paragraphs[0] if state['first'] else doc.add_paragraph(section=section, inherit_style=False)
             state['first'] = False
@@ -568,6 +596,23 @@ def _write_flow(doc, page, section, flow, area, available_height, border_cache, 
         if column_break:
             host.element.set('columnBreak', '1')
             column_break = False
+
+
+def _write_table(doc, host, block, width, height, border_cache, page):
+    """A table block into host. Column widths go in before cells merge:
+    python-hwpx counts columns in the first row."""
+    cells = sanitize_cells(block['cells'], block['rows'], block['cols'])
+    table = host.add_table(block['rows'], block['cols'], width=width, height=height)
+    if block.get('column_widths_pt') and len(block['column_widths_pt']) == block['cols']:
+        table.set_column_widths(block['column_widths_pt'])
+    for cell in cells:
+        r, c = cell['row'], cell['col']
+        if cell['row_span'] > 1 or cell['col_span'] > 1:
+            table.merge_cells(r, c, r + cell['row_span'] - 1, c + cell['col_span'] - 1)
+        apply_cell_format(doc, table, cell, block, border_cache, page)
+        if block.get('row_heights_pt'):
+            table.cell(r, c).set_size(height=round(sum(block['row_heights_pt'][r:r + cell['row_span']]) * 100))
+    return table
 
 
 def _set_columns(section, count, gap):
