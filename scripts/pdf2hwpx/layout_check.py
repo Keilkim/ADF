@@ -21,7 +21,7 @@ import pymupdf
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from adf.pdf2hwpx import convert_document  # noqa: E402
+from adf.pdf2hwpx import convert_document, native_page  # noqa: E402
 
 RENDERER = Path(__file__).with_name('hancom_render.py')
 
@@ -149,6 +149,10 @@ def compare(pdf, rendered, folder):
     for index, page in enumerate(pdf):
         pixmap = page.get_pixmap(dpi=DPI)
         source = Image.frombytes('RGB', (pixmap.width, pixmap.height), pixmap.samples)
+        width, height = page.rect.width, page.rect.height
+        pictures = [pymupdf.Rect(b['bbox'][0] * width / 1000 - 1, b['bbox'][1] * height / 1000 - 1,
+                                 b['bbox'][2] * width / 1000 + 1, b['bbox'][3] * height / 1000 + 1)
+                    for b in native_page(page)['blocks'] if b['kind'] == 'image' and not b.get('placement')]
         path = rendered.get(index)
         target = Image.open(path).convert('RGB') if path else Image.new('RGB', source.size, 'white')
         canvas = Image.new('RGB', (source.width + target.width + 10, max(source.height, target.height)), (120,) * 3)
@@ -179,6 +183,10 @@ def compare(pdf, rendered, folder):
             else:
                 lost += 1
                 cause = _cause(ink_source, ink_target, box, score, left, right)
+                if any(picture.contains(pymupdf.Rect(box) * (72 / DPI)) for picture in pictures):
+                    # The converter kept this region as a picture (a labelled
+                    # diagram): its text is pixels, resampled by Hancom.
+                    cause = 'inside a picture (kept as image)'
             CAUSES[cause] = CAUSES.get(cause, 0) + 1
             if cause != 'in place':
                 DETAILS.append((folder.name, index + 1, cause, offset, left, right, box, text))
