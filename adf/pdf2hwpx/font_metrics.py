@@ -157,7 +157,8 @@ def installed(name):
     files, families = _registry()
     if not families:
         return None
-    return _key(name) in families or (name in ALIASES and _key(ALIASES[name]) in families)
+    return (_key(name) in families or (name in ALIASES and _key(ALIASES[name]) in families)
+            or _exact(name) in _faces())
 
 
 def _exact(name):

@@ -595,6 +595,12 @@ def _serif(span):
 
 SERIF_CANDIDATES = ('바탕', '함초롬바탕', 'HY신명조', 'HY견명조')
 SANS_CANDIDATES = ('맑은 고딕', '굴림', '함초롬돋움', 'HY중고딕', 'HY견고딕', 'HY헤드라인M')
+# Text without Korean may also take a Latin font Windows ships.
+LATIN_SERIF_CANDIDATES = ('Times New Roman', 'Georgia', 'Cambria', 'Book Antiqua', 'Palatino Linotype', 'Garamond',
+                          'Century', 'Constantia', 'Sylfaen')
+LATIN_SANS_CANDIDATES = ('Arial', 'Calibri', 'Segoe UI', 'Verdana', 'Tahoma', 'Trebuchet MS', 'Candara', 'Corbel',
+                         'Aptos', 'Arial Narrow')
+LATIN_MONO_CANDIDATES = ('Consolas', 'Courier New', 'Lucida Console', 'Cascadia Mono')
 
 
 class PdfFormatting:
@@ -685,9 +691,17 @@ class PdfFormatting:
             # in the name both kinds compete on widths.
             candidates = {True: SERIF_CANDIDATES, False: SANS_CANDIDATES}.get(
                 serif[font], SANS_CANDIDATES + SERIF_CANDIDATES)
+            if not any('가' <= char <= '힣' or '一' <= char <= '鿿' for char, _ in chars):
+                candidates += {True: LATIN_SERIF_CANDIDATES, False: LATIN_SANS_CANDIDATES}.get(
+                    serif[font], LATIN_SANS_CANDIDATES + LATIN_SERIF_CANDIDATES) + LATIN_MONO_CANDIDATES
+            # Candidates are compared in the same weight and slant (Hancom
+            # draws a bold run with the family's bold face).
+            style = ' '.join(word for word, pattern in (('Bold', r'Bold|Black|Heavy|Semibold'), ('Italic', r'Italic|Oblique'))
+                             if re.search(pattern, font, flags=re.IGNORECASE))
             scores = []
             for candidate in candidates:
-                widths = [(glyph_width(candidate, char, 1), width) for char, width in chars[:400]]
+                face = f'{candidate} {style}' if style and installed(f'{candidate} {style}') else candidate
+                widths = [(glyph_width(face, char, 1), width) for char, width in chars[:400]]
                 if all(found is not None for found, _ in widths):
                     scores.append((sum(abs(found - width) for found, width in widths), candidate))
             if scores:
@@ -705,7 +719,9 @@ class PdfFormatting:
         re-saved by other programs, and Hancom styles may use either.
         """
         spaces, spacing = {}, {}
-        measured = [(span, letter_spacing([span], max(1., span['size']))) for line in self.lines for span in line['spans']]
+        # Spacing is measured against the font Hancom will draw with.
+        measured = [(span, letter_spacing([dict(span, font=self.substitutes.get(span['font'], span['font']))],
+                                          max(1., span['size']))) for line in self.lines for span in line['spans']]
         for span, value in measured:
             if value is not None:
                 spacing.setdefault(span['font'], []).append(value)
@@ -839,9 +855,11 @@ class PdfFormatting:
                     reported = tuple(int(style['color'][i:i + 2], 16) for i in (1, 3, 5))
                     if seen is not None and far(seen, reported):
                         style['color'] = hex_colour(seen)
-                spacing = letter_spacing([dict(chars=kept, font=span.get('font', ''))], size)
+                # Measured against the font Hancom draws (a substitute too).
+                spacing = letter_spacing([dict(chars=kept, font=style['font'])], size)
                 if spacing is None and len(kept) < 4:
-                    spacing = letter_spacing(line['spans'], size)
+                    spacing = letter_spacing([dict(other, font=self.substitutes.get(other['font'], other['font']))
+                                              for other in line['spans']], size)
                 if spacing is None:
                     spacing = self.usual_spacing.get(span.get('font'))
                 if spacing:
@@ -851,7 +869,7 @@ class PdfFormatting:
                 # Korean and other letters are measured apart: a substitute
                 # font matches the source's Hangul widths better than its
                 # Latin, digit and punctuation widths.
-                by_kind = _spacing_by_kind(kept, span.get('font', ''), size)
+                by_kind = _spacing_by_kind(kept, style['font'], size)
                 # Bold drawn by stroking can start or end inside a span.
                 if runs and kept and chars:
                     # Between spans too, a gap made by positioning alone is
