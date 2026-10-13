@@ -59,6 +59,18 @@ def glyph_columns(band):
     return np.where(band.any(0) & (filled < .9))[0]
 
 
+def own_columns(columns, lo, x0, x1, gap=3):
+    """The ink columns that belong to the line: runs of ink (split at
+    gaps over a few pixels) that reach into the line's box. A neighbour's
+    mark that only enters the search window, on one side and not the
+    other, would otherwise move the line's measured start or end."""
+    if not len(columns):
+        return columns
+    runs = np.split(columns, np.flatnonzero(np.diff(columns) > gap) + 1)
+    kept = [run for run in runs if lo + run[-1] >= x0 - 1 and lo + run[0] <= x1 + 1]
+    return np.concatenate(kept) if kept else columns[:0]
+
+
 def locate(source, target, box, reach=24):
     """Where a PDF text line is in the Hancom image.
 
@@ -76,10 +88,14 @@ def locate(source, target, box, reach=24):
     # Both images are read through the same window, so a neighbouring mark
     # (a bullet picture) counts the same on both sides.
     lo, hi = max(0, x0 - 20), min(target.shape[1], x1 + 20)
-    columns = glyph_columns(source[y0:y1, lo:hi])
+    window = glyph_columns(source[y0:y1, lo:hi])
+    columns = own_columns(window, lo, x0, x1)
     if not len(columns):
         return None
     left, right = lo + columns[0], lo + columns[-1]
+    # Also read through the whole window: a bullet beside the line counts
+    # the same on both sides there. The closer of the two readings counts.
+    wide_left, wide_right = lo + window[0], lo + window[-1]
     candidates = []
     for dy in range(-reach, reach + 1):
         if y0 + dy < 0 or y1 + dy > target.shape[0]:
@@ -94,10 +110,17 @@ def locate(source, target, box, reach=24):
     # nearest is the line itself, not its neighbour.
     top = max(candidate[0] for candidate in candidates)
     score, dy, band = min((c for c in candidates if c[0] >= top - .02), key=lambda c: abs(c[1]))
-    found = glyph_columns(band)
-    if not len(found):
+    seen = glyph_columns(band)
+    found = own_columns(seen, lo, x0, x1)
+    readings = []
+    if len(found):
+        readings.append((lo + found[0] - left, lo + found[-1] - right))
+    if len(seen):
+        readings.append((lo + seen[0] - wide_left, lo + seen[-1] - wide_right))
+    if not readings:
         return score, dy, 999, 999
-    return score, dy, lo + found[0] - left, lo + found[-1] - right
+    shift_left, shift_right = min(readings, key=lambda pair: max(abs(pair[0]) / 6, abs(pair[1]) / 10))
+    return score, dy, shift_left, shift_right
 def without_rules(ink, length=18):
     """Ink with long straight horizontal and vertical runs (table rules,
     underlines, frames) removed, so only glyphs are compared."""
