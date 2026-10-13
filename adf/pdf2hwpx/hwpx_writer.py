@@ -441,6 +441,16 @@ def write_page(doc, page, structured, index):
         bands.append(band)
     heights = [paragraph_height(item[0][0]) if item[0][0]['kind'] == 'paragraph' else band.height
                for item, band in zip(items, bands)]
+    for index, item in enumerate(items[:-1]):
+        # A one-line paragraph has no measured spacing; the default would
+        # push the next line (a two-line title) below its place.
+        block = item[0][0]
+        room = bands[index + 1].y0 - bands[index].y0
+        if block['kind'] == 'paragraph' and block.get('line_count', 1) == 1 and 0 < room < heights[index]:
+            size = block.get('line_size_pt', block['font_size_pt'])
+            percent = max(80, int(room / size * 100))
+            item[0] = (dict(block, line_spacing_percent=percent), item[0][1])
+            heights[index] = paragraph_height(item[0][0])
     spacing = vertical_spacing([(band.y0, h) for band, h in zip(bands, heights)], margins['top'])
     end = margins['top']
     for band, h in zip(bands, heights):

@@ -113,3 +113,17 @@ def test_highlight_behind_some_words_becomes_letter_shading():
     shaded = [run for run in paragraph['runs'] if run.get('highlight')]
     assert shaded and 'Criteria' in ''.join(run['text'] for run in shaded)
     assert 'limited' not in ''.join(run['text'] for run in shaded)
+
+
+@pytest.mark.skipif(not MALGUN.is_file(), reason='needs a Korean font')
+def test_title_line_starts_where_hancom_puts_its_baseline():
+    with pymupdf.open() as pdf:
+        page = pdf.new_page()
+        page.insert_font(fontname='malgun', fontfile=str(MALGUN))
+        page.insert_text((72, 300), '인천광역시', fontsize=30, fontname='malgun')
+        page.insert_text((72, 342), '도시디자인 진흥계획', fontsize=34, fontname='malgun')
+        height = page.rect.height
+        title = next(block for block in native_page(page)['blocks'] if block['kind'] == 'paragraph')
+    # Malgun Gothic's glyph box reaches far above; Hancom draws the
+    # baseline 0.85 em below the line top.
+    assert abs(title['bbox'][1] * height / 1000 - (300 - .85 * 30)) < 1

@@ -230,6 +230,11 @@ def _paragraph(group, region):
     box = pymupdf.Rect(group[0]['box'])
     for row in group[1:]:
         box |= row['box']
+    # Hancom puts a line's baseline 0.85 of its largest size below the line
+    # top, whatever the font's ascender (Malgun Gothic's glyph boxes reach
+    # far above). The paragraph starts where that puts the PDF's baseline.
+    if 'baseline' in group[0]:
+        box.y0 = min(box.y1 - 1, group[0]['baseline'] - HANCOM_ASCENT * group[0]['size'])
     result = {**main, 'text': ''.join(run['text'] for run in merged), 'runs': merged, 'line_count': len(group),
               'top_pt': box.y0, 'box_pt': [box.x0, box.y0, box.x1, box.y1]}
     # Hancom sizes a line by its largest characters; line spacing and
@@ -436,6 +441,16 @@ def _join_dots(edges):
     return joined
 
 
+HANCOM_ASCENT = .85
+
+
+def space_width(run):
+    """Width Hancom gives one space in run: half an em or the font's own
+    space, changed by the run's letter spacing."""
+    own = glyph_width(run['font'], ' ', run['font_size_pt']) if run.get('font_space') else None
+    return max(.5, (own or .5 * run['font_size_pt']) * (1 + (run.get('letter_spacing') or 0) / 100))
+
+
 def join_rows(row, piece):
     """Append a piece of the same visual line, keeping the gap as spaces.
 
@@ -448,9 +463,7 @@ def join_rows(row, piece):
     if not previous[-1:].isspace() and not piece['runs'][0]['text'][:1].isspace():
         previous += ' '
     # The spaces take the width Hancom gives them in the run that holds them.
-    own = glyph_width(carrier['font'], ' ', carrier['font_size_pt']) if carrier.get('font_space') else None
-    space = (own or .5 * carrier['font_size_pt']) * (1 + (carrier.get('letter_spacing') or 0) / 100)
-    count = max(0, round(gap / max(.5, space)) - (len(previous) - len(previous.rstrip())))
+    count = max(0, round(gap / space_width(carrier)) - (len(previous) - len(previous.rstrip())))
     row['runs'][-1]['text'] = previous + ' ' * count
     # A piece on another baseline (a small label beside a title) keeps its
     # height through Hancom's character offset, a share of its size.
@@ -776,7 +789,7 @@ class PdfFormatting:
                     last = chars[-1][1][-1]
                     gap = kept[0]['origin'][0] - last['bbox'][2]
                     if not last['c'].isspace() and not kept[0]['c'].isspace() and gap > .4 * size:
-                        runs[-1]['text'] += ' ' * max(1, round(gap / (.5 * size)))
+                        runs[-1]['text'] += ' ' * max(1, round(gap / space_width(runs[-1])))
                 for index, char in enumerate(kept):
                     stroked = (round(char['origin'][0], 1), round(char['origin'][1], 1)) in self.stroked
                     bold = style['bold'] or (stroked if not char['c'].isspace() else None)
@@ -787,7 +800,13 @@ class PdfFormatting:
                         # is kept as spaces, or the words would touch.
                         gap = following['origin'][0] - char['bbox'][2]
                         if gap > .4 * size:
-                            text += ' ' * max(1, round(gap / (.5 * size)))
+                            text += ' ' * max(1, round(gap / space_width(style)))
+                    elif following is not None and text == ' ':
+                        # One space drawn as wide as several (a label and its
+                        # value) keeps its width; justified spaces stay one.
+                        width = following['origin'][0] - char['origin'][0]
+                        if width >= max(.7 * size, 2 * space_width(style)):
+                            text = ' ' * round(width / space_width(style))
                     spacing = by_kind.get(_kind(char['c']), style.get('letter_spacing')) if not text.isspace() else None
                     centre = pymupdf.Point((char['bbox'][0] + char['bbox'][2]) / 2, (char['bbox'][1] + char['bbox'][3]) / 2)
                     shade = next((colour for mark, colour in marks if mark.contains(centre)), None)
