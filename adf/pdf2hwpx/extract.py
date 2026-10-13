@@ -203,7 +203,7 @@ def native_page(page):
                 warnings.append('표의 일부 경계를 주변 격자로 복원했습니다. 해당 셀을 원본과 대조하세요.')
     except Exception:
         warnings.append('로컬 표 분석에 실패해 해당 내용은 문단으로 추출했습니다.')
-    figure_boxes = []
+    figure_boxes, designed = [], False
     image_infos = page.get_image_info(xrefs=True)
     images = [pymupdf.Rect(image['bbox']) for image in image_infos]
     inside = lambda rect: [line for line in formatting.lines if pymupdf.Rect(line['bbox']).intersects(rect) and
@@ -216,6 +216,14 @@ def native_page(page):
             # A border around the whole page is decoration, not one giant
             # figure that should swallow all editable document content.
             if rect.get_area() > (page.rect.width * page.rect.height) * .8:
+                # Unless it is the page's artwork itself: many shapes that are
+                # not table rules (a chart drawn over the page). Such a page
+                # keeps its artwork and places its text on top.
+                shapes = [pymupdf.Rect(drawing['rect']) for drawing in page.get_drawings()]
+                artwork = sum(1 for shape in shapes if shape.intersects(rect)
+                              and not any(shape.intersects(table) for table in table_boxes))
+                if artwork >= 30:
+                    designed = True
                 continue
             bbox = _bbox(rect, page)
             if bbox[0] >= bbox[2] or bbox[1] >= bbox[3]:
@@ -224,7 +232,7 @@ def native_page(page):
                     and not any(image.intersects(rect) for image in images)):
                 # A ruled box around text (a title box) stays editable as a
                 # one-cell table instead of a picture of its text.
-                cell = dict(row=0, col=0, row_span=1, col_span=1, **formatting.cell(rect, ''))
+                cell = dict(row=0, col=0, row_span=1, col_span=1, _rect=rect, **formatting.cell(rect, ''))
                 blocks.append(dict(kind='table', bbox=bbox, text='', font_size_pt=10, rows=1, cols=1, cells=[cell],
                                    bold=False, italic=False, alignment='LEFT',
                                    column_widths_pt=[rect.width], row_heights_pt=[rect.height]))
@@ -268,6 +276,18 @@ def native_page(page):
                 if info.get('xref') and matrix[1] == matrix[2] == 0 and matrix[0] > 0 and matrix[3] > 0 and not page.rotation:
                     block['xref'] = info['xref']  # upright: the embedded bitmap itself
                 blocks.append(block)
+    # Text drawn by a font without a Unicode map reads as control codes.
+    # It cannot become editable text; its image keeps it visible in place.
+    for line in formatting.lines:
+        text = ''.join(char['c'] for span in line['spans'] for char in span['chars'])
+        unreadable = sum(1 for char in text if char in '\x00\ufffd' or (ord(char) < 32 and char != '\t'))
+        box = pymupdf.Rect(line['bbox'])
+        if text.strip() and unreadable > .5 * len(text.strip()) and not any(box in other for other in figure_boxes):
+            bbox = _bbox(box, page)
+            if bbox[0] < bbox[2] and bbox[1] < bbox[3]:
+                blocks.append(dict(kind='image', bbox=bbox, text='', font_size_pt=10, bold=False, italic=False,
+                                   alignment='LEFT', rows=0, cols=0, cells=[], placement='BEHIND_TEXT',
+                                   text_image=True))
     covered = {id(line) for box in table_boxes + figure_boxes for line in inside(box)}
     rows = formatting.rows([line for line in formatting.lines if id(line) not in covered], keep_columns=True)
     items = split_columns(rows)
@@ -302,6 +322,18 @@ def native_page(page):
         band['bbox'] = _bbox(band.pop('box'), page)
         if band['bbox'][0] < band['bbox'][2] and band['bbox'][1] < band['bbox'][3]:
             blocks.append(band)
+    # Filled shapes outside table cells and figures (bars of a chart drawn
+    # over a grid) are lost in a flowing page: such a page is designed.
+    cells = [cell['_rect'] for block in blocks for cell in block.get('cells', []) if '_rect' in cell]
+    loose = 0
+    for drawing in page.get_drawings():
+        shape = pymupdf.Rect(drawing['rect'])
+        if (drawing.get('fill') is None or shape.get_area() < 4 or shape.get_area() > .5 * page.rect.get_area()
+                or any(shape in figure for figure in figure_boxes)
+                or any(pymupdf.Rect(cell.x0 - 2, cell.y0 - 2, cell.x1 + 2, cell.y1 + 2).contains(shape) for cell in cells)):
+            continue
+        loose += 1
+    designed = designed or loose >= 15
     for block in blocks:
         for cell in block.get('cells', []):
             cell.pop('_rect', None)
@@ -310,4 +342,7 @@ def native_page(page):
         warnings.append('회전한 페이지의 글자는 가로 문단으로 복원했습니다. 원본의 글자 방향과 대조하세요.')
     if not any(b['kind'] in {'paragraph', 'table'} for b in blocks):
         warnings.append('선택한 페이지에 추출 가능한 글자가 없습니다. 스캔 문서는 Gemini AI 변환을 사용하세요.')
-    return validate_page(dict(blocks=blocks, warnings=warnings))
+    result = validate_page(dict(blocks=blocks, warnings=warnings))
+    if designed:
+        result['free_layout'] = True
+    return result

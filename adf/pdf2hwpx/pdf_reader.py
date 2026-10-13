@@ -7,6 +7,7 @@ from statistics import median
 import pymupdf
 
 from ..text_groups import restore_text_spacing
+from .appearance import PageLook, far, hex_colour
 from .font_metrics import glyph_width, installed, registered_family
 
 
@@ -143,7 +144,13 @@ def _continues(group, row, region):
     left, right = last['box'].x0 - region.x0, region.x1 - last['box'].x1
     if len(group) == 1 and left > .3 * size and abs(left - right) <= max(.6 * size, .08 * (left + right)):
         return False  # a centred line, such as a heading or a centred cell
-    return (last['box'].x1 >= region.x1 - max(1.2 * size, 3)
+    # A line ends early only when the next line's first word did not fit
+    # after it: the next line continues the paragraph (ragged right text).
+    text = _row_text(row).strip()
+    word = text.split(' ')[0] if text else ''
+    advance = row['box'].width / max(1, len(text))
+    wrapped = last['box'].x1 + .5 * size + len(word) * advance > region.x1
+    return ((last['box'].x1 >= region.x1 - max(1.2 * size, 3) or wrapped)
             and abs(row['size'] - size) <= .6 and .8 * size <= pitch <= limit
             and row['box'].x0 - region.x0 <= 4 * size
             and (len(group) == 1 or abs(row['box'].x0 - group[1]['box'].x0) <= .6 * size)
@@ -163,16 +170,20 @@ def _same_left_edge(first, row, size):
 
 def _paragraph(group, region):
     runs, inside_word = [], False
+    # Producers that drop the space at a line end drop it on every line;
+    # Hancom keeps it, and its lines without one wrapped inside a word.
+    stripped = len(group) > 1 and not any(_row_text(row)[-1:].isspace() for row in group[:-1])
     for row in group:
         row_runs = [dict(run) for run in row['runs']]
         if runs:
-            inside_word |= bool(re.search(r'[가-힣]$', runs[-1]['text'])
-                                and re.match(r'[가-힣]', row_runs[0]['text']))
-            # Korean lines wrap inside words or keep the trailing space;
-            # only Latin words lose the space that the line break replaced.
             previous, following = runs[-1]['text'], row_runs[0]['text']
-            if re.search(r'[A-Za-z0-9,.;:]$', previous) and re.match(r'[A-Za-z0-9(]', following):
+            if stripped and not previous.endswith('-'):
                 runs[-1]['text'] = previous + ' '
+            else:
+                inside_word |= bool(re.search(r'[가-힣]$', previous) and re.match(r'[가-힣]', following))
+                # Latin words always lose the space a line break replaced.
+                if re.search(r'[A-Za-z0-9,.;:]$', previous) and re.match(r'[A-Za-z0-9(]', following):
+                    runs[-1]['text'] = previous + ' '
         runs.extend(row_runs)
     merged = []
     for run in runs:
@@ -209,7 +220,10 @@ def _paragraph(group, region):
     elif len(group) == 1 and left > 3 * size and right < min(left / 3, .6 * size):
         result['alignment'] = 'RIGHT'
     else:
-        result['alignment'] = 'JUSTIFY' if len(group) > 1 else 'LEFT'
+        # Justified lines end together; ragged ones are left aligned.
+        ends = [row['box'].x1 for row in group[:-1]]
+        result['alignment'] = 'JUSTIFY' if ends and max(ends) - min(ends) <= .5 * size and (
+            len(ends) > 1 or ends[0] >= region.x1 - max(1.2 * size, 3)) else 'LEFT'
         # Hancom measures a hanging indent (negative) from the first line
         # and a first-line indent (positive) from the following lines.
         continuation = group[1]['box'].x0 if len(group) > 1 else first
@@ -223,7 +237,7 @@ def _stacks(rows, rect):
     """Columns of single characters stacked top to bottom (vertical writing)."""
     if len(rows) < 3 or rect.height < 2 * rect.width:
         return None
-    if sum(len(_row_text(row).strip()) <= 2 for row in rows) < .8 * len(rows):
+    if sum(len(_row_text(row).replace(' ', '')) <= 2 for row in rows) < .8 * len(rows):
         return None
     stacks = []
     for row in sorted(rows, key=lambda row: row['baseline']):
@@ -252,6 +266,13 @@ def _vertical_cell(stacks, rect):
                 else:
                     runs.append(dict(run, text=text))
         if runs:
+            # In vertical writing letters advance downwards; their PDF pitch
+            # becomes the letter spacing.
+            baselines = [row['baseline'] for row in stack['rows']]
+            if len(baselines) > 1:
+                pitch = median(b - a for a, b in zip(baselines, baselines[1:]))
+                for run in runs:
+                    run['letter_spacing'] = max(-50, min(50, round((pitch / run['font_size_pt'] - 1) * 100)))
             main = max(runs, key=lambda run: len(run['text']))
             paragraphs.append(dict(main, text=''.join(run['text'] for run in runs), runs=runs, alignment='CENTER',
                                    line_count=1, line_spacing_percent=100))
@@ -269,6 +290,51 @@ def _vertical_cell(stacks, rect):
     return dict(main, text=''.join(run['text'] for run in runs), runs=runs, paragraphs=paragraphs, alignment='CENTER',
                 text_direction='VERTICAL', vertical_alignment='CENTER', width_pt=rect.width, height_pt=rect.height,
                 margins_pt=dict(left=0., right=0., top=0., bottom=0.))
+
+
+def _mostly_centred(rows, rect):
+    """Whether most text rows in a cell sit centred between its sides."""
+    if len(rows) < 2:
+        return False
+    centred = sum(abs((row['box'].x0 - rect.x0) - (rect.x1 - row['box'].x1)) <= max(1.2 * row['size'], 3)
+                  for row in rows)
+    # Centred lines of different lengths start at different places; lines
+    # that share a left edge are left aligned however full they are.
+    starts = [row['box'].x0 for row in rows]
+    return centred >= .6 * len(rows) and max(starts) - min(starts) > max(row['size'] for row in rows)
+
+
+def line_width(runs):
+    """Width Hancom gives a line of runs, or None if a font is unknown."""
+    total = 0.
+    for run in runs:
+        size, scale = run['font_size_pt'], 1 + (run.get('letter_spacing') or 0) / 100
+        for char in run['text']:
+            if char == ' ':
+                own = glyph_width(run['font'], ' ', size)
+                width = own if run.get('font_space') and own else size / 2
+            else:
+                width = glyph_width(run['font'], char, size)
+                if width is None:
+                    return None
+            total += width * scale
+    return total
+
+
+def fit_line(paragraph, room):
+    """Condense a one-line paragraph that Hancom would wrap in its room.
+
+    The PDF line fitted; small width differences (a space, rounding) must
+    not wrap it in a narrow table cell, which would make the row taller.
+    """
+    runs = paragraph['runs']
+    width = line_width(runs)
+    room *= .97  # Hancom rounds glyph positions; a line filling its cell exactly still wraps
+    if width is None or width <= room or room <= 0:
+        return
+    excess = (width - room) / width
+    for run in runs:
+        run['letter_spacing'] = max(-50, round((run.get('letter_spacing') or 0) - excess * 100 - .5))
 
 
 def fit_cell(cell, paragraphs, height):
@@ -289,7 +355,7 @@ def fit_cell(cell, paragraphs, height):
     if need() > height:
         scale = height / need()
         for item in paragraphs:
-            item['line_spacing_percent'] = max(100, int(item['line_spacing_percent'] * scale))
+            item['line_spacing_percent'] = max(70, int(item['line_spacing_percent'] * scale))
 
 
 def _without_shadows(pieces):
@@ -312,6 +378,34 @@ def _without_shadows(pieces):
     return kept
 
 
+def _join_dots(edges):
+    """Join runs of very short collinear segments into dotted lines.
+
+    Some producers draw a dotted border as hundreds of tiny strokes; a
+    table finder and cell borders need it as one line.
+    """
+    short = [edge for edge in edges if edge[3] - edge[2] < 3]
+    if len(short) < 10:
+        return edges
+    joined, groups = [edge for edge in edges if edge[3] - edge[2] >= 3], {}
+    for edge in short:
+        groups.setdefault((edge[0], round(edge[1], 1)), []).append(edge)
+    for (axis, position), group in groups.items():
+        group.sort(key=lambda edge: edge[2])
+        start, end, count = group[0][2], group[0][3], 1
+        for edge in group[1:] + [None]:
+            if edge is not None and edge[2] - end <= 4:
+                end, count = max(end, edge[3]), count + 1
+                continue
+            if count >= 5 and end - start >= 20:
+                joined.append((axis, position, start, end, dict(group[0][4], type='DOT')))
+            else:
+                joined.extend(item for item in group if start <= item[2] and item[3] <= end)
+            if edge is not None:
+                start, end, count = edge[2], edge[3], 1
+    return joined
+
+
 def join_rows(row, piece):
     """Append a piece of the same visual line, keeping the gap as spaces.
 
@@ -332,7 +426,7 @@ def join_rows(row, piece):
     row.setdefault('blocks', set()).update(piece.get('blocks', {piece.get('block')}))
 
 
-def paragraphs_from_rows(rows, region=None):
+def paragraphs_from_rows(rows, region=None, merge=True):
     """Rebuild wrapped PDF lines into paragraphs that Hancom can rewrap.
 
     A row continues the previous paragraph only when that row reached the
@@ -347,7 +441,7 @@ def paragraphs_from_rows(rows, region=None):
     groups = []
     for row in rows:
         group = groups[-1] if groups else None
-        if group and _continues(group, row, region):
+        if merge and group and _continues(group, row, region):
             group.append(row)
         else:
             groups.append([row])
@@ -382,6 +476,8 @@ class PdfFormatting:
                     self.stroked.update((round(char[2][0], 1), round(char[2][1], 1)) for char in trace['chars'])
         except Exception:
             pass
+        self.look = PageLook(page)
+        self.font_space = self._font_spaces()
         self.edges, self.fills, self.marks = [], [], []
         for drawing in page.get_drawings():
             for item in drawing['items']:
@@ -408,6 +504,54 @@ class PdfFormatting:
                         self.edges.append(('h', (a.y + b.y) / 2, min(a.x, b.x), max(a.x, b.x), style))
                     elif abs(a.x - b.x) <= .1:
                         self.edges.append(('v', (a.x + b.x) / 2, min(a.y, b.y), max(a.y, b.y), style))
+        self.edges = _join_dots(self.edges)
+
+    def _font_spaces(self):
+        """Fonts whose text uses the font's own space width, per page.
+
+        Hancom draws a space half an em wide unless a style uses the font's
+        own space. Justified lines stretch spaces; unjustified lines (last
+        lines, headings) show the font's own width exactly. Without the
+        font installed, spaces clearly narrower than half an em tell.
+        The producer named in the PDF does not tell: Hancom documents are
+        re-saved by other programs, and Hancom styles may use either.
+        """
+        spaces, spacing = {}, {}
+        measured = [(span, letter_spacing([span], max(1., span['size']))) for line in self.lines for span in line['spans']]
+        for span, value in measured:
+            if value is not None:
+                spacing.setdefault(span['font'], []).append(value)
+        # A style condensed throughout gives every span the same spacing;
+        # spans too short to measure take it. Spacing set on a few lines
+        # only is not spread to others.
+        self.usual_spacing = {}
+        for font, values in spacing.items():
+            middle = median(values)
+            if len(values) >= 3 and middle and sum(abs(value - middle) <= 2 for value in values) >= .7 * len(values):
+                self.usual_spacing[font] = round(middle)
+        for span, value in measured:
+            size = max(1., span['size'])
+            pairs = [(char, following) for char, following in zip(span['chars'], span['chars'][1:])
+                     if char['c'] == ' ' and not following['c'].isspace()]
+            if not pairs:
+                continue
+            # Hancom applies letter spacing to spaces too; remove it to
+            # compare the space itself. A short span takes its font's usual.
+            if value is None:
+                value = median(spacing[span['font']]) if span['font'] in spacing else 0
+            scale = 1 + value / 100
+            spaces.setdefault(span['font'], []).extend(
+                (following['origin'][0] - char['origin'][0]) / size / scale for char, following in pairs)
+        result = {}
+        for font, ratios in spaces.items():
+            own = next((width for width in (glyph_width(name, ' ', 1) for name in (font, font_name(font))) if width), None)
+            if own is not None and own < .45:
+                # Unjustified spaces sit exactly at the font's width;
+                # Hancom's condensed spaces spread between it and half an em.
+                result[font] = sum(abs(ratio - own) <= .02 for ratio in ratios) >= 3
+            else:
+                result[font] = min(ratios) < .42
+        return result
 
     def has_edge(self, direction, position, lo, hi):
         """Whether a drawn line covers most of a cell side."""
@@ -436,32 +580,51 @@ class PdfFormatting:
         for line in lines:
             runs, chars = [], []
             for span in line['spans']:
-                kept = [char for char in span['chars'] if rect is None or
+                # Characters the writer drops (control codes from broken
+                # encodings) must not widen the line's box either.
+                kept = [char for char in span['chars'] if clean_text(char['c']) and (rect is None or
                         rect.contains(pymupdf.Point((char['bbox'][0] + char['bbox'][2]) / 2,
-                                                    (char['bbox'][1] + char['bbox'][3]) / 2))]
+                                                    (char['bbox'][1] + char['bbox'][3]) / 2)))]
                 if not kept:
                     continue
                 style = span_style(span)
                 size = style['font_size_pt']
+                # The rendering decides the colour when the text data
+                # reports a colour other than the one drawn.
+                boxes = [pymupdf.Rect(char['bbox']) for char in kept if not char['c'].isspace()]
+                if boxes:
+                    area = pymupdf.Rect(boxes[0])
+                    for box in boxes[1:]:
+                        area |= box
+                    seen = self.look.ink_colour(area)
+                    reported = tuple(int(style['color'][i:i + 2], 16) for i in (1, 3, 5))
+                    if seen is not None and far(seen, reported):
+                        style['color'] = hex_colour(seen)
                 spacing = letter_spacing([dict(chars=kept, font=span.get('font', ''))], size)
                 if spacing is None and len(kept) < 4:
                     spacing = letter_spacing(line['spans'], size)
+                if spacing is None:
+                    spacing = self.usual_spacing.get(span.get('font'))
                 if spacing:
                     style['letter_spacing'] = spacing
-                # Hancom draws a space half an em wide unless the style uses
-                # the font's own space; Latin fonts have far narrower ones.
-                spaces = [following['origin'][0] - char['origin'][0] for char, following in zip(kept, kept[1:])
-                          if char['c'] == ' ' and not following['c'].isspace()]
-                if spaces and min(spaces) < .42 * size:
+                if self.font_space.get(span.get('font')):
                     style['font_space'] = True
                 # Bold drawn by stroking can start or end inside a span.
-                for char in kept:
+                for index, char in enumerate(kept):
                     stroked = (round(char['origin'][0], 1), round(char['origin'][1], 1)) in self.stroked
                     bold = style['bold'] or (stroked if not char['c'].isspace() else None)
+                    text = char['c']
+                    following = kept[index + 1] if index + 1 < len(kept) else None
+                    if following is not None and not text.isspace() and not following['c'].isspace():
+                        # A gap made by positioning alone (no space character)
+                        # is kept as spaces, or the words would touch.
+                        gap = following['origin'][0] - char['bbox'][2]
+                        if gap > .4 * size:
+                            text += ' ' * max(1, round(gap / (.5 * size)))
                     if runs and runs[-1]['span'] is span and (bold is None or runs[-1]['bold'] == bold):
-                        runs[-1]['text'] += char['c']
+                        runs[-1]['text'] += text
                     else:
-                        runs.append(dict(style, text=char['c'], span=span, bold=bool(bold)))
+                        runs.append(dict(style, text=text, span=span, bold=bool(bold)))
                 chars.append((span, kept))
             for run in runs:
                 del run['span']
@@ -511,7 +674,16 @@ class PdfFormatting:
         return paragraphs_from_rows(self.rows(lines, rect), region)
 
     def text(self, lines, rect=None):
-        paragraphs = self.paragraphs(lines, rect, rect)
+        rows = self.rows(lines, rect)
+        centred = rect is not None and _mostly_centred(rows, rect)
+        paragraphs = paragraphs_from_rows(rows, rect, merge=not centred)
+        if centred:
+            # A cell of centred lines keeps its lines: rewrapping them as one
+            # justified paragraph spreads short lines across the cell.
+            for paragraph in paragraphs:
+                paragraph['alignment'] = 'CENTER'
+                paragraph.pop('indent_left_pt', None)
+                paragraph.pop('first_line_indent_pt', None)
         if not paragraphs:
             return dict(text='', runs=[], font_size_pt=10, font='맑은 고딕', alignment='LEFT')
         runs = []
@@ -532,7 +704,9 @@ class PdfFormatting:
     def cell(self, box, fallback):
         rect = pymupdf.Rect(box)
         rows = self.rows(self.lines, rect)
-        stacks = _stacks(rows, rect)
+        # Vertical writing is judged on the PDF's own pieces: letters of two
+        # vertical lines at one height would join into one row.
+        stacks = _stacks(self._pieces(self.lines, rect), rect)
         if stacks:
             return _vertical_cell(stacks, rect)
         result = self.text(self.lines, rect)
@@ -566,6 +740,10 @@ class PdfFormatting:
                 if paragraph.get('indent_left_pt'):
                     paragraph['indent_left_pt'] = max(0., paragraph['indent_left_pt'] - left)
             fit_cell(result, aligned, rect.height)
+            inner = rect.width - result['margins_pt']['left'] - result['margins_pt']['right'] - .5
+            for paragraph in aligned:
+                if paragraph.get('line_count', 1) == 1:
+                    fit_line(paragraph, inner - paragraph.get('indent_left_pt', 0))
         if not result['text'] and fallback:
             result['text'] = fallback
         result['width_pt'], result['height_pt'] = rect.width, rect.height
@@ -581,4 +759,10 @@ class PdfFormatting:
         fills = [(area, fill) for area, fill in self.fills
                  if (area & rect).get_area() >= .9 * rect.get_area()]
         result['fill_color'] = fills[-1][1] if fills else None
+        if result['fill_color'] is None:
+            # Gradients drawn as many thin lines have no single fill.
+            inner = pymupdf.Rect(rect.x0 + 1, rect.y0 + 1, rect.x1 - 1, rect.y1 - 1)
+            seen = self.look.background(inner) if not inner.is_empty else None
+            if seen is not None and sum(255 - value for value in seen) > 30:
+                result['fill_color'] = hex_colour(seen)
         return result

@@ -409,12 +409,14 @@ def write_page(doc, page, structured, index):
     end = margins['top']
     for band, h in zip(bands, heights):
         end = max(end, band.y0) + h
-    if end > height - margins['bottom'] - margins['footer'] + 2:
+    if structured.get('free_layout') or end > height - margins['bottom'] - margins['footer'] + 2:
         # Side-by-side blocks that a flow cannot hold (a designed page):
         # every block keeps its place on the paper instead.
         counts = _free_page(doc, page, section, blocks + figure_text, boxes + [box_of(block) for block in figure_text],
                             area)
-        items, behind = [], []
+        # The artwork lost all text; text that could only be kept as a
+        # picture goes back on top of it.
+        items, behind = [], [block for block in behind if block.get('text_image')]
     for item, band, before in zip(items, bands, spacing):
         block, box = item[0]
         if block['kind'] == 'paragraph':
