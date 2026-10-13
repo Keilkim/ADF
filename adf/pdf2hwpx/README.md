@@ -4,12 +4,24 @@ AI 없이 PDF의 글자 위치·글꼴·선을 측정해, 한글에서 원본과
 열리면서도 문단 단위로 고칠 수 있는 HWPX를 만든다. 스캔 PDF만 선택적으로 AI(Gemini)를 쓴다.
 
 ```python
-from adf.pdf2hwpx import convert_document
+from adf.pdf2hwpx import convert_document          # 이 앱 안에서
 result = convert_document('in.pdf', 'out.hwpx')   # {'pages', 'paragraphs', 'tables', 'figures', 'warnings', ...}
 ```
 
-의존성: `pymupdf`, `python-hwpx`(HWPX 쓰기), `../text_groups.py`(한국어 띄어쓰기 복원, pymupdf만 사용).
-앱 전용 부분(키 저장 `hwpx_credentials.py`, 작업 프로세스 `hwpx_export.py`, 창 `hwpx_widgets.py`)은 밖에 있다.
+**다른 프로젝트에서 쓰기**: 이 폴더(`pdf2hwpx/`)만 복사하면 된다. 앱의 다른 모듈을 하나도 쓰지 않는다
+(`tests/test_pdf2hwpx_standalone.py`가 복사본으로 변환해 확인한다).
+
+```
+pip install -r pdf2hwpx/requirements.txt          # PyMuPDF, python-hwpx, fonttools, numpy
+python -m pdf2hwpx in.pdf out.hwpx                # 명령줄
+```
+```python
+from pdf2hwpx import convert_document, native_page, write_page   # 쪽 단위로도 쓸 수 있다
+```
+
+폭 모델은 Windows에 설치된 글꼴과 한컴오피스 글꼴 폴더를 읽는다. 다른 OS에서도 변환은 되지만
+글꼴 폭을 몰라 줄바꿈 맞추기가 약해진다. 앱 전용 부분(키 저장 `hwpx_credentials.py`, 작업 프로세스
+`hwpx_export.py`, 창 `hwpx_widgets.py`)은 이 폴더 밖에 있다.
 
 ## 구성
 
@@ -20,6 +32,8 @@ result = convert_document('in.pdf', 'out.hwpx')   # {'pages', 'paragraphs', 'tab
 | `font_metrics.py` | 한글이 그릴 글자 폭과 글꼴 이름. 설치된 모든 글꼴(TTC 안 글꼴 포함)을 글꼴 자체 이름표로 색인하고, 파일로 못 읽는 한컴 HFT 글꼴은 `hancom_widths.json`(한글 실측)을 쓴다 |
 | `hancom_widths.json` | 한컴 HFT 글꼴 265종·영문 글꼴의 글자별 폭(em), `scripts/pdf2hwpx/hancom_widths.py`로 한글에서 실측 |
 | `symbol_fonts.py` | 글자 정보 없이 내장된 기호 글꼴(Wingdings의 ❷ 등)을 설치 글꼴의 같은 윤곽선으로 찾아 복원 |
+| `text_spacing.py` | PDF 글자층이 감춘 공백 복원(빈 글리프 '$', 위치로만 띄운 한국어 단어 사이) |
+| `__main__.py`, `requirements.txt` | 명령줄 실행과 의존성 목록(폴더째 재사용) |
 | `columns.py` | 다단(신문식 단) 감지 → 테두리 없는 표 |
 | `extract.py` | 한 쪽 → 블록 목록(문단·표·그림). 표 감지 보강(열린 표, 점선, 병합), 그림 배치 판정 |
 | `schema.py` | 블록 구조 검증(`validate_page`). AI 응답도 같은 구조 |

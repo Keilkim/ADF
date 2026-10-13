@@ -6,10 +6,11 @@ from statistics import median
 
 import pymupdf
 
-from ..text_groups import restore_text_spacing
+
 from .appearance import PageLook, far, hex_colour
 from .font_metrics import glyph_width, hancom_family, installed, registered_family, styled_face
 from .symbol_fonts import recover
+from .text_spacing import restore_text_spacing
 
 
 def clean_text(value):

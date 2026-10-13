@@ -24,11 +24,17 @@ def verify_package(path):
             raise ConversionError('생성한 HWPX 문서의 XML 검증에 실패했습니다.')
 
 
+def _require_copy_permission(pdf):
+    """The owner may forbid copying text out of the PDF. A host app that
+    opened it with the owner password marks it _adf_owner_authenticated."""
+    if not (getattr(pdf, '_adf_owner_authenticated', False) or pdf.permissions & pymupdf.PDF_PERM_COPY):
+        raise PermissionError('이 PDF는 소유자가 편집 또는 추출을 제한했습니다. 소유자 암호로 다시 열어 주세요.')
+
+
 def convert_document(source, output, *, provider='local', model=DEFAULT_MODEL, page_numbers=None,
                      client=None, progress=None):
     """Write only to a staging path; the desktop parent commits after success."""
     from hwpx import HwpxDocument
-    from ..document import _require_permission
     if provider not in {'local', 'gemini', 'relay'}:
         raise ConversionError('변환 방식을 확인해 주세요.')
     if provider != 'local' and client is None:
@@ -38,7 +44,7 @@ def convert_document(source, output, *, provider='local', model=DEFAULT_MODEL, p
                   provider=provider, warnings=[], usage=dict(promptTokenCount=0, candidatesTokenCount=0, thoughtsTokenCount=0))
     result['warnings'].append(dict(page=None, message='PDF의 글자·표 서식을 보존합니다. 없는 글꼴은 한글에서 대체될 수 있으며, 쪽 여백·줄바꿈·배치와 스캔 인식 결과는 원본과 대조해 주세요.'))
     with pymupdf.open(source) as pdf, HwpxDocument.new() as document:
-        _require_permission(pdf, pymupdf.PDF_PERM_COPY)
+        _require_copy_permission(pdf)
         numbers = list(range(1, len(pdf) + 1)) if page_numbers is None else page_numbers
         if not len(pdf) or len(numbers) != len(pdf) or any(type(n) is not int or n < 1 for n in numbers):
             raise ConversionError('내보낼 PDF와 페이지 번호를 확인해 주세요.')
