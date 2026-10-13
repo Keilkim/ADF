@@ -197,8 +197,85 @@ def _place_in_cell(info, image, tables, page):
     return False
 
 
-def native_page(page):
+def _spread(page):
+    """The split of a two-up page (two portrait pages printed on one
+    landscape sheet): an empty band down the middle that no text line
+    crosses, with text on both sides. Returns (left, right) rects or None.
+    """
+    width, height = page.rect.width, page.rect.height
+    if width < 1.2 * height:
+        return None
+    lines = [pymupdf.Rect(line['bbox']) for block in page.get_text('dict')['blocks']
+             for line in block.get('lines', []) if ''.join(span['text'] for span in line['spans']).strip()]
+    low, high = .4 * width, .6 * width
+    if any(line.x0 < high and line.x1 > low and line.width > .5 * width for line in lines):
+        return None
+    taken = sorted((max(low, line.x0), min(high, line.x1)) for line in lines if line.x0 < high and line.x1 > low)
+    gaps, cursor = [], low
+    for start, end in taken:
+        if start > cursor:
+            gaps.append((cursor, start))
+        cursor = max(cursor, end)
+    if cursor < high:
+        gaps.append((cursor, high))
+    gap = max(gaps, key=lambda item: item[1] - item[0], default=None)
+    if gap is None or gap[1] - gap[0] < 12:
+        return None
+    middle = (gap[0] + gap[1]) / 2
+    if sum(line.x1 <= middle for line in lines) < 5 or sum(line.x0 >= middle for line in lines) < 5:
+        return None
+    return pymupdf.Rect(0, 0, middle, height), pymupdf.Rect(middle, 0, width, height)
+
+
+def _moved(value, dx, page_width, half_width):
+    """A half page's block with its positions on the whole sheet."""
+    if isinstance(value, list):
+        return [_moved(item, dx, page_width, half_width) for item in value]
+    if not isinstance(value, dict):
+        return value
+    moved = {}
+    for key, item in value.items():
+        if key == 'bbox':
+            moved[key] = [(item[0] * half_width / 1000 + dx) * 1000 / page_width, item[1],
+                          (item[2] * half_width / 1000 + dx) * 1000 / page_width, item[3]]
+        elif key == 'left_pt':
+            moved[key] = item + dx
+        elif key == 'box_pt':
+            moved[key] = [item[0] + dx, item[1], item[2] + dx, item[3]]
+        elif key == 'xref':
+            continue  # an image of the half page's copy, not of this document
+        else:
+            moved[key] = _moved(item, dx, page_width, half_width)
+    return moved
+
+
+def _spread_page(page, halves):
+    """Each half of a two-up sheet read as its own page, then put back."""
+    blocks, warnings, columns = [], [], []
+    for index, half in enumerate(halves):
+        with pymupdf.open() as copy:
+            target = copy.new_page(width=half.width, height=half.height)
+            target.show_pdf_page(target.rect, page.parent, page.number, clip=half)
+            result = native_page(target, split=False)
+        if result.get('free_layout'):
+            # A designed spread keeps its artwork as one sheet.
+            return native_page(page, split=False)
+        warnings.extend(warning for warning in result.get('warnings', []) if warning not in warnings)
+        for block in result['blocks']:
+            block = _moved(block, half.x0, page.rect.width, half.width)
+            block['column'] = index
+            blocks.append(block)
+        columns.append([half.x0, half.y0, half.x1, half.y1])
+    result = validate_page(dict(blocks=blocks, warnings=warnings))
+    result['columns'] = columns
+    return result
+
+
+def native_page(page, split=True):
     """Reuse exact PDF text and ruled table grids, without an API request."""
+    halves = _spread(page) if split and not page.rotation else None
+    if halves:
+        return _spread_page(page, halves)
     blocks, table_boxes, warnings = [], [], []
     formatting = PdfFormatting(page)
     try:
@@ -352,8 +429,13 @@ def native_page(page):
                     clusters.extend(_inside_frame(page, rect))
                 continue
             figure_boxes.append(rect)
-            blocks.append(dict(kind='image', bbox=bbox, text='', font_size_pt=10,
-                               bold=False, italic=False, alignment='LEFT', rows=0, cols=0, cells=[]))
+            block = dict(kind='image', bbox=bbox, text='', font_size_pt=10,
+                         bold=False, italic=False, alignment='LEFT', rows=0, cols=0, cells=[])
+            if rect.height <= 6 and rect.width > 8 * rect.height:
+                # A thin band (a coloured rule under a heading) is drawn where
+                # it was; as a line of its own it would push the text down.
+                block['placement'] = 'BEHIND_TEXT'
+            blocks.append(block)
     except Exception:
         warnings.append('일부 벡터 도형을 분석하지 못했습니다. 원본과 대조하세요.')
     tables = [block for block in blocks if block['kind'] == 'table']
@@ -375,7 +457,8 @@ def native_page(page):
                 beside = any(min(image.y1, line['bbox'][3]) - max(image.y0, line['bbox'][1]) > .5 * image.height
                              and image.height <= 2.5 * (line['bbox'][3] - line['bbox'][1])
                              for line in formatting.lines)
-                if text_on or beside or image.get_area() > .5 * page.rect.get_area():
+                thin = image.height <= 6 and image.width > 8 * image.height
+                if text_on or beside or thin or image.get_area() > .5 * page.rect.get_area():
                     block['placement'] = 'BEHIND_TEXT'
                 matrix = info.get('transform') or (0, 0, 0, 0, 0, 0)
                 if info.get('xref') and matrix[1] == matrix[2] == 0 and matrix[0] > 0 and matrix[3] > 0 and not page.rotation:

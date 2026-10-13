@@ -39,8 +39,36 @@ def add_runs(doc, paragraph, block, spacing_before_pt=0):
         if run.get('font_space'):
             # Use the font's own space width instead of Hancom's half em.
             style = style_variant(doc, 'charPr', style, lambda shape: shape.set('useFontSpace', '1'))
-        paragraph.add_run(clean_text(run['text']), char_pr_id_ref=style, expand_special_characters=True)
+        # python-hwpx drops tab characters; they go in as hp:tab elements.
+        first, *rest = clean_text(run['text']).split('	')
+        added = paragraph.add_run(first, char_pr_id_ref=style, expand_special_characters=True)
+        if rest:
+            _append_tabs(added.element, rest)
     paragraph_format(doc, paragraph, block, spacing_before_pt)
+    if block.get('tab_stop_pt'):
+        _right_tab(doc, paragraph, block)
+
+
+def _append_tabs(run, parts):
+    """A tab and then each text part, appended to the run's last hp:t."""
+    texts = list(run.iter(HP + 't'))
+    text = texts[-1] if texts else run.makeelement(HP + 't', {})
+    if not texts:
+        run.append(text)
+    for part in parts:
+        tab = text.makeelement(HP + 'tab', {})
+        tab.tail = part
+        text.append(tab)
+
+
+def _right_tab(doc, paragraph, block):
+    """A right tab stop with a dot leader at the line's end (a contents entry)."""
+    header = doc.oxml.headers[0]
+    start = block.get('indent_left_pt', 0) + max(0, block.get('first_line_indent_pt', 0))
+    position = round((start + block['tab_stop_pt'] - block.get('indent_left_pt', 0)) * 100)
+    tab_id = header.ensure_tab_definition(tab_stops=[dict(pos=position, type='RIGHT', leader='CIRCLE')])
+    base = paragraph.element.get('paraPrIDRef')
+    paragraph.element.set('paraPrIDRef', style_variant(doc, 'paraPr', base, lambda shape: shape.set('tabPrIDRef', str(tab_id))))
 
 
 def _structure(element, skip_id=False):
@@ -292,8 +320,11 @@ def _text_box(doc, anchor, rect, paragraphs, style, vertical='TOP', margins=None
         line.set('style', 'NONE')
     margins = {key: round(value * 100) for key, value in (margins or dict(left=0, right=0, top=0, bottom=0)).items()}
     text = shape.set_draw_text('', margin=margins, vert_align=vertical)
-    for index, paragraph in enumerate(paragraphs):
-        add_runs(doc, text.paragraphs[0] if index == 0 else text.add_paragraph(), {**style, **paragraph})
+    # Paragraphs of one box (a contents page in a cell) keep their gaps.
+    spacing = vertical_spacing([(paragraph.get('top_pt', 0), paragraph_height({**style, **paragraph}))
+                                for paragraph in paragraphs], paragraphs[0].get('top_pt', 0))
+    for index, (paragraph, before) in enumerate(zip(paragraphs, spacing)):
+        add_runs(doc, text.paragraphs[0] if index == 0 else text.add_paragraph(), {**style, **paragraph}, before)
     _float(shape.element, rect)
 
 
@@ -379,52 +410,11 @@ def _page_footer(blocks, boxes, height):
     return None
 
 
-def write_page(doc, page, structured, index):
-    section = doc.sections[0] if index == 0 else doc.add_section()
-    # The first paragraph contains secPr. Keep it instead of removing section
-    # settings or introducing an empty paragraph before every source page.
-    if not section.paragraphs:
-        doc.add_paragraph(section=section)
-    width, height = page.rect.width, page.rect.height
-    box_of = lambda b: pymupdf.Rect(b['bbox'][0] * width / 1000, b['bbox'][1] * height / 1000,
-                                    b['bbox'][2] * width / 1000, b['bbox'][3] * height / 1000)
-    behind = [block for block in structured['blocks'] if block.get('placement') == 'BEHIND_TEXT']
-    figure_text = [block for block in structured['blocks'] if block.get('placement') == 'IN_FIGURE']
-    blocks = [block for block in structured['blocks'] if block.get('placement') not in ('BEHIND_TEXT', 'IN_FIGURE')]
-    boxes = [box_of(block) for block in blocks]
-    footer = _page_footer(blocks, boxes, height)
-    if footer is not None:
-        footer_block, footer_box = blocks.pop(footer), boxes.pop(footer)
-    # The page margins enclose the PDF content so paragraphs wrap at the
-    # same width and start at the same place as in the source page.
-    area = pymupdf.Rect(boxes[0]) if boxes else pymupdf.Rect()
-    for box in boxes[1:]:
-        area |= box
-    if area.width < 72 or area.height < 36:
-        area = pymupdf.Rect(18, 18, width - 18, height - 18)
-    margins = dict(left=max(0, area.x0), right=max(0, width - area.x1), top=max(0, area.y0),
-                   bottom=min(max(0, height - area.y1), 10), header=0, footer=0)
-    if footer is not None:
-        # A page number sits in the footer: it stays at the bottom whatever
-        # the body above it needs, and the body may use the room above it.
-        margins['bottom'] = max(0, height - footer_box.y1 - 2)
-        margins['footer'] = footer_box.height + 2
-    doc.page.set_size(width=round(width * 100), height=round(height * 100), section=section)
-    doc.page.set_margins(**{key: round(value * 100) for key, value in margins.items()}, gutter=0, section=section)
-    if footer is not None:
-        story = section.properties.set_footer_text('')
-        layout = dict(footer_block)
-        if layout.get('alignment', 'LEFT') in ('LEFT', 'JUSTIFY'):
-            layout['indent_left_pt'] = max(0, footer_box.x0 - area.x0)
-        add_runs(doc, story.paragraphs[0], layout)
-    first = True
-    border_cache = {}
-    counts = dict(paragraphs=0, tables=0, figures=0)
-    available_width = max(100, round(area.width * 100))
-    available_height = max(100, round((height - margins['top'] - margins['bottom'] - margins['footer']) * 100))
+def _plan_flow(members, margins):
+    """Items of one flow (a page or a column) with the space before each."""
     # Pictures side by side in the PDF (a row of logos) share one line.
     items = []
-    for block, box in zip(blocks, boxes):
+    for block, box in members:
         band = pymupdf.Rect(items[-1][0][1]) if items else None
         for _, other in items[-1] if items else []:
             band |= other
@@ -455,18 +445,18 @@ def write_page(doc, page, structured, index):
     end = margins['top']
     for band, h in zip(bands, heights):
         end = max(end, band.y0) + h
-    if structured.get('free_layout') or end > height - margins['bottom'] - margins['footer'] + 2:
-        # Side-by-side blocks that a flow cannot hold (a designed page):
-        # every block keeps its place on the paper instead.
-        counts = _free_page(doc, page, section, blocks + figure_text, boxes + [box_of(block) for block in figure_text],
-                            area)
-        # The artwork lost all text; text that could only be kept as a
-        # picture goes back on top of it.
-        items, behind = [], [block for block in behind if block.get('text_image')]
+    return dict(items=items, bands=bands, spacing=spacing, end=end)
+
+
+def _write_flow(doc, page, section, flow, area, available_height, border_cache, counts, state,
+                column_break=False):
+    """Write one flow's paragraphs, tables and pictures in order."""
+    items, bands, spacing = flow['items'], flow['bands'], flow['spacing']
+    available_width = max(100, round(area.width * 100))
     for item, band, before in zip(items, bands, spacing):
         block, box = item[0]
         if block['kind'] == 'paragraph':
-            paragraph = section.paragraphs[0] if first else doc.add_paragraph(section=section, include_run=False, inherit_style=False)
+            paragraph = section.paragraphs[0] if state['first'] else doc.add_paragraph(section=section, include_run=False, inherit_style=False)
             layout = dict(block)
             if layout.get('alignment', 'LEFT') in ('LEFT', 'JUSTIFY'):
                 # Indents count from the page margin, which other blocks
@@ -476,7 +466,10 @@ def write_page(doc, page, structured, index):
                 elif 'indent_left_pt' not in layout:
                     layout['indent_left_pt'] = max(0, box.x0 - area.x0)
             add_runs(doc, paragraph, layout, before)
-            first = False
+            if column_break:
+                paragraph.element.set('columnBreak', '1')
+                column_break = False
+            state['first'] = False
             counts['paragraphs'] += 1
             continue
         # Tables and pictures sit in their own paragraph; place it with the
@@ -489,9 +482,9 @@ def write_page(doc, page, structured, index):
             table_height = max(100, round(box.height * 100))
             if block.get('row_heights_pt'):
                 table_height = max(100, round(sum(block['row_heights_pt']) * 100))
-            host = section.paragraphs[0] if first else doc.add_paragraph(section=section, include_run=False, inherit_style=False)
+            host = section.paragraphs[0] if state['first'] else doc.add_paragraph(section=section, include_run=False, inherit_style=False)
             table = host.add_table(block['rows'], block['cols'], width=table_width, height=table_height)
-            first = False
+            state['first'] = False
             for cell in block['cells']:
                 r, c = cell['row'], cell['col']
                 if cell['row_span'] > 1 or cell['col_span'] > 1:
@@ -504,8 +497,8 @@ def write_page(doc, page, structured, index):
                 table.set_column_widths(block['column_widths_pt'])
             counts['tables'] += 1
         else:
-            host = section.paragraphs[0] if first else doc.add_paragraph(section=section, inherit_style=False)
-            first = False
+            host = section.paragraphs[0] if state['first'] else doc.add_paragraph(section=section, inherit_style=False)
+            state['first'] = False
             right = band.x0
             for member, box in sorted(item, key=lambda member: member[1].x0):
                 clip = box & page.rect
@@ -522,6 +515,97 @@ def write_page(doc, page, structured, index):
                 right = clip.x1
                 counts['figures'] += 1
         paragraph_format(doc, host, placement, before)
+        if column_break:
+            host.element.set('columnBreak', '1')
+            column_break = False
+
+
+def _set_columns(section, count, gap):
+    """A newspaper-column section: count columns of one width, gap apart."""
+    for element in section.element.iter():
+        if element.tag.endswith('}colPr'):
+            element.set('colCount', str(count))
+            element.set('sameSz', '1')
+            element.set('sameGap', str(max(0, round(gap * 100))))
+
+
+def write_page(doc, page, structured, index):
+    section = doc.sections[0] if index == 0 else doc.add_section()
+    # The first paragraph contains secPr. Keep it instead of removing section
+    # settings or introducing an empty paragraph before every source page.
+    if not section.paragraphs:
+        doc.add_paragraph(section=section)
+    width, height = page.rect.width, page.rect.height
+    box_of = lambda b: pymupdf.Rect(b['bbox'][0] * width / 1000, b['bbox'][1] * height / 1000,
+                                    b['bbox'][2] * width / 1000, b['bbox'][3] * height / 1000)
+    behind = [block for block in structured['blocks'] if block.get('placement') == 'BEHIND_TEXT']
+    figure_text = [block for block in structured['blocks'] if block.get('placement') == 'IN_FIGURE']
+    blocks = [block for block in structured['blocks'] if block.get('placement') not in ('BEHIND_TEXT', 'IN_FIGURE')]
+    boxes = [box_of(block) for block in blocks]
+    # A two-up sheet shows two page numbers; they stay in their columns.
+    footer = None if structured.get('columns') else _page_footer(blocks, boxes, height)
+    if footer is not None:
+        footer_block, footer_box = blocks.pop(footer), boxes.pop(footer)
+    # The page margins enclose the PDF content so paragraphs wrap at the
+    # same width and start at the same place as in the source page.
+    area = pymupdf.Rect(boxes[0]) if boxes else pymupdf.Rect()
+    for box in boxes[1:]:
+        area |= box
+    if area.width < 72 or area.height < 36:
+        area = pymupdf.Rect(18, 18, width - 18, height - 18)
+    columns = [area]
+    if structured.get('columns'):
+        columns = []
+        for column in range(len(structured['columns'])):
+            members = [box for block, box in zip(blocks, boxes) if block.get('column', 0) == column]
+            column_area = pymupdf.Rect(members[0]) if members else pymupdf.Rect(structured['columns'][column])
+            for box in members[1:]:
+                column_area |= box
+            columns.append(column_area)
+        # Hancom columns share one width; the widest half sets it and each
+        # half starts where it did on the sheet.
+        column_width = max(column.width for column in columns)
+        columns = [pymupdf.Rect(column.x0, column.y0, column.x0 + column_width, column.y1) for column in columns]
+        area = pymupdf.Rect(columns[0].x0, min(column.y0 for column in columns), columns[-1].x1,
+                            max(column.y1 for column in columns))
+    margins = dict(left=max(0, area.x0), right=max(0, width - area.x1), top=max(0, area.y0),
+                   bottom=min(max(0, height - area.y1), 10), header=0, footer=0)
+    if footer is not None:
+        # A page number sits in the footer: it stays at the bottom whatever
+        # the body above it needs, and the body may use the room above it.
+        margins['bottom'] = max(0, height - footer_box.y1 - 2)
+        margins['footer'] = footer_box.height + 2
+    doc.page.set_size(width=round(width * 100), height=round(height * 100), section=section)
+    doc.page.set_margins(**{key: round(value * 100) for key, value in margins.items()}, gutter=0, section=section)
+    # Set on every page: a new section copies the previous one's columns.
+    _set_columns(section, len(columns), columns[1].x0 - columns[0].x1 if len(columns) > 1 else 0)
+    if footer is not None:
+        story = section.properties.set_footer_text('')
+        layout = dict(footer_block)
+        if layout.get('alignment', 'LEFT') in ('LEFT', 'JUSTIFY'):
+            layout['indent_left_pt'] = max(0, footer_box.x0 - area.x0)
+        add_runs(doc, story.paragraphs[0], layout)
+    border_cache = {}
+    counts = dict(paragraphs=0, tables=0, figures=0)
+    available_height = max(100, round((height - margins['top'] - margins['bottom'] - margins['footer']) * 100))
+    # A two-up sheet flows as two Hancom columns, each from the top.
+    flows = []
+    for column, column_area in enumerate(columns):
+        members = [(block, box) for block, box in zip(blocks, boxes) if block.get('column', 0) == column]
+        flows.append(_plan_flow(members, margins))
+    bottom = height - margins['bottom'] - margins['footer'] + 2
+    if structured.get('free_layout') or any(flow['end'] > bottom for flow in flows):
+        # Side-by-side blocks that a flow cannot hold (a designed page):
+        # every block keeps its place on the paper instead.
+        counts = _free_page(doc, page, section, blocks + figure_text, boxes + [box_of(block) for block in figure_text],
+                            area)
+        # The artwork lost all text; text that could only be kept as a
+        # picture goes back on top of it.
+        flows, behind = [], [block for block in behind if block.get('text_image')]
+    state = dict(first=True)
+    for column, flow in enumerate(flows):
+        _write_flow(doc, page, section, flow, columns[column], available_height, border_cache, counts, state,
+                    column_break=column > 0)
     for block in behind:
         # Positioned on the paper behind the text, so the page flow is the
         # same as without it.

@@ -246,14 +246,15 @@ def _paragraph(group, region):
     if inside_word:
         # The source wrapped Korean text between syllables of one word.
         result['wraps_inside_words'] = True
+    tabbed = _tab_leader(result, group)
     first = group[0]['box'].x0
     left, right = first - region.x0, region.x1 - max(row['box'].x1 for row in group)
     if len(group) > 1:
         result['line_spacing_percent'] = _percent(median(b['baseline'] - a['baseline'] for a, b in zip(group, group[1:])),
                                                   result.get('line_size_pt', size))
-    if len(group) == 1 and left > .5 * size and abs(left - right) <= max(.6 * size, .08 * (left + right)):
+    if not tabbed and len(group) == 1 and left > .5 * size and abs(left - right) <= max(.6 * size, .08 * (left + right)):
         result['alignment'] = 'CENTER'
-    elif len(group) == 1 and left > 3 * size and right < min(left / 3, .6 * size):
+    elif not tabbed and len(group) == 1 and left > 3 * size and right < min(left / 3, .6 * size):
         result['alignment'] = 'RIGHT'
     else:
         # Justified lines end together; ragged ones are left aligned.
@@ -267,6 +268,35 @@ def _paragraph(group, region):
         result['left_pt'] = min(first, continuation)  # on the page, for writers with other margins
         result['first_line_indent_pt'] = first - continuation
     return result
+
+
+LEADER = re.compile(r'\s*[·.․‥…ㆍ]{4,}\s*(?=\S{1,8}\s*$)')
+
+
+def _tab_leader(result, group):
+    """A table-of-contents line: its dot leader becomes a right tab with dots.
+
+    The PDF draws hundreds of narrow dots; Hancom draws them wider and the
+    line overflows. A tab stop at the page number's right edge keeps the
+    entry on one line however wide Hancom's dots are.
+    """
+    if len(group) != 1:
+        return False
+    match = LEADER.search(result['text'])
+    if match is None or not result['text'][:match.start()].strip():
+        return False
+    start, end, offset = match.start(), match.end(), 0
+    for run in result['runs']:
+        text, low = run['text'], offset
+        offset += len(text)
+        cut_from, cut_to = max(start, low) - low, min(end, offset) - low
+        if cut_from < cut_to:
+            run['text'] = text[:cut_from] + ('	' if low <= start < offset else '') + text[cut_to:]
+    result['runs'] = [run for run in result['runs'] if run['text']]
+    result['text'] = ''.join(run['text'] for run in result['runs'])
+    # From the line's start to the number's right edge.
+    result['tab_stop_pt'] = group[0]['box'].x1 - group[0]['box'].x0
+    return True
 
 
 def _stacks(rows, rect):

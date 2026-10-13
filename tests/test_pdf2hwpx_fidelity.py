@@ -142,3 +142,46 @@ def test_symbol_glyph_outline_names_its_wingdings_character():
     # A subset keeps this outline without a character map; it still names ❷.
     assert _codes_by_outline(str(WINGDINGS_FILE))[_outline(font, glyph)] == 0x8D
     assert WINGDINGS[0x8D] == '❷' and WINGDINGS[0x80] == '⓪' and WINGDINGS[0x81] == '①'
+
+
+def test_contents_leader_becomes_a_right_tab_with_dots():
+    with pymupdf.open() as pdf:
+        page = pdf.new_page()
+        page.insert_text((72, 100), '1. Project outline ' + '.' * 60, fontsize=10)
+        page.insert_text((480, 100), '12', fontsize=10)
+        paragraph = next(block for block in native_page(page)['blocks'] if block['kind'] == 'paragraph')
+    assert paragraph['text'].rstrip().endswith('\t12') and '....' not in paragraph['text']
+    assert paragraph['tab_stop_pt'] > 400
+
+
+def _two_up(pdf):
+    page = pdf.new_page(width=842, height=595)
+    for row in range(8):
+        page.insert_text((50, 80 + row * 20), f'Left page line {row} of the first half', fontsize=11)
+        page.insert_text((470, 80 + row * 20), f'Right page line {row} of the second half', fontsize=11)
+    return page
+
+
+def test_two_up_sheet_is_read_as_two_columns():
+    with pymupdf.open() as pdf:
+        result = native_page(_two_up(pdf))
+    assert len(result['columns']) == 2
+    sides = {block['column'] for block in result['blocks'] if 'Left' in block.get('text', '')}
+    assert sides == {0} and {block['column'] for block in result['blocks'] if 'Right' in block.get('text', '')} == {1}
+
+
+def test_two_up_sheet_writes_a_two_column_section_and_the_next_page_has_one(tmp_path):
+    from adf.pdf2hwpx import convert_document
+    source = tmp_path / 'two_up.pdf'
+    with pymupdf.open() as pdf:
+        _two_up(pdf)
+        plain = pdf.new_page()
+        plain.insert_text((72, 100), 'An ordinary page after the sheet.', fontsize=11)
+        pdf.save(source)
+    convert_document(str(source), str(tmp_path / 'two_up.hwpx'))
+    import zipfile
+    with zipfile.ZipFile(tmp_path / 'two_up.hwpx') as package:
+        first = package.read('Contents/section0.xml').decode()
+        second = package.read('Contents/section1.xml').decode()
+    assert 'colCount="2"' in first and 'columnBreak="1"' in first
+    assert 'colCount="1"' in second
