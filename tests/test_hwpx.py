@@ -15,9 +15,10 @@ import pytest
 from PIL import Image
 from hwpx import HwpxDocument
 
-from adf.hwpx_api import ConversionError, GeminiClient, DEFAULT_MODEL, validate_page, request_json, service_url
+from adf.pdf2hwpx import ConversionError, GeminiClient, DEFAULT_MODEL, convert_document, native_page, validate_page
+from adf.pdf2hwpx.ai import request_json, service_url
 from adf.hwpx_credentials import create_bundle, load_bundle
-from adf.hwpx_export import convert_document, native_page, hwpx_worker
+from adf.hwpx_export import hwpx_worker
 
 
 def sample_pdf(path, rotated=False):
@@ -172,7 +173,7 @@ def test_api_header_hides_key_from_url_and_bounded_structured_generation():
     payload = dict(blocks=[], warnings=[])
     response = dict(candidates=[dict(finishReason='STOP', content=dict(parts=[dict(text=json.dumps(payload))]))],
                     usageMetadata=dict(promptTokenCount=10, candidatesTokenCount=2, thoughtsTokenCount=1))
-    with patch('adf.hwpx_api.request_json', return_value=response) as request:
+    with patch('adf.pdf2hwpx.ai.request_json', return_value=response) as request:
         page, usage = client.extract(b'not-real-image', dict(blocks=[]))
     args, kwargs = request.call_args
     assert key not in args[0]
@@ -188,14 +189,14 @@ def test_api_errors_never_echo_provider_body_or_key():
     key = 'FAKE_SECRET_DO_NOT_LOG'
     opener = type('Opener', (), {'open': lambda *args, **kwargs: (_ for _ in ()).throw(
         urllib.error.HTTPError('https://example.test', 403, key, {}, io.BytesIO(key.encode())))})()
-    with patch('adf.hwpx_api.urllib.request.build_opener', return_value=opener):
+    with patch('adf.pdf2hwpx.ai.urllib.request.build_opener', return_value=opener):
         with pytest.raises(ConversionError) as raised:
             request_json('https://example.test', headers={'x-goog-api-key': key})
     assert key not in str(raised.value)
 
 
 def test_truncated_response_fails_before_writing_a_document():
-    with patch('adf.hwpx_api.request_json', return_value=dict(candidates=[dict(finishReason='MAX_TOKENS')])):
+    with patch('adf.pdf2hwpx.ai.request_json', return_value=dict(candidates=[dict(finishReason='MAX_TOKENS')])):
         with pytest.raises(ConversionError):
             GeminiClient('FAKE_KEY').extract(b'image', {})
 

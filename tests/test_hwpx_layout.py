@@ -7,8 +7,8 @@ import pymupdf
 from PIL import Image
 from hwpx import HwpxDocument
 
-from adf.hwpx_export import convert_document, native_page
-from adf.hwpx_formatting import font_name, letter_spacing
+from adf.pdf2hwpx import convert_document, native_page
+from adf.pdf2hwpx.pdf_reader import font_name, letter_spacing
 
 LINES = ['  First paragraph line that reaches the right edge of', 'the text column and wraps once here.',
          'Second paragraph after a gap.']
@@ -67,8 +67,9 @@ def test_text_box_stays_editable_and_picture_row_shares_a_line(tmp_path):
         section = archive.read('Contents/section0.xml').decode()
     # Every picture is registered even though a section was added later.
     assert len(re.findall(r'href="BinData/', manifest)) == 3
-    # The bitmap is described by its pixels (75 HWPUNIT each), not cropped.
-    assert re.search(r'<hp:imgClip left="0" right="22500" top="0" bottom="7500"', section)
+    # The embedded 120x40 bitmap itself is used and described by its pixels
+    # (75 HWPUNIT each), so Hancom does not crop it.
+    assert re.search(r'<hp:imgClip left="0" right="9000" top="0" bottom="3000"', section)
     assert '<hp:linesegarray' not in section
 
 

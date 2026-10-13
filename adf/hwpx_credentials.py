@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 import sys
 
-from .hwpx_api import ConversionError
+from .pdf2hwpx import ConversionError
 
 AAD = b'XDF HWPX Gemini credential v1'
 
