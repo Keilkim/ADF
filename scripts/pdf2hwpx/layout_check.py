@@ -38,15 +38,17 @@ def render(render_python, target, prefix):
 DPI = 96
 
 
-def text_lines(page):
-    """Pixel boxes of the PDF's own text lines."""
+def text_lines(page, with_text=False):
+    """Pixel boxes of the PDF's own text lines (and their text)."""
     scale = DPI / 72
     boxes = []
     for block in page.get_text('dict')['blocks']:
         for line in block.get('lines', []):
-            if ''.join(span['text'] for span in line['spans']).strip():
+            text = ''.join(span['text'] for span in line['spans'])
+            if text.strip():
                 x0, y0, x1, y1 = (pymupdf.Rect(line['bbox']) * page.rotation_matrix)
-                boxes.append((int(x0 * scale), int(y0 * scale), int(x1 * scale) + 1, int(y1 * scale) + 1))
+                box = (int(x0 * scale), int(y0 * scale), int(x1 * scale) + 1, int(y1 * scale) + 1)
+                boxes.append((box, text) if with_text else box)
     return boxes
 
 
@@ -113,6 +115,7 @@ def without_rules(ink, length=18):
 
 
 CAUSES = {}
+DETAILS = []  # (document, page, cause, dy, left, right, pixel box, text) of lines not in place
 
 
 def _cause(source, target, box, score, left, right):
@@ -155,7 +158,7 @@ def compare(pdf, rendered, folder):
         ink_source = without_rules(np.asarray(source.convert('L')) < 160)
         ink_target = without_rules(np.asarray(target.convert('L').resize(source.size)) < 160)
         placed = moved = lost = 0
-        for box in text_lines(page):
+        for box, text in text_lines(page, with_text=True):
             found = locate(ink_source, ink_target, box)
             if found is None:
                 continue
@@ -170,6 +173,8 @@ def compare(pdf, rendered, folder):
                 lost += 1
                 cause = _cause(ink_source, ink_target, box, score, left, right)
             CAUSES[cause] = CAUSES.get(cause, 0) + 1
+            if cause != 'in place':
+                DETAILS.append((folder.name, index + 1, cause, offset, left, right, box, text))
         misplaced += moved + lost
         in_place += placed
         total = placed + moved + lost
@@ -241,6 +246,7 @@ if __name__ == '__main__':
     parser.add_argument('--render-python', default='py -3')
     parser.add_argument('--pages', help='first-last page range, e.g. 1-5')
     parser.add_argument('--per-page', action='store_true', help='convert each page alone to find overflow')
+    parser.add_argument('--details', type=Path, help='write every line not in place, with its cause, to this TSV')
     args = parser.parse_args()
     if args.per_page:
         total = sum(overflowing_pages(pdf, args.out, args.render_python) for pdf in args.pdfs)
@@ -248,5 +254,10 @@ if __name__ == '__main__':
     pages = tuple(int(n) for n in args.pages.split('-')) if args.pages else None
     total = sum(check(pdf, args.out, args.render_python, pages) for pdf in args.pdfs)
     print('total score', total, '(0 = every PDF text line drawn in place)')
+    if args.details:
+        with open(args.details, 'w', encoding='utf-8') as details:
+            details.write('document\tpage\tcause\tdy\tleft\tright\tbox\ttext\n')
+            for row in DETAILS:
+                details.write('\t'.join(str(value) for value in row) + '\n')
     print('lines by cause:', ', '.join(f'{cause} {count}' for cause, count in
                                        sorted(CAUSES.items(), key=lambda item: -item[1])))
