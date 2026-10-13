@@ -263,9 +263,12 @@ class AdaptiveToolbar(QFrame):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, smoke=False):
+    def __init__(self, smoke=False, hosted=False, services=True):
         super().__init__()
         self.smoke = smoke
+        # A Workspace hosting this document in a tab or window of its own.
+        self.workspace = None
+        self.hosted = hosted
         self.document = PdfDocument()
         self.settings = QSettings('ADF', 'ADF') if not smoke else QSettings(str(Path(tempfile.gettempdir())/'adf-smoke-settings.ini'), QSettings.Format.IniFormat)
         self.intro_dialog = None
@@ -359,10 +362,12 @@ class MainWindow(QMainWindow):
         self.update_now = False
         self.closed_document = None
         self.refresh_actions()
-        if not smoke:
+        if not smoke and not hosted:
             geometry = self.settings.value('geometry')
             if geometry:
                 self.restoreGeometry(geometry)
+        # Of several documents in one XDF, one shows the intro and checks for updates.
+        if not smoke and services:
             self.intro_timer.start(300)
             if updates_supported():
                 self.start_updates()
@@ -380,6 +385,8 @@ class MainWindow(QMainWindow):
     def create_actions(self):
         a = self.action
         a('open', '열기', self.open_dialog, QKeySequence.StandardKey.Open, 'open')
+        a('new_window', '새 창', self.new_window, QKeySequence.StandardKey.New)
+        self.actions['new_window'].setVisible(False)  # A Workspace shows it.
         a('save', '저장', self.save, QKeySequence.StandardKey.Save, 'save')
         a('save_as', '다른 이름으로 저장…', self.save_as, 'Ctrl+Shift+S', 'save_as')
         a('close', '문서 닫기', self.close_document, 'Ctrl+W')
@@ -462,7 +469,7 @@ class MainWindow(QMainWindow):
         self.actions['region_tool'].setToolTip('드래그한 영역을 그림으로 복사합니다 · 표·그래프·글 포함')
 
     def create_menus(self):
-        groups = [('파일', ['open','save','save_as','close',None,'compare','merge','combine','split','extract','compress','markdown','hwpx',None,'print','default']),
+        groups = [('파일', ['open','new_window','save','save_as','close',None,'compare','merge','combine','split','extract','compress','markdown','hwpx',None,'print','default']),
                   ('편집',['undo','redo',None,'copy','copy_region','region_tool','paste','image','stamps','text','object_tool','select_image']),
                   ('페이지',['rotate','rotate_left','blank','replace','delete',None,'up','down','number']),
                   ('보기',['find','fullscreen',None,'select_tool','hand_tool','pen','eraser',None,'snap','settings']),
@@ -867,7 +874,7 @@ class MainWindow(QMainWindow):
             self.stop_stamp()
         if self.stamp_dock:
             self.stamp_dock.set_editable(editable)
-        for key in ['save','save_as','close','split','extract','compress','markdown','hwpx','find','print','copy','next','previous','settings','fullscreen']:
+        for key in ['save','save_as','close','split','extract','compress','markdown','hwpx','find','print','copy','next','previous','fullscreen']:
             self.actions[key].setEnabled(loaded)
         for key in ['merge','number','number_remove','image','paste','text','text_add','select_image','rotate','rotate_left','delete','blank','replace','up','down']:
             self.actions[key].setEnabled(editable)
@@ -920,10 +927,20 @@ class MainWindow(QMainWindow):
         return True
 
     def open_dialog(self):
+        if self.workspace is not None:
+            paths,_ = QFileDialog.getOpenFileNames(self,'PDF 열기',str(Path.home()),'PDF 문서 (*.pdf)')
+            return self.workspace.open_paths(paths, self) if paths else False
         path,_ = QFileDialog.getOpenFileName(self,'PDF 열기',str(Path.home()),'PDF 문서 (*.pdf)')
         return self.open_path(path) if path else False
 
+    def new_window(self):
+        if self.workspace is not None:
+            self.workspace.new_window(self)
+
     def open_path(self,path):
+        # With a document open here, another one opens in a new tab or window.
+        if self.workspace is not None and self.document.page_count:
+            return self.workspace.open_paths([path], self)
         if self.worker or self.loading_dialog is not None or not self.maybe_save():
             return False
         from .loading import load_pdf
@@ -1051,6 +1068,8 @@ class MainWindow(QMainWindow):
             return
         self.show_empty_workspace()
         self.notice.clearMessage()
+        if self.workspace is not None:
+            self.workspace.document_closed(self)
 
     def show_empty_workspace(self):
         self.fullscreen.exit()
@@ -2358,7 +2377,7 @@ class MainWindow(QMainWindow):
     def changeEvent(self, event):
         super().changeEvent(event)
         if (event.type() == QEvent.Type.WindowStateChange and hasattr(self, 'fullscreen')
-                and self.fullscreen.active and not self.isFullScreen()):
+                and self.fullscreen.active and not self.window().isFullScreen()):
             QTimer.singleShot(0, self.fullscreen.exit)
 
     def escape(self):
@@ -2397,8 +2416,8 @@ class MainWindow(QMainWindow):
         elif self.actions['text_add'].isChecked():
             self.actions['text_add'].setChecked(False)
             self.toggle_text(False, add=True)
-        elif self.isFullScreen():
-            self.showNormal()
+        elif self.window().isFullScreen():
+            self.window().showNormal()
         else:
             self.close_search()
             self.clear_content_selection()
@@ -2634,6 +2653,17 @@ class MainWindow(QMainWindow):
         start_right.setChecked(self.view.start_right)
         start_right.setEnabled(self.view.is_spread)
         layout.addWidget(start_right)
+        from .workspace import OPEN_MODE, TAB, WINDOW, open_mode, tabs_supported
+        open_row = QHBoxLayout()
+        open_row.addWidget(QLabel('다른 PDF를 열 때'))
+        open_in = QComboBox()
+        open_in.setObjectName('openMode')
+        open_in.addItem('탭으로 열기', TAB)
+        open_in.addItem('새 창으로 열기', WINDOW)
+        open_in.setCurrentIndex(open_in.findData(open_mode(self.settings)))
+        open_row.addWidget(open_in, 1)
+        if tabs_supported():
+            layout.addLayout(open_row)
         clear = QPushButton('최근 문서 기록 지우기')
         clear.clicked.connect(lambda: (self.settings.remove('recent'),clear.setText('기록을 지웠습니다')))
         layout.addWidget(clear)
@@ -2644,6 +2674,8 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             self.view.start_right = start_right.isChecked()
             self.settings.setValue('spread_start_right', self.view.start_right)
+            if tabs_supported():
+                self.settings.setValue(OPEN_MODE, open_in.currentData())
             self.view.set_mode(self.view.mode)
             self.sync_view_buttons()
 
@@ -2986,10 +3018,11 @@ class MainWindow(QMainWindow):
         service = self.updates
         if service is None or service.package is None or self.installing_update:
             return
-        if self.isMinimized():
-            self.showNormal()
-        self.raise_()
-        self.activateWindow()
+        window = self.window()
+        if window.isMinimized():
+            window.showNormal()
+        window.raise_()
+        window.activateWindow()
         if service.state == 'available':
             # A finished download shows '업데이트 설치'; installing waits for that click.
             service.requested = True
@@ -3025,7 +3058,7 @@ class MainWindow(QMainWindow):
             # Finder replaces XDF in Applications only after XDF has quit.
             self.stop_update_install()
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(service.staged(package))))
-            self.close()
+            self.close_all_documents()
             return
         from .updates import close_windows, other_windows
         try:
@@ -3066,7 +3099,7 @@ class MainWindow(QMainWindow):
         service = self.updates
         app = QApplication.instance()
         app.setQuitOnLastWindowClosed(False)
-        if not self.close():
+        if not self.close_all_documents():
             app.setQuitOnLastWindowClosed(True)
             self.stop_update_install()
             return
@@ -3113,9 +3146,18 @@ class MainWindow(QMainWindow):
         QApplication.instance().setQuitOnLastWindowClosed(True)
         self.show_empty_workspace()
         self.stop_update_install()
-        self.show()
+        if self.workspace is not None:
+            self.workspace.adopt(self)
+        else:
+            self.show()
         if document:
             self.open_path(document)
+
+    def close_all_documents(self):
+        """Close this window, and with tabs or other windows every document in XDF, this one last."""
+        if self.workspace is not None:
+            return self.workspace.close_all(self)
+        return self.close()
 
     def dragEnterEvent(self,event):
         if event.mimeData().hasUrls() and any(u.toLocalFile().lower().endswith('.pdf') for u in event.mimeData().urls()):
@@ -3148,7 +3190,7 @@ class MainWindow(QMainWindow):
         self.closed_document = self.document.path
         self.fullscreen.exit()
         self.stop_stamp()
-        if not self.smoke:
+        if not self.smoke and not self.hosted:
             self.settings.setValue('geometry',self.saveGeometry())
         self.intro_timer.stop()
         if self.intro_dialog is not None:
@@ -3176,6 +3218,8 @@ class MainWindow(QMainWindow):
         if self.update_notifier is not None:
             self.update_notifier.hide()
         event.accept()
+        if self.workspace is not None:
+            self.workspace.page_closed(self)
 
 
 def _kill_worker_process_tree(process_id):
@@ -3335,6 +3379,7 @@ def execute_worker(path):
 class ADFApplication(QApplication):
     """Handle Finder's file-open events as well as command-line PDF paths."""
     window = None
+    workspace = None
     pending_files = None
 
     def __init__(self,arguments):
@@ -3345,7 +3390,9 @@ class ADFApplication(QApplication):
         if event.type()==QEvent.Type.FileOpen:
             path = event.file()
             if path:
-                if self.window:
+                if self.workspace:
+                    QTimer.singleShot(0,lambda p=path:self.workspace.open_paths([p]))
+                elif self.window:
                     QTimer.singleShot(0,lambda p=path:self.window.open_path(p))
                 else:
                     if self.pending_files is None:
@@ -3388,6 +3435,14 @@ def main():
     app = ADFApplication(sys.argv[:1])
     app.setApplicationName('ADF')
     app.setOrganizationName('ADF')
+    from . import workspace as documents
+    plain_launch = not (args.smoke_test or args.update_now or args.help_section or args.shell_request
+                        or args.merge is not None or args.split)
+    if plain_launch and documents.forward_supported():
+        # An XDF already running opens the files in a tab or window of its own.
+        files = [str(Path(path).resolve()) for path in args.files]
+        if documents.forward_to_running(files):
+            return 0
     app.setApplicationDisplayName(NAME)
     apply_theme(app)
     font = QFont('Malgun Gothic' if sys.platform=='win32' else 'Apple SD Gothic Neo',10)
@@ -3416,11 +3471,19 @@ def main():
         if args.tool_smoke_test:
             QTimer.singleShot(100,lambda:controller.smoke_report(args.tool_smoke_test))
         return app.exec()
-    window = MainWindow(smoke=bool(args.smoke_test))
+    workspace = None
+    if args.smoke_test:
+        window = MainWindow(smoke=True)
+        window.show()
+    else:
+        workspace = documents.Workspace(lambda **options: MainWindow(**options))
+        window = workspace.start()
+        app.workspace = workspace
+        if documents.forward_supported():
+            workspace.listen()
     # The background agent's notice asked to install; the window does it once the update is ready.
     window.update_now = args.update_now
     app.window = window
-    window.show()
     if args.help_section:
         window.intro_timer.stop()
         QTimer.singleShot(0, lambda: window.show_help(args.help_section))
@@ -3433,7 +3496,8 @@ def main():
         folder = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation))
         folder.mkdir(parents=True,exist_ok=True)
         (folder/'error.log').write_text(''.join(traceback.format_exception(kind,error,tb)),encoding='utf-8')
-        window.error(error)
+        page = workspace.current_page() if workspace is not None else window
+        (page or window).error(error)
     sys.excepthook = exception_handler
     if args.smoke_test:
         def smoke():
@@ -3564,7 +3628,7 @@ def main():
                 app.exit(1)
         QTimer.singleShot(200,smoke)
     elif args.files:
-        QTimer.singleShot(0,lambda: window.drop_files(args.files))
+        QTimer.singleShot(0,lambda: workspace.open_paths(args.files, window))
     elif app.pending_files:
-        QTimer.singleShot(0,lambda: window.drop_files(app.pending_files))
+        QTimer.singleShot(0,lambda: workspace.open_paths(app.pending_files, window))
     return app.exec()

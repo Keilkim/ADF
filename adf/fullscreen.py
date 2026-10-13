@@ -112,9 +112,11 @@ class FullscreenReader(QObject):
         window, view = self.window, self.window.view
         if self.active or not window.document.page_count:
             return
-        self.normal_geometry = window.saveGeometry()
-        self.normal_rect = window.geometry()
-        self.was_maximized = window.isMaximized()
+        # A document in a tab fills its whole window.
+        top = window.window()
+        self.normal_geometry = top.saveGeometry()
+        self.normal_rect = top.geometry()
+        self.was_maximized = top.isMaximized()
         self.minimum_size = window.minimumSize()
         self.splitter_sizes = window.reader_splitter.sizes()
         self.sidebar_width = window.sidebar.width() if window.page_sidebar.expanded else window.page_sidebar.expanded_width
@@ -158,7 +160,7 @@ class FullscreenReader(QObject):
             panel.installEventFilter(self)
         QApplication.instance().installEventFilter(self)
         self.update_action()
-        window.showFullScreen()
+        top.showFullScreen()
         self.layout_panels()
         view.fit('page')
         view.goto(window.current)
@@ -225,7 +227,7 @@ class FullscreenReader(QObject):
         elif watched in self.panels.values() and kind == QEvent.Type.LayoutRequest:
             self.layout_panels()
         elif kind == QEvent.Type.MouseMove and isinstance(watched, QWidget):
-            if watched.window() is self.window:
+            if watched.window() is self.window.window():
                 self.update_pointer(event.globalPosition().toPoint())
         elif kind == QEvent.Type.MouseButtonDblClick and watched is self.window.view.viewport():
             if (event.button() == Qt.MouseButton.LeftButton and not self.window.view.pen.enabled
@@ -234,7 +236,7 @@ class FullscreenReader(QObject):
                 self.exit()
                 return True
         elif kind == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
-            if (isinstance(watched, QWidget) and watched.window() is self.window
+            if (isinstance(watched, QWidget) and watched.window() is self.window.window()
                     and not QApplication.activePopupWidget() and not QApplication.activeModalWidget()):
                 self.window.view.pen.cancel()
                 self.exit()
@@ -263,9 +265,10 @@ class FullscreenReader(QObject):
         for widget, visible in self.chrome:
             widget.setVisible(visible)
         window.setMinimumSize(self.minimum_size)
-        window.restoreGeometry(self.normal_geometry)
+        top = window.window()
+        top.restoreGeometry(self.normal_geometry)
         if not self.was_maximized:
-            window.setGeometry(self.normal_rect)
+            top.setGeometry(self.normal_rect)
         view.setHorizontalScrollBarPolicy(self.scrollbars[0])
         view.setVerticalScrollBarPolicy(self.scrollbars[1])
         view.setBackgroundBrush(self.background)

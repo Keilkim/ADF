@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt, QLineF, QRectF, QPointF, QPoint, QSize, QSizeF, Q
 from PySide6.QtGui import QColor, QDrag, QFont, QPalette, QPainter, QPixmap, QImage, QPen, QBrush, QCursor, QTransform, QTextCursor, QTextCharFormat, QTextBlockFormat, QInputDevice
 from PySide6.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsItem,
     QGraphicsObject, QGraphicsPixmapItem, QGraphicsProxyWidget, QListWidget, QListWidgetItem, QAbstractItemView, QToolButton, QApplication,
-    QStyledItemDelegate, QStyleOptionViewItem, QStyle)
+    QStyledItemDelegate, QStyleOptionViewItem, QStyle, QMainWindow)
 
 from . import pinch
 from .theme import ACCENT, ACCENT_TEXT, ACCENT_SOFT, ACCENT_SELECTED, WORKSPACE
@@ -1784,7 +1784,11 @@ class PdfView(QGraphicsView):
         self.text_preview_pixmaps.clear()
         if self.text_placement:
             try:
-                self.text_placement.detach_editor(self.window())
+                # The editor belongs to the document's MainWindow, which may move between windows.
+                owner = self.parentWidget()
+                while owner is not None and not isinstance(owner, QMainWindow):
+                    owner = owner.parentWidget()
+                self.text_placement.detach_editor(owner or self.window())
                 self.scene().removeItem(self.text_placement)
                 self.text_placement.deleteLater()
             except RuntimeError:

@@ -53,7 +53,7 @@ class Notice(QLabel):
         self.adjustSize()
         bottom = window.height() - 18
         anchor = self.anchor
-        if anchor is not None and anchor.isVisible() and anchor.window() is window:
+        if anchor is not None and anchor.isVisible() and window.isAncestorOf(anchor):
             bottom = min(bottom, anchor.mapTo(window, anchor.rect().topLeft()).y() - 10)
         self.move((window.width() - self.width()) // 2, max(0, bottom - self.height()))
 
