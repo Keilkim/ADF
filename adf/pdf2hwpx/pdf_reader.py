@@ -748,11 +748,18 @@ class PdfFormatting:
                 (following['origin'][0] - char['origin'][0]) / size / scale for char, following in pairs)
         result = {}
         for font, ratios in spaces.items():
-            own = next((width for width in (glyph_width(name, ' ', 1) for name in (font, font_name(font))) if width), None)
+            # The space of the font Hancom draws with (a substitute too).
+            drawn = self.substitutes.get(font) or font_name(font)
+            own = next((width for width in (glyph_width(name, ' ', 1) for name in (drawn, font)) if width), None)
             if own is not None and own < .45:
                 # Unjustified spaces sit exactly at the font's width;
                 # Hancom's condensed spaces spread between it and half an em.
-                result[font] = sum(abs(ratio - own) <= .02 for ratio in ratios) >= 3
+                exact = sum(abs(ratio - own) <= .02 for ratio in ratios) >= 3
+                # Justification only widens spaces: the narrowest tenth is
+                # the natural space. Near the font's own width (a typeset
+                # paper) Hancom's half em would lengthen every line.
+                natural = sorted(ratios)[len(ratios) // 10]
+                result[font] = exact or (len(ratios) >= 10 and natural <= own + .3 * (.5 - own))
             else:
                 result[font] = min(ratios) < .42
         return result
