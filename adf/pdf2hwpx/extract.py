@@ -285,12 +285,20 @@ def native_page(page, split=True):
             # text spans use unrotated coordinates. Normalize before finding
             # tables and copy all data before restoring the displayed page.
             page.set_rotation(0)
-            finder = page.find_tables(add_lines=_open_sides(formatting) or None)
-            tables = [(tuple(table.bbox), table.extract(), table.col_count,
-                       [list(row.cells) for row in table.rows], list(table.cells)) for table in finder.tables]
+            extra = _open_sides(formatting)
+            read = lambda finder: [(tuple(table.bbox), table.extract(), table.col_count,
+                                    [list(row.cells) for row in table.rows], list(table.cells))
+                                   for table in finder.tables]
+            tables = read(page.find_tables(add_lines=extra or None))
+            # Lines added for open tables also cut through boxes drawn inside
+            # cells (a dotted note); the plain grid is the fallback for a
+            # table whose cells then cannot be rebuilt.
+            plain = read(page.find_tables()) if extra else []
         finally:
             page.set_rotation(rotation)
-        for table_bbox, grid, cols, table_rows, table_cells in tables:
+        queue = [(table, True) for table in tables]
+        while queue:
+            (table_bbox, grid, cols, table_rows, table_cells), first_try = queue.pop(0)
             if not grid:
                 continue
             rows = len(grid)
@@ -338,6 +346,12 @@ def native_page(page, split=True):
             try:
                 validate_page(dict(blocks=[block], warnings=[]))
             except ConversionError:
+                same = [table for table in plain if first_try and pymupdf.Rect(table[0]).intersects(pymupdf.Rect(table_bbox))
+                        and (pymupdf.Rect(table[0]) & pymupdf.Rect(table_bbox)).get_area()
+                        > .8 * pymupdf.Rect(table_bbox).get_area()]
+                if same:
+                    queue.insert(0, (same[0], False))
+                    continue
                 warnings.append('병합 셀을 정확히 복원하지 못한 표는 문단으로 추출했습니다.')
                 continue
             blocks.append(block)
