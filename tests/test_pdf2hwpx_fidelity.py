@@ -207,3 +207,19 @@ def test_hancom_break_width_lets_spaces_shrink_five_percent():
     # 2.25 pt, so a line 2 pt over its room stays one line.
     runs = [dict(text=' '.join(['가나다'] * 10), font='맑은 고딕', font_size_pt=10)]
     assert line_width(runs) - break_width(runs) == pytest.approx(45 * .05, abs=.01)
+
+
+def test_rule_under_words_becomes_an_underline_but_a_cell_border_does_not():
+    with pymupdf.open() as pdf:
+        page = pdf.new_page()
+        page.insert_text((72, 100), 'Plain words then underlined words here.', fontsize=12)
+        start = page.search_for('underlined words')[0]
+        page.draw_line((start.x0, 101.5), (start.x1, 101.5), width=.6)
+        # Text resting on the bottom border of a ruled box is not underlined.
+        page.draw_rect((70, 140, 300, 162), width=.6)
+        page.insert_text((72, 160), 'Cell text on its border', fontsize=12)
+        blocks = native_page(page)['blocks']
+    runs = [run for block in blocks for run in block.get('runs', []) +
+            [r for cell in block.get('cells', []) for p in cell.get('paragraphs', [cell]) for r in p.get('runs', [])]]
+    underlined = ''.join(run['text'] for run in runs if run.get('underline'))
+    assert 'underlined words' in underlined and 'Plain' not in underlined and 'Cell' not in underlined

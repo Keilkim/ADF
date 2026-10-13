@@ -919,6 +919,32 @@ class PdfFormatting:
                 and not any(fill.intersects(inner) and (fill & rect).get_area() < .9 * rect.get_area()
                             for fill, _ in self.fills))
 
+    def _underlines(self, line, baseline, size):
+        """Rules just under a line's baseline (an underline), as (x0, x1, colour).
+
+        A rule drawn as a stroke or as a thin filled box counts; a side of
+        a box (a cell border meeting vertical sides) or a rule much longer
+        than the line does not.
+        """
+        box = pymupdf.Rect(line['bbox'])
+        low, high = baseline + .02 * size, baseline + .3 * size
+        found = []
+        for direction, position, start, end, style in self.edges:
+            if direction == 'h' and low <= position <= high and style.get('width_pt', 1) <= 1.5:
+                found.append((start, end, position, style.get('color', '#000000')))
+        for fill, colour in getattr(self, 'fills', []):
+            if fill.height <= 1.2 and low <= (fill.y0 + fill.y1) / 2 <= high:
+                found.append((fill.x0, fill.x1, (fill.y0 + fill.y1) / 2, colour))
+        result = []
+        for start, end, position, colour in found:
+            if end <= box.x0 or start >= box.x1 or end - start > box.width + 2 * size:
+                continue
+            boxed = any(edge[0] == 'v' and edge[2] <= position + 1 and edge[3] >= position - 1
+                        and min(abs(edge[1] - start), abs(edge[1] - end)) <= 1.5 for edge in self.edges)
+            if not boxed:
+                result.append((start, end, colour))
+        return result
+
     def _highlights(self, line):
         """Fills behind some words of a line (a highlighter), with colours.
 
@@ -947,6 +973,8 @@ class PdfFormatting:
                 key = round(span['origin'][1], 1)
                 weights[key] = weights.get(key, 0) + len(span['chars']) * span['size']
             main_baseline = max(weights, key=weights.get) if weights else None
+            rules = self._underlines(line, main_baseline, max(span['size'] for span in line['spans'])) \
+                if main_baseline is not None and line['spans'] else []
             for span in line['spans']:
                 # Characters the writer drops (control codes from broken
                 # encodings) must not widen the line's box either.
@@ -1017,14 +1045,18 @@ class PdfFormatting:
                     spacing = by_kind.get(_kind(char['c']), style.get('letter_spacing')) if not text.isspace() else None
                     centre = pymupdf.Point((char['bbox'][0] + char['bbox'][2]) / 2, (char['bbox'][1] + char['bbox'][3]) / 2)
                     shade = next((colour for mark, colour in marks if mark.contains(centre)), None)
+                    # Spaces between underlined words are underlined too.
+                    under = next((colour for start, end, colour in rules if start - 1 <= centre.x <= end + 1), None)
                     if (runs and runs[-1]['span'] is span and (bold is None or runs[-1]['bold'] == bold)
                             and (spacing is None or runs[-1].get('letter_spacing') == spacing)
-                            and runs[-1].get('highlight') == shade):
+                            and runs[-1].get('highlight') == shade and runs[-1].get('underline') == under):
                         runs[-1]['text'] += text
                     else:
                         run = dict(style, text=text, span=span, bold=bool(bold))
                         if shade:
                             run['highlight'] = shade
+                        if under:
+                            run['underline'] = under
                         if spacing is not None:
                             run['letter_spacing'] = spacing
                         if not run.get('letter_spacing'):

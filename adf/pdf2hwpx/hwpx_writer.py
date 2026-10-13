@@ -24,6 +24,7 @@ def add_runs(doc, paragraph, block, spacing_before_pt=0):
         style = doc.styles.ensure_run(font=run.get('font', block.get('font', '맑은 고딕')),
             size=run.get('font_size_pt', block['font_size_pt']), bold=run.get('bold', block.get('bold', False)),
             italic=run.get('italic', block.get('italic', False)), color=run.get('color', block.get('color', '#000000')),
+            underline=bool(run.get('underline')), underline_color=run.get('underline') or None,
             # Spacing belongs to each run; None would let python-hwpx reuse
             # a style with any spacing.
             letter_spacing=run.get('letter_spacing') or 0)

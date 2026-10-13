@@ -19,7 +19,7 @@ def validate_format(value):
         raise ConversionError('글꼴 이름을 확인해 주세요.')
     if value.get('alignment', 'LEFT') not in {'LEFT', 'CENTER', 'RIGHT', 'JUSTIFY'}:
         raise ConversionError('정렬 서식을 확인해 주세요.')
-    for key in ('color', 'fill_color', 'highlight'):
+    for key in ('color', 'fill_color', 'highlight', 'underline'):
         if key in value and not (key == 'fill_color' and value[key] is None) and (not isinstance(value[key], str) or
                                                        not re.fullmatch(r'#[0-9a-fA-F]{6}', value[key])):
             raise ConversionError('문서 색상 서식을 확인해 주세요.')
