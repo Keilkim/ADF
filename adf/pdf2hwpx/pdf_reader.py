@@ -196,9 +196,14 @@ def _continues(group, row, region):
     word = text.split(' ')[0] if text else ''
     advance = row['box'].width / max(1, len(text))
     wrapped = last['box'].x1 + .5 * size + len(word) * advance > region.x1
-    return ((last['box'].x1 >= region.x1 - max(1.2 * size, 3) or wrapped)
+    # Lines ending together short of the page edge are justified text in a
+    # narrower column (an abstract in a box).
+    close = max(1.5, .15 * size)
+    together = abs(last['box'].x1 - row['box'].x1) <= close and len(text) > 10 and (
+        len(group) == 1 or abs(group[-2]['box'].x1 - last['box'].x1) <= close)
+    return ((last['box'].x1 >= region.x1 - max(1.2 * size, 3) or wrapped or together)
             and abs(_body_size(row) - size) <= .6 and .8 * size <= pitch <= limit
-            and row['box'].x0 - region.x0 <= 4 * size
+            and (row['box'].x0 - region.x0 <= 4 * size or together)
             and (len(group) == 1 or abs(row['box'].x0 - group[1]['box'].x0) <= .6 * size)
             and _same_left_edge(group[0], row, size)
             and not LIST_MARKER.match(_row_text(row)))
@@ -217,6 +222,11 @@ def _same_left_edge(first, row, size):
 
 
 def _paragraph(group, region):
+    # Justified lines ending together short of the page edge set the
+    # paragraph's own right edge (a column or a box).
+    ends = [row['box'].x1 for row in group[:-1]]
+    if ends and max(ends) - min(ends) <= max(1.5, .15 * group[0]['size']) and max(ends) < region.x1 - 3:
+        region = pymupdf.Rect(region.x0, region.y0, max(ends), region.y1)
     runs, inside_word = [], False
     # Producers that drop the space at a line end drop it on every line;
     # Hancom keeps it, and its lines without one wrapped inside a word.
@@ -1212,6 +1222,10 @@ class PdfFormatting:
                 paragraph.setdefault('line_spacing_percent', round(median(measured)) if measured else 100)
                 if paragraph.get('indent_left_pt'):
                     paragraph['indent_left_pt'] = max(0., paragraph['indent_left_pt'] - left)
+                # Lines that end together short of the cell's edge keep that
+                # edge (the room their line breaks were matched to).
+                if paragraph.get('right_pt') is not None:
+                    paragraph['indent_right_pt'] = max(0., rect.x1 - right - paragraph['right_pt'])
             fit_cell(result, aligned, rect.height)
             inner = rect.width - result['margins_pt']['left'] - result['margins_pt']['right'] - .5
             for paragraph in aligned:

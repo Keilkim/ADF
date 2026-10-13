@@ -230,3 +230,17 @@ def test_rule_under_words_becomes_an_underline_but_a_cell_border_does_not():
             [r for cell in block.get('cells', []) for p in cell.get('paragraphs', [cell]) for r in p.get('runs', [])]]
     underlined = ''.join(run['text'] for run in runs if run.get('underline'))
     assert 'underlined words' in underlined and 'Plain' not in underlined and 'Cell' not in underlined
+
+
+def test_justified_lines_in_a_narrower_box_stay_one_paragraph():
+    text = ('Recent large language models have demonstrated strong capabilities in understanding and '
+            'generating code, from competitive programming to repository level software engineering. ') * 3
+    with pymupdf.open() as pdf:
+        page = pdf.new_page()
+        page.insert_text((20, 400), 'margin note far to the left', fontsize=8)  # widens the page's text area
+        page.insert_text((72, 80), 'Body text reaching the full width of the page column to set its right edge.',
+                         fontsize=11)
+        page.insert_textbox(pymupdf.Rect(90, 120, 450, 300), text, fontsize=10, align=pymupdf.TEXT_ALIGN_JUSTIFY)
+        blocks = [block for block in native_page(page)['blocks'] if 'Recent large' in block.get('text', '')]
+    assert len(blocks) == 1 and blocks[0]['line_count'] > 3 and blocks[0]['alignment'] == 'JUSTIFY'
+    assert blocks[0]['right_pt'] < 452
