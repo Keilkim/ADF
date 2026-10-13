@@ -501,7 +501,8 @@ def native_page(page, split=True):
     for info, image in zip(image_infos, images):
         if _place_in_cell(info, image, tables, page):
             continue
-        if not any(image in box for box in figure_boxes):
+        # Mostly inside a figure, the image is part of its picture.
+        if not any((image & box).get_area() > .9 * image.get_area() for box in figure_boxes):
             bbox = _bbox(image, page)
             if bbox[0] < bbox[2] and bbox[1] < bbox[3]:
                 block = dict(kind='image', bbox=bbox, text='', font_size_pt=10,
