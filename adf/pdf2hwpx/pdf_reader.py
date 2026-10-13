@@ -273,6 +273,15 @@ def _paragraph(group, region):
     if inside_word:
         # The source wrapped Korean text between syllables of one word.
         result['wraps_inside_words'] = True
+    if len(group) == 1 and len(group[0].get('parts', [])) > 1:
+        result['parts'] = []
+        for box, runs in group[0]['parts']:
+            runs = [dict(run, text=run['text']) for run in runs if run['text']]
+            if runs:
+                runs[-1]['text'] = runs[-1]['text'].rstrip()
+                runs[0]['text'] = runs[0]['text'].lstrip()
+                result['parts'].append(dict(box_pt=[box.x0, box.y0, box.x1, box.y1],
+                                            runs=[run for run in runs if run['text']]))
     tabbed = _tab_leader(result, group)
     first = group[0]['box'].x0
     left, right = first - region.x0, region.x1 - max(row['box'].x1 for row in group)
@@ -650,6 +659,11 @@ def join_rows(row, piece):
     Columns of one visual line (date fields, a title and a name in one
     cell) are separate PDF lines; line breaks would stack them.
     """
+    # Each piece keeps its own place and text: a designed page sets pieces
+    # apart in their own text boxes instead of spaces between them.
+    if 'parts' not in row:
+        row['parts'] = [(pymupdf.Rect(row['box']), [dict(run) for run in row['runs']])]
+    row['parts'].append((pymupdf.Rect(piece['box']), [dict(run) for run in piece['runs']]))
     gap = piece['box'].x0 - row['box'].x1
     carrier = row['runs'][-1]
     previous = carrier['text']

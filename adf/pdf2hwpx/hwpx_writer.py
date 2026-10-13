@@ -364,6 +364,23 @@ def _free_page(doc, page, section, blocks, boxes, area):
                                                     vertAlign='TOP', horzOffset=0, vertOffset=0))
     _picture_source_size(picture.element, pixmap.width, pixmap.height)
     for block, box in zip(blocks, boxes):
+        if block['kind'] == 'paragraph' and block.get('parts'):
+            # Pieces of one visual line (names in a grid, a label and its
+            # value) each keep their place; spaces would round their gaps.
+            for part in block['parts']:
+                if not part['runs']:
+                    continue
+                piece = pymupdf.Rect(part['box_pt'])
+                rect = pymupdf.Rect(piece.x0 - 2, box.y0, piece.x0 - 2 + piece.width * 1.04 + 4,
+                                    box.y0 + max(box.height, paragraph_height(block)))
+                layout = {key: value for key, value in block.items()
+                          if key not in ('parts', 'left_pt', 'right_pt', 'tab_stop_pt', 'tab_leader', 'first_line_indent_pt')}
+                layout.update(runs=[dict(run) for run in part['runs']], alignment='LEFT', indent_left_pt=2,
+                              text=''.join(run['text'] for run in part['runs']))
+                fit_line(layout, rect.width - 2)
+                _text_box(doc, anchor, rect, [layout], {})
+            counts['paragraphs'] += 1
+            continue
         if block['kind'] == 'paragraph':
             # Justified lines stretch to the box edge: their box keeps the
             # PDF width (the break matching keeps their words on the line).

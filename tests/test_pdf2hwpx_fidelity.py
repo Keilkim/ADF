@@ -244,3 +244,15 @@ def test_justified_lines_in_a_narrower_box_stay_one_paragraph():
         blocks = [block for block in native_page(page)['blocks'] if 'Recent large' in block.get('text', '')]
     assert len(blocks) == 1 and blocks[0]['line_count'] > 3 and blocks[0]['alignment'] == 'JUSTIFY'
     assert blocks[0]['right_pt'] < 452
+
+
+def test_pieces_of_one_line_keep_their_own_places_for_designed_pages():
+    with pymupdf.open() as pdf:
+        page = pdf.new_page()
+        for x, name in ((80, 'Xuying Ning'), (210, 'Katherine Tieu'), (360, 'Dongqi Fu')):
+            page.insert_text((x, 100), name, fontsize=11)
+        paragraph = next(block for block in native_page(page)['blocks'] if 'Katherine' in block.get('text', ''))
+    starts = [round(part['box_pt'][0]) for part in paragraph['parts']]
+    assert starts == [80, 210, 360]
+    assert [''.join(run['text'] for run in part['runs']) for part in paragraph['parts']] == \
+        ['Xuying Ning', 'Katherine Tieu', 'Dongqi Fu']
