@@ -5,6 +5,7 @@ import json
 import pymupdf
 
 from .pdf_reader import clean_text, fit_line
+from .captions import detach_captions
 from .schema import sanitize_cells
 
 
@@ -548,12 +549,15 @@ def _write_flow(doc, page, section, flow, area, available_height, border_cache, 
             continue
         # Tables and pictures sit in their own paragraph; place it with the
         # source offset instead of the default left edge.
-        placement = dict(alignment='LEFT', line_spacing_percent=100, indent_left_pt=max(0, band.x0 - area.x0))
-        if len(item) == 1 and abs((box.x0 - area.x0) - (area.x1 - box.x1)) < 3:
+        # The table or picture itself; a caption attached to it lies outside.
+        solid = _object_box(block, box, page)
+        placement = dict(alignment='LEFT', line_spacing_percent=100,
+                         indent_left_pt=max(0, (solid.x0 if len(item) == 1 else band.x0) - area.x0))
+        if len(item) == 1 and abs((solid.x0 - area.x0) - (area.x1 - solid.x1)) < 3:
             placement = dict(alignment='CENTER', line_spacing_percent=100)
         if block['kind'] == 'table':
-            table_width = min(available_width, max(100, round(box.width * 100)))
-            table_height = max(100, round(box.height * 100))
+            table_width = min(available_width, max(100, round(solid.width * 100)))
+            table_height = max(100, round(solid.height * 100))
             if block.get('row_heights_pt') and len(block['row_heights_pt']) != block['rows']:
                 block = dict(block, row_heights_pt=None)  # a grid read wrong; Hancom sizes the rows
             if block.get('row_heights_pt'):
@@ -561,17 +565,19 @@ def _write_flow(doc, page, section, flow, area, available_height, border_cache, 
             host = section.paragraphs[0] if state['first'] else doc.add_paragraph(section=section, include_run=False, inherit_style=False)
             state['first'] = False
             try:
-                _write_table(doc, host, block, table_width, table_height, border_cache, page)
+                table = _write_table(doc, host, block, table_width, table_height, border_cache, page)
                 counts['tables'] += 1
+                if block.get('caption'):
+                    _add_caption(doc, table, block, solid, page)
             except (ValueError, IndexError, KeyError):
                 # A grid Hancom cannot hold goes in as a picture of the table
                 # rather than stopping the document.
                 for run in list(host.element):
                     if any(child.tag.endswith('}tbl') for child in run.iter()):
                         host.element.remove(run)
-                clip = box & page.rect
+                clip = solid & page.rect
                 if not clip.is_empty:
-                    _add_picture(doc, page, host, dict(block, kind='image', xref=None), clip, table_width,
+                    _add_picture(doc, page, host, dict(block, kind='image', xref=None, caption=None), clip, table_width,
                                  max(100, round(table_width * clip.height / clip.width)))
                     counts['figures'] += 1
         else:
@@ -579,13 +585,15 @@ def _write_flow(doc, page, section, flow, area, available_height, border_cache, 
             state['first'] = False
             right = band.x0
             for member, box in sorted(item, key=lambda member: member[1].x0):
-                clip = box & page.rect
+                clip = _object_box(member, box, page) & page.rect
                 image_width = min(available_width, max(100, round(clip.width * 100)))
                 image_height = max(100, round(image_width * clip.height / clip.width))
                 if image_height > available_height:
                     image_width = max(100, round(image_width * available_height / image_height))
                     image_height = available_height
                 picture = _add_picture(doc, page, host, member, clip, image_width, image_height)
+                if member.get('caption'):
+                    _add_caption(doc, picture, member, clip, page)
                 # The gap to the previous picture of the row is its margin.
                 margin = next((child for child in picture.element if child.tag.endswith('}outMargin')), None)
                 if margin is not None and clip.x0 > right:
@@ -596,6 +604,45 @@ def _write_flow(doc, page, section, flow, area, available_height, border_cache, 
         if column_break:
             host.element.set('columnBreak', '1')
             column_break = False
+
+
+def _object_box(block, box, page):
+    """The rectangle of a table or picture without the caption attached to it."""
+    caption = block.get('caption')
+    if not caption:
+        return box
+    x0, y0, x1, y1 = caption['object']['bbox']
+    return pymupdf.Rect(x0 * page.rect.width / 1000, y0 * page.rect.height / 1000,
+                        x1 * page.rect.width / 1000, y1 * page.rect.height / 1000)
+
+
+def _add_caption(doc, host, block, solid, page):
+    """Give a table or picture its caption as a real Hancom caption.
+
+    The caption sits on the object's top or bottom edge as in the PDF; the
+    gap makes the object (caption, gap, object) as tall as the source's.
+    """
+    caption = block['caption']
+    layout = dict(caption['paragraph'])
+    top = layout['bbox'][1] * page.rect.height / 1000
+    left = layout.get('left_pt', layout['bbox'][0] * page.rect.width / 1000)
+    if caption['side'] == 'TOP':
+        # Measured in Hancom: a caption's height has no line spacing under
+        # its last line, (lines - 1) pitches and one character height.
+        size = layout.get('line_size_pt', layout['font_size_pt'])
+        height = (layout.get('line_count', 1) - 1) * size * layout.get('line_spacing_percent', 160) / 100 + size
+        gap = max(0, solid.y0 - top - height)
+    else:
+        gap = max(0, top - solid.y1)
+    layout['line_spacing_percent'] = layout.get('line_spacing_percent', 160)
+    for key in ('right_pt', 'tab_stop_pt', 'tab_leader', 'first_line_indent_pt', 'indent_right_pt'):
+        layout.pop(key, None)
+    layout['indent_left_pt'] = max(0, left - solid.x0) if layout.get('alignment', 'LEFT') in ('LEFT', 'JUSTIFY') else 0
+    if layout.get('line_count', 1) == 1 and layout.get('runs') and '\t' not in layout.get('text', ''):
+        layout['runs'] = [dict(run) for run in layout['runs']]
+        fit_line(layout, solid.width - layout['indent_left_pt'], margin=.995, limit=1)
+    shown = host.set_caption('', side=caption['side'], gap=round(gap * 100))
+    add_runs(doc, shown.paragraphs[0], layout, 0)
 
 
 def _write_table(doc, host, block, width, height, border_cache, page):
@@ -692,8 +739,9 @@ def write_page(doc, page, structured, index):
     if structured.get('free_layout') or any(flow['end'] > bottom for flow in flows):
         # Side-by-side blocks that a flow cannot hold (a designed page):
         # every block keeps its place on the paper instead.
-        counts = _free_page(doc, page, section, blocks + figure_text, boxes + [box_of(block) for block in figure_text],
-                            area)
+        free_blocks = detach_captions(blocks)  # captions are text boxes at their own place here
+        counts = _free_page(doc, page, section, free_blocks + figure_text,
+                            [box_of(block) for block in free_blocks] + [box_of(block) for block in figure_text], area)
         # The artwork lost all text; text that could only be kept as a
         # picture goes back on top of it.
         flows, behind = [], [block for block in behind if block.get('text_image')]

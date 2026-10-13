@@ -175,7 +175,9 @@ def compare(pdf, rendered, folder):
         width, height = page.rect.width, page.rect.height
         pictures = [pymupdf.Rect(b['bbox'][0] * width / 1000 - 1, b['bbox'][1] * height / 1000 - 1,
                                  b['bbox'][2] * width / 1000 + 1, b['bbox'][3] * height / 1000 + 1)
-                    for b in native_page(page)['blocks'] if b['kind'] == 'image' and not b.get('placement')]
+                    for b in (dict(b, bbox=b['caption']['object']['bbox']) if b.get('caption') else b
+                              for b in native_page(page)['blocks'])
+                    if b['kind'] == 'image' and not b.get('placement')]
         path = rendered.get(index)
         target = Image.open(path).convert('RGB') if path else Image.new('RGB', source.size, 'white')
         canvas = Image.new('RGB', (source.width + target.width + 10, max(source.height, target.height)), (120,) * 3)

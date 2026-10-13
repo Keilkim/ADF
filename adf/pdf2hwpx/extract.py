@@ -3,6 +3,7 @@ from statistics import median
 
 import pymupdf
 
+from .captions import attach_captions
 from .columns import split_columns
 from .pdf_reader import PdfFormatting, clean_text as _text, paragraphs_from_rows
 from .schema import ConversionError, sanitize_cells as _sanitize_cells, validate_page
@@ -600,6 +601,7 @@ def native_page(page, split=True):
     for block in blocks:
         for cell in block.get('cells', []):
             cell.pop('_rect', None)
+    attach_captions(blocks, page.rect.width, page.rect.height)
     blocks.sort(key=lambda b: (b['bbox'][1], b['bbox'][0]))
     if page.rotation:
         warnings.append('회전한 페이지의 글자는 가로 문단으로 복원했습니다. 원본의 글자 방향과 대조하세요.')

@@ -110,6 +110,8 @@ def validate_page(value, max_blocks=1000):
         if block.get('alignment', 'LEFT') not in {'LEFT', 'CENTER', 'RIGHT', 'JUSTIFY'}:
             raise ConversionError('문단의 정렬 방식이 올바르지 않습니다.')
         validate_format(block)
+        if 'caption' in block:
+            _validate_caption(block)
         if block['kind'] != 'table':
             continue
         rows, cols = block.get('rows'), block.get('cols')
@@ -166,3 +168,18 @@ def sanitize_cells(cells, rows, cols, fill=False):
             if (row, col) not in taken:
                 kept.append(dict(row=row, col=col, row_span=1, col_span=1, text='', borders=[]))
     return sorted(kept, key=lambda cell: (cell['row'], cell['col']))
+
+
+def _validate_caption(block):
+    """A table or picture's caption: side, gap, the paragraph and the object's own box."""
+    caption = block['caption']
+    box = caption.get('object', {}).get('bbox') if isinstance(caption, dict) else None
+    gap = caption.get('gap_pt') if isinstance(caption, dict) else None
+    if (block['kind'] not in ('table', 'image') or not isinstance(caption, dict) or caption.get('side') not in ('TOP', 'BOTTOM')
+            or type(gap) not in (int, float) or not math.isfinite(gap) or not 0 <= gap <= 2000
+            or not isinstance(box, list) or len(box) != 4
+            or any(type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1000 for v in box)
+            or box[0] >= box[2] or box[1] >= box[3]
+            or not isinstance(caption.get('paragraph'), dict) or caption['paragraph'].get('kind') != 'paragraph'):
+        raise ConversionError('표·그림 캡션 정보가 올바르지 않습니다.')
+    validate_page(dict(blocks=[caption['paragraph']], warnings=[]))
