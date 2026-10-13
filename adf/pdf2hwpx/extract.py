@@ -395,6 +395,12 @@ def native_page(page, split=True):
                                alignment='LEFT', rows=0, cols=0, cells=[], placement='BEHIND_TEXT',
                                text_image=True, frame=style))
     figure_boxes, designed = [], False
+    # The page's body text size: the size most characters have.
+    weights = {}
+    for line in formatting.lines:
+        for span in line['spans']:
+            weights[round(span['size'], 1)] = weights.get(round(span['size'], 1), 0) + len(span['chars'])
+    body_size = max(weights, key=weights.get) if weights else 10
     image_infos = page.get_image_info(xrefs=True)
     images = [pymupdf.Rect(image['bbox']) for image in image_infos]
     inside = lambda rect: [line for line in formatting.lines if pymupdf.Rect(line['bbox']).intersects(rect) and
@@ -464,8 +470,13 @@ def native_page(page, split=True):
             # Charts keep their few short labels and stay pictures.
             lines = inside(rect)
             text_area = sum(pymupdf.Rect(line['bbox']).get_area() for line in lines)
+            # A diagram's labels are smaller than the body text and short;
+            # with them it stays one picture, as a figure in a paper.
+            sizes = [max(span['size'] for span in line['spans']) for line in lines if line['spans']]
+            labelled = (len(lines) >= 6 and median(sizes) <= .85 * body_size
+                        and median(pymupdf.Rect(line['bbox']).width for line in lines) <= .35 * rect.width)
             if (any((rect & table).get_area() > .5 * table.get_area() for table in table_boxes)
-                    or (len(lines) >= 6 and text_area > .1 * rect.get_area())):
+                    or (len(lines) >= 6 and text_area > .1 * rect.get_area() and not labelled)):
                 # Its outline (a dotted page frame) is drawn behind the text.
                 style = formatting.frame_style(rect) if formatting.is_frame(rect, contents=True) else None
                 if style:
