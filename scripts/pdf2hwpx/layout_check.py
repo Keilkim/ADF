@@ -155,8 +155,15 @@ def compare(pdf, rendered, folder):
         canvas.paste(source, (0, 0))
         canvas.paste(target, (source.width + 10, 0))
         canvas.save(folder / f'compare-{index + 1}.png')
-        ink_source = without_rules(np.asarray(source.convert('L')) < 160)
-        ink_target = without_rules(np.asarray(target.convert('L').resize(source.size)) < 160)
+        raw_source = np.asarray(source.convert('L')) < 160
+        raw_target = np.asarray(target.convert('L').resize(source.size)) < 160
+        ink_source, ink_target = without_rules(raw_source), without_rules(raw_target)
+        # A rule found on one side (a solid frame) may be dots on the other
+        # (a fine dotted frame); remove it from both, widened a pixel.
+        rules = (raw_source & ~ink_source) | (raw_target & ~ink_target)
+        rules |= np.roll(rules, 1, 0) | np.roll(rules, -1, 0) | np.roll(rules, 1, 1) | np.roll(rules, -1, 1)
+        ink_source &= ~rules
+        ink_target &= ~rules
         placed = moved = lost = 0
         for box, text in text_lines(page, with_text=True):
             found = locate(ink_source, ink_target, box)

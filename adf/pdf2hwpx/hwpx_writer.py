@@ -176,6 +176,8 @@ def cell_border_fill(doc, cell, cache):
     borders = {border['side']: border for border in cell.get('borders', [])}
     for side in ('left', 'right', 'top', 'bottom'):
         border = borders.get(side, dict(type='NONE', width_pt=0, color='#000000'))
+        if border.get('hairline'):
+            border = dict(border, type='SOLID', color=border['hairline'])
         edge = element.find(HH + side + 'Border')
         mm = float(border['width_pt']) * 25.4 / 72
         nearest = min(LINE_WIDTHS, key=lambda value: abs(value - mm))
@@ -401,6 +403,8 @@ def _add_frame(anchor, rect, style):
     shape = anchor.add_rectangle(max(100, round(rect.width * 100)), max(100, round(rect.height * 100)),
                                  treat_as_char=False)
     line = next((child for child in shape.element.iter() if child.tag.endswith('}lineShape')), None)
+    if style.get('hairline'):
+        style = dict(style, type='SOLID', color=style['hairline'])
     if line is not None:
         line.set('style', {'NONE': 'SOLID'}.get(style.get('type'), style.get('type', 'SOLID')))
         line.set('color', style.get('color', '#000000'))

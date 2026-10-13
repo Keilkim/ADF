@@ -475,17 +475,28 @@ def _join_dots(edges):
         groups.setdefault((edge[0], round(edge[1], 1)), []).append(edge)
     for (axis, position), group in groups.items():
         group.sort(key=lambda edge: edge[2])
-        start, end, count = group[0][2], group[0][3], 1
+        start, end, count, ink = group[0][2], group[0][3], 1, group[0][3] - group[0][2]
         for edge in group[1:] + [None]:
             if edge is not None and edge[2] - end <= 4:
-                end, count = max(end, edge[3]), count + 1
+                end, count, ink = max(end, edge[3]), count + 1, ink + edge[3] - edge[2]
                 continue
             if count >= 5 and end - start >= 20:
-                joined.append((axis, position, start, end, dict(group[0][4], type='DOT')))
+                style = dict(group[0][4], type='DOT')
+                if (end - start) / count < 1.2:
+                    # Dots finer than Hancom's dotted pattern read as a pale
+                    # hairline; Hancom's dots would look like dashes. It
+                    # stays a dotted line for finding tables and frames;
+                    # the writer draws the hairline.
+                    share = min(1., ink / (end - start))
+                    base = style.get('color', '#000000')
+                    channels = [int(base[i:i + 2], 16) for i in (1, 3, 5)]
+                    style = dict(style, hairline='#' + ''.join(f'{round(255 - (255 - c) * share):02X}'
+                                                                for c in channels))
+                joined.append((axis, position, start, end, style))
             else:
                 joined.extend(item for item in group if start <= item[2] and item[3] <= end)
             if edge is not None:
-                start, end, count = edge[2], edge[3], 1
+                start, end, count, ink = edge[2], edge[3], 1, edge[3] - edge[2]
     return joined
 
 
