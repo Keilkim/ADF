@@ -8,6 +8,7 @@ from .pdf_reader import clean_text, fit_line
 
 
 HP = '{http://www.hancom.co.kr/hwpml/2011/paragraph}'
+FULL_WIDTH_SPACE = '󰀀'  # stands in for U+3000 while python-hwpx writes a run
 
 
 HH = '{http://www.hancom.co.kr/hwpml/2011/head}'
@@ -40,10 +41,20 @@ def add_runs(doc, paragraph, block, spacing_before_pt=0):
             # Use the font's own space width instead of Hancom's half em.
             style = style_variant(doc, 'charPr', style, lambda shape: shape.set('useFontSpace', '1'))
         # python-hwpx drops tab characters; they go in as hp:tab elements.
-        first, *rest = clean_text(run['text']).split('	')
+        # It also writes U+3000 as hp:fwSpace, which Hancom draws a quarter
+        # em wide (measured); the character itself is a full em, as the
+        # PDF's room for it.
+        text = clean_text(run['text']).replace('　', FULL_WIDTH_SPACE)
+        first, *rest = text.split('	')
         added = paragraph.add_run(first, char_pr_id_ref=style, expand_special_characters=True)
         if rest:
             _append_tabs(added.element, rest)
+        if FULL_WIDTH_SPACE in text:
+            for element in added.element.iter():
+                for attribute in ('text', 'tail'):
+                    value = getattr(element, attribute)
+                    if value and FULL_WIDTH_SPACE in value:
+                        setattr(element, attribute, value.replace(FULL_WIDTH_SPACE, '　'))
     paragraph_format(doc, paragraph, block, spacing_before_pt)
     if block.get('tab_stop_pt'):
         _right_tab(doc, paragraph, block)

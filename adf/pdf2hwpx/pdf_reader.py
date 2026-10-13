@@ -8,7 +8,7 @@ import pymupdf
 
 from ..text_groups import restore_text_spacing
 from .appearance import PageLook, far, hex_colour
-from .font_metrics import glyph_width, installed, registered_family
+from .font_metrics import glyph_width, hancom_family, installed, registered_family
 from .symbol_fonts import recover
 
 
@@ -79,6 +79,10 @@ def font_name(value, serif=False):
         pass
     # CID font names carry their encoding: YDIYGO120-KSCPC-EUC-H.
     name = re.sub(r'-(KSC|UniKS|KSCms|KSCpc|UniCNS|UniJIS|Identity)[-\w]*$', '', name, flags=re.IGNORECASE)
+    # The installed face itself names its family as Hancom lists it.
+    family = hancom_family(name) or hancom_family(STYLE_SUFFIX.sub('', name))
+    if family:
+        return family
     weight = re.search(r'[-,](Medium|Light|Thin|SemiBold|ExtraBold|ExtraLight|Black|Heavy)$', name)
     if weight and registered_family(name):
         return registered_family(name)
@@ -101,9 +105,13 @@ def span_style(span):
     # PDF text matrices leave sizes like 14.03pt; Hancom sizes are set in
     # tenths, and the extra width can move a word to the next line.
     flags, font = span.get('flags', 0), span.get('font') or ''
-    return dict(font=font_name(font, serif=bool(flags & 4)), font_size_pt=max(1., min(144., round(span.get('size', 10), 2))),
-                bold=bool(flags & 16) or bool(re.search(r'Bold|Black|Heavy', font)), italic=bool(flags & 2),
-                color=color(span.get('color', 0)))
+    family = font_name(font, serif=bool(flags & 4))
+    # A family that is itself a heavy weight ('KoPubWorld돋움체 Bold') must
+    # not be made bold again by Hancom.
+    heavy = bool(re.search(r'Bold|Black|Heavy', family))
+    return dict(font=family, font_size_pt=max(1., min(144., round(span.get('size', 10), 2))),
+                bold=not heavy and (bool(flags & 16) or bool(re.search(r'Bold|Black|Heavy', font))),
+                italic=bool(flags & 2), color=color(span.get('color', 0)))
 
 
 LIST_MARKER = re.compile(r'\s*(?:[-–—*※○●◦■□▪▫▴▸►◆◇•➊-➓❶-❿①-⑳]|\d{1,2}[.)]\s|\(\d{1,2}\)|[a-zA-Z][.)]\s)')

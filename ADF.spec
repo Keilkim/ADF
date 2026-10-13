@@ -36,6 +36,8 @@ for package in ('PyMuPDF', 'PySide6', 'shiboken6', 'Pillow', 'fonttools'):
     datas += copy_metadata(package)
 datas += collect_data_files('pymupdf')
 datas += collect_data_files('hwpx')
+# Widths Hancom draws its own fonts with, measured once (scripts/pdf2hwpx/hancom_widths.py).
+datas.append((str(root / 'adf' / 'pdf2hwpx' / 'hancom_widths.json'), 'adf/pdf2hwpx'))
 for package in ('python-hwpx', 'lxml', 'cryptography'):
     datas += copy_metadata(package)
 # This private bundle conceals plaintext; recipients can reverse its encryption.

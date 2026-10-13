@@ -112,6 +112,28 @@ def without_rules(ink, length=18):
     return result
 
 
+CAUSES = {}
+
+
+def _cause(source, target, box, score, left, right):
+    """Why a line is not in place, for --causes.
+
+    Same height, other end: the line holds other words (a wrap or width
+    difference). Other start: placed elsewhere across. Not near: the line
+    moved further than the search reach (the flow drifted) or is missing.
+    """
+    if score >= .8:
+        if abs(left) <= 6:
+            return 'ends elsewhere (wrap/width)'
+        return 'starts elsewhere (indent/align)'
+    far = locate(source, target, box, reach=400)
+    if far is not None and far[0] >= .8 and abs(far[2]) <= 6 and abs(far[3]) <= 10:
+        return 'drifted far (flow above it)'
+    if far is not None and far[0] >= .8 and abs(far[2]) <= 6:
+        return 'drifted far and ends elsewhere'
+    return 'not found (shape/missing)'
+
+
 def compare(pdf, rendered, folder):
     """Per PDF text line: is the same ink at the same place in Hancom?
 
@@ -140,10 +162,14 @@ def compare(pdf, rendered, folder):
             score, offset, left, right = found
             if score >= .8 and abs(offset) <= 6 and abs(left) <= 6 and abs(right) <= 10:
                 placed += 1
+                cause = 'in place'
             elif score >= .8 and abs(left) <= 6 and abs(right) <= 10:
                 moved += 1
+                cause = 'shifted up or down'
             else:
                 lost += 1
+                cause = _cause(ink_source, ink_target, box, score, left, right)
+            CAUSES[cause] = CAUSES.get(cause, 0) + 1
         misplaced += moved + lost
         in_place += placed
         total = placed + moved + lost
@@ -167,6 +193,7 @@ def check(source, out, render_python, pages=None):
         old.unlink()
     render(render_python, target, folder / 'hancom-')
     rendered = {int(path.stem.split('-')[1]) - 1: path for path in folder.glob('hancom-*.bmp')}
+    before = dict(CAUSES)
     with pymupdf.open(source) as pdf:
         mismatched, report, in_place = compare(pdf, rendered, folder)
         share = round(100 * in_place / max(1, in_place + mismatched))
@@ -176,6 +203,11 @@ def check(source, out, render_python, pages=None):
               f'({mismatched} not), '
               f'{result["paragraphs"]} paragraphs, {result["tables"]} tables, {result["figures"]} figures')
     print('\n'.join(report))
+    causes = {cause: count - before.get(cause, 0) for cause, count in CAUSES.items()
+              if cause != 'in place' and count > before.get(cause, 0)}
+    if causes:
+        print('  not in place:', ', '.join(f'{cause} {count}' for cause, count in
+                                          sorted(causes.items(), key=lambda item: -item[1])))
     return mismatched + (0 if pages_ok else 100)
 
 
@@ -216,3 +248,5 @@ if __name__ == '__main__':
     pages = tuple(int(n) for n in args.pages.split('-')) if args.pages else None
     total = sum(check(pdf, args.out, args.render_python, pages) for pdf in args.pdfs)
     print('total score', total, '(0 = every PDF text line drawn in place)')
+    print('lines by cause:', ', '.join(f'{cause} {count}' for cause, count in
+                                       sorted(CAUSES.items(), key=lambda item: -item[1])))
