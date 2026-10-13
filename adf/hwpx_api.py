@@ -108,6 +108,23 @@ def validate_format(value):
             raise ConversionError('셀 크기를 확인해 주세요.')
     if 'line_spacing_percent' in value and not number(value['line_spacing_percent'], 50, 500):
         raise ConversionError('줄 간격을 확인해 주세요.')
+    if value.get('vertical_alignment', 'CENTER') not in {'TOP', 'CENTER', 'BOTTOM'}:
+        raise ConversionError('셀 세로 정렬을 확인해 주세요.')
+    if 'letter_spacing' in value and (type(value['letter_spacing']) is not int or not -50 <= value['letter_spacing'] <= 50):
+        raise ConversionError('자간을 확인해 주세요.')
+    if any(key in value and not number(value[key], low, 20000) for key, low in (
+            ('indent_left_pt', 0), ('first_line_indent_pt', -20000), ('top_pt', -20000))):
+        raise ConversionError('문단 들여쓰기를 확인해 주세요.')
+    if 'line_count' in value and (type(value['line_count']) is not int or not 1 <= value['line_count'] <= 10000):
+        raise ConversionError('문단 줄 수를 확인해 주세요.')
+    if 'paragraphs' in value:
+        paragraphs = value['paragraphs']
+        if not isinstance(paragraphs, list) or len(paragraphs) > 1000:
+            raise ConversionError('셀 문단 구조를 확인해 주세요.')
+        for paragraph in paragraphs:
+            if not isinstance(paragraph, dict) or not isinstance(paragraph.get('text'), str) or 'paragraphs' in paragraph:
+                raise ConversionError('셀 문단 구조를 확인해 주세요.')
+            validate_format(paragraph)
     if 'margins_pt' in value and (not isinstance(value['margins_pt'], dict) or
             any(key not in {'left', 'right', 'top', 'bottom'} or not number(n, 0, 20000)
                 for key, n in value['margins_pt'].items())):

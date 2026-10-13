@@ -2,16 +2,19 @@
 from __future__ import annotations
 
 from collections import Counter
+from copy import deepcopy
 import json
 import os
 from pathlib import Path
 import re
+from statistics import median
 import zipfile
 
 import pymupdf
 
 from .hwpx_api import ConversionError, DEFAULT_MODEL, GeminiClient, RelayClient, validate_page
-from .hwpx_formatting import PdfFormatting, add_runs, apply_cell_format, clean_text as _text, reuse_native_formatting
+from .hwpx_formatting import (PdfFormatting, add_runs, apply_cell_format, clean_text as _text, paragraph_format,
+                              paragraph_height, reuse_native_formatting, vertical_spacing)
 
 
 def _bbox(rect, page):
@@ -92,6 +95,9 @@ def native_page(page):
     except Exception:
         warnings.append('로컬 표 분석에 실패해 해당 내용은 문단으로 추출했습니다.')
     figure_boxes = []
+    images = [pymupdf.Rect(image['bbox']) for image in page.get_image_info()]
+    inside = lambda rect: [line for line in formatting.lines if pymupdf.Rect(line['bbox']).intersects(rect) and
+                           (pymupdf.Rect(line['bbox']) & rect).get_area() > .5 * max(1, pymupdf.Rect(line['bbox']).get_area())]
     try:
         for rectangle in page.cluster_drawings():
             rect = pymupdf.Rect(rectangle)
@@ -104,31 +110,40 @@ def native_page(page):
             bbox = _bbox(rect, page)
             if bbox[0] >= bbox[2] or bbox[1] >= bbox[3]:
                 continue
+            if (formatting.is_frame(rect) and inside(rect)
+                    and not any(image.intersects(rect) for image in images)):
+                # A ruled box around text (a title box) stays editable as a
+                # one-cell table instead of a picture of its text.
+                cell = dict(row=0, col=0, row_span=1, col_span=1, **formatting.cell(rect, ''))
+                blocks.append(dict(kind='table', bbox=bbox, text='', font_size_pt=10, rows=1, cols=1, cells=[cell],
+                                   bold=False, italic=False, alignment='LEFT',
+                                   column_widths_pt=[rect.width], row_heights_pt=[rect.height]))
+                table_boxes.append(rect)
+                continue
             figure_boxes.append(rect)
             blocks.append(dict(kind='image', bbox=bbox, text='', font_size_pt=10,
                                bold=False, italic=False, alignment='LEFT', rows=0, cols=0, cells=[]))
     except Exception:
         warnings.append('일부 벡터 도형을 분석하지 못했습니다. 원본과 대조하세요.')
-    for image in page.get_image_info():
-        if not any(pymupdf.Rect(image['bbox']) in box for box in figure_boxes):
-            bbox = _bbox(image['bbox'], page)
+    for image in images:
+        if not any(image in box for box in figure_boxes):
+            bbox = _bbox(image, page)
             if bbox[0] < bbox[2] and bbox[1] < bbox[3]:
                 blocks.append(dict(kind='image', bbox=bbox, text='', font_size_pt=10,
                                    bold=False, italic=False, alignment='LEFT', rows=0, cols=0, cells=[]))
-    for block in formatting.data['blocks']:
-        bbox = _bbox(block['bbox'], page)
-        if bbox[0] >= bbox[2] or bbox[1] >= bbox[3]:
-            continue
-        lines = []
-        for line in block.get('lines', []):
-            if any(pymupdf.Rect(line['bbox']).intersects(box) and
-                   (pymupdf.Rect(line['bbox']) & box).get_area() / max(1, pymupdf.Rect(line['bbox']).get_area()) > .5 for box in table_boxes + figure_boxes):
-                continue
-            lines.append(line)
-        styled = formatting.text(lines)
-        if not styled['text'].strip():
-            continue
-        blocks.append(dict(kind='paragraph', bbox=bbox, rows=0, cols=0, cells=[], **styled))
+    covered = {id(line) for box in table_boxes + figure_boxes for line in inside(box)}
+    paragraphs = formatting.paragraphs([line for line in formatting.lines if id(line) not in covered])
+    # Single-line paragraphs take the pitch that the page's wrapped
+    # paragraphs use, so headings and body lines keep the PDF rhythm.
+    measured = [(paragraph['line_spacing_percent'], paragraph['line_count']) for paragraph in paragraphs
+                if paragraph['line_count'] > 1]
+    spacing = median([percent for percent, count in measured for _ in range(count)]) if measured else 160
+    for paragraph in paragraphs:
+        paragraph.setdefault('line_spacing_percent', round(spacing))
+        x0, y0, x1, y1 = paragraph.pop('box_pt')
+        bbox = _bbox((x0, y0, x1, y1), page)
+        if bbox[0] < bbox[2] and bbox[1] < bbox[3] and paragraph['text'].strip():
+            blocks.append(dict(kind='paragraph', bbox=bbox, rows=0, cols=0, cells=[], **paragraph))
     blocks.sort(key=lambda b: (b['bbox'][1], b['bbox'][0]))
     if page.rotation:
         warnings.append('회전한 페이지의 글자는 가로 문단으로 복원했습니다. 원본의 글자 방향과 대조하세요.')
@@ -148,10 +163,39 @@ def _coverage(native, extracted):
         extracted['warnings'].append('PDF 텍스트와 비교해 일부 글자의 누락 또는 변경 가능성이 있습니다. 원본과 대조하세요.')
 
 
-def _add_paragraph(doc, section, block, first=False):
-    paragraph = section.paragraphs[0] if first else doc.add_paragraph(section=section, include_run=False, inherit_style=False)
-    add_runs(doc, paragraph, block)
-    return paragraph
+def _sync_manifest(document):
+    """Keep every embedded image listed after sections were added.
+
+    python-hwpx records images in the package manifest but writes its own
+    copy when a section was added, which loses the images added since
+    then. Hancom shows a missing-picture placeholder for such an image.
+    """
+    namespace = '{http://www.idpf.org/2007/opf/}manifest'
+    target = document.oxml.manifest.find(namespace)
+    source = document.package.manifest_tree().find(namespace)
+    if target is None or source is None or target is source:
+        return
+    known = {item.get('id') for item in target}
+    for item in source:
+        if item.get('id') not in known:
+            target.append(deepcopy(item))
+
+
+def _picture_source_size(element, width_px, height_px):
+    """Describe the embedded bitmap by its pixels, as Hancom does.
+
+    python-hwpx records the display size as the image's own size. Hancom
+    reads that as a crop of a bitmap measured at 96 dpi (75 HWPUNIT per
+    pixel), so a higher-resolution picture showed only its top-left part.
+    """
+    width, height = width_px * 75, height_px * 75
+    for child in element.iter():
+        name = child.tag.rsplit('}', 1)[-1]
+        if name == 'imgClip':
+            child.set('left', '0'); child.set('top', '0')
+            child.set('right', str(width)); child.set('bottom', str(height))
+        elif name == 'imgDim':
+            child.set('dimwidth', str(width)); child.set('dimheight', str(height))
 
 
 def write_page(doc, page, structured, index):
@@ -160,27 +204,69 @@ def write_page(doc, page, structured, index):
     # settings or introducing an empty paragraph before every source page.
     if not section.paragraphs:
         doc.add_paragraph(section=section)
-    doc.page.set_size(width=round(page.rect.width * 100), height=round(page.rect.height * 100), section=section)
-    doc.page.set_margins(left=1800, right=1800, top=1800, bottom=1800, header=0, footer=0, gutter=0, section=section)
+    width, height = page.rect.width, page.rect.height
+    boxes = [pymupdf.Rect(b['bbox'][0] * width / 1000, b['bbox'][1] * height / 1000,
+                          b['bbox'][2] * width / 1000, b['bbox'][3] * height / 1000) for b in structured['blocks']]
+    # The page margins enclose the PDF content so paragraphs wrap at the
+    # same width and start at the same place as in the source page.
+    area = pymupdf.Rect(boxes[0]) if boxes else pymupdf.Rect()
+    for box in boxes[1:]:
+        area |= box
+    if area.width < 72 or area.height < 36:
+        area = pymupdf.Rect(18, 18, width - 18, height - 18)
+    margins = dict(left=max(0, area.x0), right=max(0, width - area.x1), top=max(0, area.y0),
+                   bottom=min(max(0, height - area.y1), 10))
+    doc.page.set_size(width=round(width * 100), height=round(height * 100), section=section)
+    doc.page.set_margins(**{key: round(value * 100) for key, value in margins.items()},
+                         header=0, footer=0, gutter=0, section=section)
     first = True
     border_cache = {}
     counts = dict(paragraphs=0, tables=0, figures=0)
-    available_width = max(100, round(page.rect.width * 100) - 3600)
-    available_height = max(100, round(page.rect.height * 100) - 3600)
-    for block in structured['blocks']:
+    available_width = max(100, round(area.width * 100))
+    available_height = max(100, round((height - margins['top'] - margins['bottom']) * 100))
+    # Pictures side by side in the PDF (a row of logos) share one line.
+    items = []
+    for block, box in zip(structured['blocks'], boxes):
+        band = pymupdf.Rect(items[-1][0][1]) if items else None
+        for _, other in items[-1] if items else []:
+            band |= other
+        if (block['kind'] == 'image' and items and all(member['kind'] == 'image' for member, _ in items[-1])
+                and min(box.y1, band.y1) - max(box.y0, band.y0) > .5 * min(box.height, band.height)):
+            items[-1].append((block, box))
+        else:
+            items.append([(block, box)])
+    bands = []
+    for item in items:
+        band = pymupdf.Rect(item[0][1])
+        for _, box in item[1:]:
+            band |= box
+        bands.append(band)
+    heights = [paragraph_height(item[0][0]) if item[0][0]['kind'] == 'paragraph' else band.height
+               for item, band in zip(items, bands)]
+    spacing = vertical_spacing([(band.y0, h) for band, h in zip(bands, heights)], margins['top'])
+    for item, band, before in zip(items, bands, spacing):
+        block, box = item[0]
         if block['kind'] == 'paragraph':
-            _add_paragraph(doc, section, block, first)
+            paragraph = section.paragraphs[0] if first else doc.add_paragraph(section=section, include_run=False, inherit_style=False)
+            layout = dict(block)
+            if 'indent_left_pt' not in layout and layout.get('alignment', 'LEFT') in ('LEFT', 'JUSTIFY'):
+                layout['indent_left_pt'] = max(0, box.x0 - area.x0)
+            add_runs(doc, paragraph, layout, before)
             first = False
             counts['paragraphs'] += 1
-        elif block['kind'] == 'table':
-            width = min(available_width, max(100, round((block['bbox'][2] - block['bbox'][0]) * page.rect.width / 10)))
-            height = max(100, round((block['bbox'][3] - block['bbox'][1]) * page.rect.height / 10))
+            continue
+        # Tables and pictures sit in their own paragraph; place it with the
+        # source offset instead of the default left edge.
+        placement = dict(alignment='LEFT', line_spacing_percent=100, indent_left_pt=max(0, band.x0 - area.x0))
+        if len(item) == 1 and abs((box.x0 - area.x0) - (area.x1 - box.x1)) < 3:
+            placement = dict(alignment='CENTER', line_spacing_percent=100)
+        if block['kind'] == 'table':
+            table_width = min(available_width, max(100, round(box.width * 100)))
+            table_height = max(100, round(box.height * 100))
             if block.get('row_heights_pt'):
-                height = max(100, round(sum(block['row_heights_pt']) * 100))
-            if first:
-                table = section.paragraphs[0].add_table(block['rows'], block['cols'], width=width, height=height)
-            else:
-                table = doc.add_table(block['rows'], block['cols'], width=width, height=height, section=section)
+                table_height = max(100, round(sum(block['row_heights_pt']) * 100))
+            host = section.paragraphs[0] if first else doc.add_paragraph(section=section, include_run=False, inherit_style=False)
+            table = host.add_table(block['rows'], block['cols'], width=table_width, height=table_height)
             first = False
             for cell in block['cells']:
                 r, c = cell['row'], cell['col']
@@ -194,21 +280,30 @@ def write_page(doc, page, structured, index):
                 table.set_column_widths(block['column_widths_pt'])
             counts['tables'] += 1
         else:
-            box = block['bbox']
-            clip = pymupdf.Rect(box[0] * page.rect.width / 1000, box[1] * page.rect.height / 1000,
-                                box[2] * page.rect.width / 1000, box[3] * page.rect.height / 1000)
-            image = page.get_pixmap(clip=clip, dpi=180, alpha=False).tobytes('png')
-            width = min(available_width, max(100, round(clip.width * 100)))
-            height = max(100, round(width * clip.height / clip.width))
-            if height > available_height:
-                width = max(100, round(width * available_height / height))
-                height = available_height
-            image_id = str(doc.media.add_image(image, 'png'))
-            paragraph = section.paragraphs[0] if first else doc.add_paragraph(section=section, inherit_style=False)
-            paragraph.add_picture(image_id, width=width, height=height)
+            host = section.paragraphs[0] if first else doc.add_paragraph(section=section, inherit_style=False)
             first = False
-            counts['figures'] += 1
-    section.remove_stale_layout_caches()
+            right = band.x0
+            for _, box in sorted(item, key=lambda member: member[1].x0):
+                clip = box & page.rect
+                pixmap = page.get_pixmap(clip=clip, dpi=180, alpha=False)
+                image_width = min(available_width, max(100, round(clip.width * 100)))
+                image_height = max(100, round(image_width * clip.height / clip.width))
+                if image_height > available_height:
+                    image_width = max(100, round(image_width * available_height / image_height))
+                    image_height = available_height
+                image_id = str(doc.media.add_image(pixmap.tobytes('png'), 'png'))
+                picture = host.add_picture(image_id, width=image_width, height=image_height)
+                _picture_source_size(picture.element, pixmap.width, pixmap.height)
+                # The gap to the previous picture of the row is its margin.
+                margin = next((child for child in picture.element if child.tag.endswith('}outMargin')), None)
+                if margin is not None and clip.x0 > right:
+                    margin.set('left', str(round((clip.x0 - right) * 100)))
+                right = clip.x1
+                counts['figures'] += 1
+        paragraph_format(doc, host, placement, before)
+    # Cached line layouts from the template describe other content; Hancom
+    # then draws later lines over pictures. Let Hancom lay out every line.
+    section.remove_layout_caches()
     return counts
 
 
@@ -274,6 +369,7 @@ def convert_document(source, output, *, provider='local', model=DEFAULT_MODEL, p
             result['pages'] += 1
             progress(dict(stage='HWPX 작성', completed=index + 1, total=len(pdf), detail=f'원본 {label}쪽 완료'))
         progress(dict(stage='HWPX 검증', detail='ZIP·XML 구조와 저장 후 다시 열기를 확인합니다.'))
+        _sync_manifest(document)
         if not document.validate().ok:
             raise ConversionError('생성할 HWPX의 XML 구조를 검증하지 못했습니다.')
         document.save_to_path(output)
