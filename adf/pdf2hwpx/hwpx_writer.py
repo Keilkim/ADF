@@ -601,7 +601,7 @@ def _write_flow(doc, page, section, flow, area, available_height, border_cache, 
 def _write_table(doc, host, block, width, height, border_cache, page):
     """A table block into host. Column widths go in before cells merge:
     python-hwpx counts columns in the first row."""
-    cells = sanitize_cells(block['cells'], block['rows'], block['cols'])
+    cells = sanitize_cells(block['cells'], block['rows'], block['cols'], fill=True)
     table = host.add_table(block['rows'], block['cols'], width=width, height=height)
     if block.get('column_widths_pt') and len(block['column_widths_pt']) == block['cols']:
         table.set_column_widths(block['column_widths_pt'])

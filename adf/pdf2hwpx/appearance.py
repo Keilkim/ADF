@@ -13,12 +13,23 @@ ZOOM = 2
 
 class PageLook:
     def __init__(self, page):
-        pixmap = page.get_pixmap(matrix=pymupdf.Matrix(ZOOM, ZOOM), alpha=False)
+        # An image too large for MuPDF at this size is drawn smaller.
+        for zoom in (ZOOM, 1, .5):
+            try:
+                pixmap = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False)
+                break
+            except Exception:
+                continue
+        else:
+            pixmap = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 1, 1), 0)
+            zoom = 1 / max(page.rect.width, page.rect.height, 1)
+        self.zoom = zoom
         self.image = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(pixmap.height, pixmap.width, pixmap.n)[:, :, :3]
 
     def _area(self, rect):
-        x0, y0 = max(0, int(rect.x0 * ZOOM)), max(0, int(rect.y0 * ZOOM))
-        x1, y1 = min(self.image.shape[1], int(rect.x1 * ZOOM) + 1), min(self.image.shape[0], int(rect.y1 * ZOOM) + 1)
+        zoom = self.zoom
+        x0, y0 = max(0, int(rect.x0 * zoom)), max(0, int(rect.y0 * zoom))
+        x1, y1 = min(self.image.shape[1], int(rect.x1 * zoom) + 1), min(self.image.shape[0], int(rect.y1 * zoom) + 1)
         return self.image[y0:y1, x0:x1].reshape(-1, 3).astype(int) if x1 > x0 and y1 > y0 else None
 
     def background(self, rect):

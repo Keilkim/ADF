@@ -81,9 +81,13 @@ def validate_format(value):
             sides.add(border['side'])
 
 
-def validate_page(value):
-    """Reject malformed coordinates, oversized grids and overlapping merges."""
-    if not isinstance(value, dict) or not isinstance(value.get('blocks'), list) or len(value['blocks']) > 1000:
+def validate_page(value, max_blocks=1000):
+    """Reject malformed coordinates, oversized grids and overlapping merges.
+
+    max_blocks bounds an AI response; a page read locally may hold more
+    (hundreds of small marks and figure labels).
+    """
+    if not isinstance(value, dict) or not isinstance(value.get('blocks'), list) or len(value['blocks']) > max_blocks:
         raise ConversionError('페이지의 문단·표 구조가 올바르지 않습니다.')
     warnings = value.get('warnings', [])
     if not isinstance(warnings, list) or len(warnings) > 100 or not all(isinstance(w, str) and len(w) <= 4000 for w in warnings):
@@ -137,7 +141,7 @@ def validate_page(value):
     return value
 
 
-def sanitize_cells(cells, rows, cols):
+def sanitize_cells(cells, rows, cols, fill=False):
     """Cells that fit the grid: a grid read wrong (missing rules) can give
     spans past the table's edge or merged cells over each other, which
     Hancom cannot hold. Spans are cut at the edge and an overlapping cell
@@ -154,4 +158,11 @@ def sanitize_cells(cells, rows, cols):
             slots = {(r, c)}
         taken |= slots
         kept.append(dict(cell, row_span=rs, col_span=cs))
-    return kept
+    # With fill, slots no cell covers become empty cells (a writer's last
+    # resort); a reader leaves them, so validation still rejects such a
+    # grid and the text is read another way.
+    for row in range(rows if fill else 0):
+        for col in range(cols):
+            if (row, col) not in taken:
+                kept.append(dict(row=row, col=col, row_span=1, col_span=1, text='', borders=[]))
+    return sorted(kept, key=lambda cell: (cell['row'], cell['col']))

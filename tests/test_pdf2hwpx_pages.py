@@ -145,7 +145,7 @@ def test_cells_of_a_misread_grid_are_kept_inside_the_table():
     cells = [dict(row=0, col=0, row_span=3, col_span=2), dict(row=0, col=2, row_span=1, col_span=1),
              dict(row=0, col=3, row_span=3, col_span=2), dict(row=1, col=1, row_span=1, col_span=1),
              dict(row=5, col=0, row_span=1, col_span=1)]
-    kept = sanitize_cells(cells, 3, 4)
+    kept = sanitize_cells(cells, 3, 4, fill=True)
     slots = [(r, c) for cell in kept for r in range(cell['row'], cell['row'] + cell['row_span'])
              for c in range(cell['col'], cell['col'] + cell['col_span'])]
     assert len(slots) == len(set(slots)) and all(0 <= r < 3 and 0 <= c < 4 for r, c in slots)

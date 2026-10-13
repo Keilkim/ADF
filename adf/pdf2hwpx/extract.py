@@ -293,7 +293,7 @@ def _spread_page(page, halves):
             block['column'] = index
             blocks.append(block)
         columns.append([half.x0, half.y0, half.x1, half.y1])
-    result = validate_page(dict(blocks=blocks, warnings=warnings))
+    result = validate_page(dict(blocks=blocks, warnings=warnings), max_blocks=5000)
     result['columns'] = columns
     return result
 
@@ -403,7 +403,15 @@ def native_page(page, split=True):
         for span in line['spans']:
             weights[round(span['size'], 1)] = weights.get(round(span['size'], 1), 0) + len(span['chars'])
     body_size = max(weights, key=weights.get) if weights else 10
-    image_infos = page.get_image_info(xrefs=True)
+    try:
+        image_infos = page.get_image_info(xrefs=True)
+    except Exception:
+        # An image too large to decode: its place is still known without
+        # the xref lookup, and it is drawn from a rendering instead.
+        try:
+            image_infos = page.get_image_info()
+        except Exception:
+            image_infos = []
     images = [pymupdf.Rect(image['bbox']) for image in image_infos]
     inside = lambda rect: [line for line in formatting.lines if pymupdf.Rect(line['bbox']).intersects(rect) and
                            (pymupdf.Rect(line['bbox']) & rect).get_area() > .5 * max(1, pymupdf.Rect(line['bbox']).get_area())]
@@ -597,7 +605,7 @@ def native_page(page, split=True):
         warnings.append('회전한 페이지의 글자는 가로 문단으로 복원했습니다. 원본의 글자 방향과 대조하세요.')
     if not any(b['kind'] in {'paragraph', 'table'} for b in blocks):
         warnings.append('선택한 페이지에 추출 가능한 글자가 없습니다. 스캔 문서는 Gemini AI 변환을 사용하세요.')
-    result = validate_page(dict(blocks=blocks, warnings=warnings))
+    result = validate_page(dict(blocks=blocks, warnings=warnings), max_blocks=5000)
     if designed:
         result['free_layout'] = True
     return result
