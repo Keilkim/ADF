@@ -115,7 +115,8 @@ def span_style(span):
                 italic=bool(flags & 2), color=color(span.get('color', 0)))
 
 
-LIST_MARKER = re.compile(r'\s*(?:[-–—*※○●◦■□▪▫▴▸►◆◇•➊-➓❶-❿①-⑳]|\d{1,2}[.)]\s|\(\d{1,2}\)|[a-zA-Z][.)]\s)')
+# Bullets of Korean documents, including Wingdings ones read as Ÿ (•) and Ø (➢).
+LIST_MARKER = re.compile(r'\s*(?:[-–—*※○●◦■□▪▫▴▸►◆◇•➊-➓❶-❿①-⑳❍❏❑➢➤▶▷◎◉◈☞✓✔ㆍ∙ŸØ]|\d{1,2}[.)]\s|\(\d{1,2}\)|[a-zA-Z][.)]\s)')
 
 
 def letter_spacing(spans, size):
