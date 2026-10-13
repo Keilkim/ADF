@@ -833,6 +833,12 @@ class PdfFormatting:
         for line in lines:
             runs, chars = [], []
             marks = self._highlights(line)
+            # The line's own baseline: where most of its characters sit.
+            weights = {}
+            for span in line['spans']:
+                key = round(span['origin'][1], 1)
+                weights[key] = weights.get(key, 0) + len(span['chars']) * span['size']
+            main_baseline = max(weights, key=weights.get) if weights else None
             for span in line['spans']:
                 # Characters the writer drops (control codes from broken
                 # encodings) must not widen the line's box either.
@@ -866,6 +872,10 @@ class PdfFormatting:
                     style['letter_spacing'] = spacing
                 if self.font_space.get(span.get('font')):
                     style['font_space'] = True
+                shift = span['origin'][1] - main_baseline if main_baseline is not None else 0
+                if abs(shift) > .15 * size:
+                    # A superscript or footnote mark set higher in its line.
+                    style['baseline_shift'] = max(-100, min(100, round(shift / size * 100)))
                 # Korean and other letters are measured apart: a substitute
                 # font matches the source's Hangul widths better than its
                 # Latin, digit and punctuation widths.
