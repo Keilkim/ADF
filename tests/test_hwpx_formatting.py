@@ -7,9 +7,9 @@ import pymupdf
 import pytest
 from hwpx import HwpxDocument
 
-from adf.hwpx_api import ConversionError, validate_page
-from adf.hwpx_export import convert_document, native_page, write_page, verify_package
-from adf.hwpx_formatting import PdfFormatting, reuse_native_formatting
+from adf.pdf2hwpx import ConversionError, convert_document, native_page, validate_page, verify_package, write_page
+from adf.pdf2hwpx.pdf_reader import PdfFormatting
+from adf.pdf2hwpx.reconcile import reuse_native_formatting
 
 HH = '{http://www.hancom.co.kr/hwpml/2011/head}'
 

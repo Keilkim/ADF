@@ -73,12 +73,14 @@ def test_release_checksums_list_every_uploaded_file(tmp_path):
     (download/'.tools/ci/build-origin.json').write_text('{"commit": "abc"}', encoding='utf-8')
     output.mkdir()
     updates = ['ADF-Update-9.9.8-to-9.9.9.exe', 'ADF-Files-9.9.9-Windows.json']
+    # The packaged app's HWPX verification report is uploaded with the release.
+    report = 'ADF-Verification-9.9.9-Windows-HWPX.json'
     for name in ['ADF-Setup-9.9.9.exe', 'ADF-Source-9.9.9.zip', 'ADF-ThirdParty-Sources-9.9.9.zip',
-                 'ADF-Guide-9.9.9-Windows.html', *updates]:
+                 'ADF-Guide-9.9.9-Windows.html', report, *updates]:
         (output/name).write_bytes(name.encode())
     runner = tmp_path/'checksums.ps1'
     runner.write_text(f"$ErrorActionPreference = 'Stop'\n$version = '9.9.9'\n$download = '{download}'\n$output = '{output}'\n"
-                      f"$updates = @({', '.join(repr(name) for name in updates)})\n{block}\n", encoding='utf-8-sig')
+                      f"$hwpxReport = '{report}'\n$updates = @({', '.join(repr(name) for name in updates)})\n{block}\n", encoding='utf-8-sig')
 
     # The release job runs in PowerShell 7. A module path inherited from it breaks
     # Windows PowerShell's own cmdlets such as Get-FileHash, so neither inherits it.

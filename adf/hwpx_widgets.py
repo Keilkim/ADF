@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout)
 
 from .document import _require_permission, parse_ranges
-from .hwpx_api import DEFAULT_MODEL
+from .pdf2hwpx import DEFAULT_MODEL
 from .progress_widgets import TaskProgressDialog
 
 

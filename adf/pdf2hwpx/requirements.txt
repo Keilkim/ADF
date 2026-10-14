@@ -1,0 +1,5 @@
+# Everything the converter needs; copy this folder and install these.
+PyMuPDF>=1.24
+python-hwpx>=6.7
+fonttools>=4.40
+numpy>=1.24
