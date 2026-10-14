@@ -1218,7 +1218,7 @@ class PdfFormatting:
         result = {**main, 'text': ''.join(run['text'] for run in runs), 'runs': runs, 'alignment': paragraphs[0]['alignment']}
         if len(paragraphs) > 1:
             result['paragraphs'] = paragraphs
-        for key in ('line_spacing_percent', 'indent_left_pt', 'first_line_indent_pt'):
+        for key in ('line_spacing_percent', 'indent_left_pt', 'first_line_indent_pt', 'line_count'):
             if key in paragraphs[0] and len(paragraphs) == 1:
                 result[key] = paragraphs[0][key]
         return result

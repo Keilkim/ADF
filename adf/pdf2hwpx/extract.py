@@ -7,6 +7,7 @@ from .captions import attach_captions
 from .columns import split_columns
 from .pdf_reader import PdfFormatting, clean_text as _text, paragraphs_from_rows
 from .schema import ConversionError, sanitize_cells as _sanitize_cells, validate_page
+from .unruled import find_unruled_tables
 
 
 def _bbox(rect, page):
@@ -115,6 +116,21 @@ def _open_sides(formatting):
         start, end = min(item[1] for item in found), max(item[2] for item in found)
         lines += [((start, top), (start, bottom)), ((end, top), (end, bottom))]
     return lines
+
+
+def _unruled_block(formatting, page, grid):
+    """A table block for a grid of text lined up without cell borders."""
+    xs, ys = grid['xs'], grid['ys']
+    cells = []
+    for r in range(len(ys) - 1):
+        for c in range(len(xs) - 1):
+            rect = pymupdf.Rect(xs[c], ys[r], xs[c + 1], ys[r + 1])
+            cells.append(dict(row=r, col=c, row_span=1, col_span=1, _rect=rect, **formatting.cell(rect, '')))
+    rows, cols = len(ys) - 1, len(xs) - 1
+    return dict(kind='table', bbox=_bbox(grid['rect'], page), text='', font_size_pt=10, rows=rows, cols=cols,
+                cells=_sanitize_cells(cells, rows, cols), bold=False, italic=False, alignment='LEFT',
+                column_widths_pt=[b - a for a, b in zip(xs, xs[1:])], row_heights_pt=[b - a for a, b in zip(ys, ys[1:])],
+                detected=grid['evidence'])  # how it was found (rules / caption / aligned), for checks
 
 
 def _inside_frame(page, frame, slack=1.5):
@@ -552,6 +568,17 @@ def native_page(page, split=True):
         if bbox[0] < bbox[2] and bbox[1] < bbox[3] and not any(symbol in figure for figure in figure_boxes):
             blocks.append(dict(kind='image', bbox=bbox, text='', font_size_pt=10, bold=False, italic=False,
                                alignment='LEFT', rows=0, cols=0, cells=[], placement='BEHIND_TEXT', text_image=True))
+    covered = {id(line) for box in table_boxes + figure_boxes for line in inside(box)}
+    # Tables drawn without cell borders: text lined up in columns.
+    for grid in find_unruled_tables(formatting, [line for line in formatting.lines if id(line) not in covered],
+                                    taken=list(table_boxes)):
+        block = _unruled_block(formatting, page, grid)
+        try:
+            validate_page(dict(blocks=[block], warnings=[]))
+        except ConversionError:
+            continue
+        blocks.append(block)
+        table_boxes.append(pymupdf.Rect(grid['rect']))
     covered = {id(line) for box in table_boxes + figure_boxes for line in inside(box)}
     rows = formatting.rows([line for line in formatting.lines if id(line) not in covered], keep_columns=True)
     items = split_columns(rows)
