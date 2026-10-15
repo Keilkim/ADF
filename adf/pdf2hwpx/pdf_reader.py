@@ -45,6 +45,9 @@ HANYANG_FONTS = {
     'H2GTRM': 'HY중고딕', 'H2GTRE': 'HY견고딕', 'H2HDRM': 'HY헤드라인M', 'H2MJRE': 'HY견명조', 'H2MJSM': 'HY신명조',
     'H2GPRM': 'HY그래픽M', 'H2GSRB': 'HY궁서B', 'H2PORL': 'HY엽서L', 'H2PORM': 'HY엽서M',
 }
+# Families Hancom Office installs itself: the document opens in Hancom, so these
+# keep their names even on a PC without them (a converting PC, a CI server).
+HANCOM_FAMILIES = ('함초롬', '한컴', 'HY')
 STYLE_SUFFIX = re.compile(r'[-,]?(Regular|BoldItalic|BoldOblique|Bold|Italic|Oblique|Roman|Medium|Light)$')
 
 
@@ -90,7 +93,7 @@ def font_name(value, serif=False):
     for candidate in (name, STYLE_SUFFIX.sub('', name)):
         found = _known(candidate)
         if found:
-            return found if installed(found) is not False or found in HANYANG_FONTS.values() else (
+            return found if installed(found) is not False or found.startswith(HANCOM_FAMILIES) else (
                 '바탕' if serif else '맑은 고딕')
     name = STYLE_SUFFIX.sub('', name)
     # Unnamed embedded fonts (T5, F1, Type3) and fonts this PC lacks would
