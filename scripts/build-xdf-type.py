@@ -10,7 +10,6 @@ from concurrent.futures import ProcessPoolExecutor
 import hashlib
 import json
 from pathlib import Path
-import re
 import shutil
 import sys
 from types import SimpleNamespace
@@ -26,7 +25,6 @@ from fontTools.feaLib.builder import addOpenTypeFeaturesFromString
 from fontTools.misc.transform import Transform
 from fontTools.otlLib.builder import buildLigatureSubstSubtable,buildLookup
 from fontTools.pens.cu2quPen import Cu2QuPen
-from fontTools.pens.reverseContourPen import ReverseContourPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.svgLib.path import parse_path
@@ -42,16 +40,17 @@ def digest(path): return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def logo_glyph():
-    cap=760; scale=cap/478
+    cap=760
     source=ET.parse(ROOT/'assets/xdf-wordmark.svg')
+    x,y,width,height=map(float,source.getroot().get('viewBox').split())
+    scale=cap/height
     pen=TTGlyphPen(None)
     curve=Cu2QuPen(pen,max_err=.4,reverse_direction=True)
-    target=TransformPen(curve,Transform(scale,0,0,-scale,20,cap))
-    for identity in ('xdf-x','xdf-d','xdf-f'):
-        element=next(e for e in source.iter() if e.get('id')==identity)
-        for index,path in enumerate(filter(None,(s.strip() for s in re.split(r'(?=[Mm])',element.get('d'))))):
-            parse_path(path,ReverseContourPen(target) if identity=='xdf-d' and index==1 else target)
-    return pen.glyph(),round(1871*scale+40)
+    target=TransformPen(curve,Transform(scale,0,0,-scale,20-x*scale,cap+y*scale))
+    # Supplied SVG masters can combine letters and use arbitrary path IDs.
+    for element in source.iter('{http://www.w3.org/2000/svg}path'):
+        parse_path(element.get('d'),target)
+    return pen.glyph(),round(width*scale+40)
 
 
 def add_layout(font,cmap):
