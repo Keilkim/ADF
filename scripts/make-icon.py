@@ -1,4 +1,4 @@
-"""Export the complete XDF wordmark for every app icon and website vector."""
+"""Export XDF's independent wordmark and symbol masters for apps and the web."""
 import io
 import os
 from pathlib import Path
@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PIL import Image
 from PySide6.QtCore import QByteArray, QBuffer, QIODevice, Qt
-from PySide6.QtGui import QGuiApplication, QImage, QPainter
+from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter
 from PySide6.QtSvg import QSvgRenderer
 
 
@@ -32,12 +32,19 @@ def render_asset(width, height, source):
     image.save(buffer, 'PNG')
     buffer.close()
     with Image.open(io.BytesIO(bytes(storage))) as rendered:
-        # Resample coverage, then apply the flat brand fill. Resampling RGBA
-        # directly can overshoot the premultiplied channels at narrow counters.
-        alpha = rendered.getchannel('A').resize((width, height), Image.Resampling.LANCZOS)
-    icon = Image.new('RGBA', (width, height), (240, 75, 45, 0))
-    icon.putalpha(alpha)
+        # Preserve the SVG's fill independently of the interface accent.
+        # Resampling only coverage avoids color overshoot at narrow edges.
+        fills = {element.get('fill') for element in ET.parse(source).iter()
+                 if element.get('fill') not in (None, 'none')}
+        if len(fills) == 1 and QColor(next(iter(fills))).isValid():
+            color = QColor(next(iter(fills)))
+            alpha = rendered.getchannel('A').resize((width, height), Image.Resampling.LANCZOS)
+            icon = Image.new('RGBA', (width, height), color.getRgb())
+            icon.putalpha(alpha)
+        else:
+            icon = rendered.resize((width, height), Image.Resampling.LANCZOS)
     # Keep fully transparent pixels zeroed for native decoders and previews.
+    alpha = icon.getchannel('A')
     icon.paste((0, 0, 0, 0), mask=alpha.point(lambda value: 255 if value == 0 else 0))
     return icon
 
@@ -46,37 +53,11 @@ def render_icon(size, source):
     return render_asset(size, size, source)
 
 
-def export_icon_mark(wordmark, target):
-    # Keep all three letters and their original proportions, including at
-    # tray / favicon sizes. Only the surrounding canvas becomes square.
-    renderer = QSvgRenderer(str(wordmark))
-    if not renderer.isValid():
-        raise ValueError(f'Invalid primary wordmark: {wordmark}')
-    bounds = None
-    for name in ('xdf-x', 'xdf-d', 'xdf-f'):
-        glyph = renderer.boundsOnElement(name)
-        if glyph.isEmpty():
-            raise ValueError(f'Missing {name} glyph in primary wordmark: {wordmark}')
-        bounds = glyph if bounds is None else bounds.united(glyph)
-    side = max(bounds.width(), bounds.height()) / 0.94
-    box = (bounds.center().x() - side / 2, bounds.center().y() - side / 2, side, side)
-    namespace = 'http://www.w3.org/2000/svg'
-    ET.register_namespace('', namespace)
-    root = ET.parse(wordmark).getroot()
-    root.set('width', '1024')
-    root.set('height', '1024')
-    root.set('viewBox', ' '.join(f'{value:.4f}' for value in box))
-    root.find(f'{{{namespace}}}desc').text = 'The complete XDF wordmark, centered without distortion on a transparent square icon canvas.'
-    ET.indent(root, space='  ')
-    ET.ElementTree(root).write(target, encoding='utf-8', xml_declaration=False)
-
-
 def main():
     app = QGuiApplication.instance() or QGuiApplication([])
     assets = ROOT / 'assets'
     wordmark = assets / 'xdf-wordmark.svg'
     source = assets / 'xdf-mark.svg'
-    export_icon_mark(wordmark, source)
     large = render_icon(1024, source)
     large.save(assets / 'xdf.png')
     # Each frame comes from the vector. 32-bit DIB frames retain alpha / AND
@@ -92,7 +73,8 @@ def main():
     width = 1536
     render_asset(width, round(width * bounds.height() / bounds.width()), wordmark).save(assets / 'xdf-wordmark.png')
     shutil.copyfile(wordmark, ROOT / 'site' / 'assets' / wordmark.name)
-    print('Complete XDF wordmark exported for app, tray, installer and favicon icons')
+    shutil.copyfile(wordmark, assets / 'fonts' / wordmark.name)
+    print('XDF wordmark and symbol exported for app, tray, installer and website assets')
 
 
 if __name__ == '__main__':

@@ -1,3 +1,13 @@
+Current production identity — 2026-10-15
+
+User-supplied vector masters: new logo.svg and new symbol for thumbnail.svg.
+Primary logo: xdf-wordmark.svg, preserving the supplied geometry and #F04B2D.
+Compact symbol: xdf-mark.svg, preserving the supplied geometry and #F04B2D
+with transparent square padding for app, tray, installer and favicon use.
+scripts/make-icon.py reads these independent masters without replacing the
+symbol with the wordmark or recoloring either asset to the UI accent.
+The preceding identity and its original generation prompts follow as history.
+
 XDF full wordmark across all sizes — 2026-10-02
 
 Mode: built-in image_gen.imagegen, transparent RGBA. No API / CLI fallback.

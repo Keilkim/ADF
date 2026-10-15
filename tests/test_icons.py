@@ -20,6 +20,7 @@ from PySide6.QtWidgets import QApplication
 
 ROOT = Path(__file__).resolve().parents[1]
 SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
+LOGO_RGB = (0xF0, 0x4B, 0x2D)
 
 
 def windows_icon_pixels(size):
@@ -81,7 +82,7 @@ class IconTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
-    def test_shipped_frames_have_transparent_background_and_vermilion_wordmark(self):
+    def test_shipped_frames_have_transparent_background_and_vermilion_symbol(self):
         with Image.open(ROOT / 'assets' / 'xdf.ico') as ico:
             self.assertEqual(ico.ico.sizes(), {(s, s) for s in SIZES})
             images = [ico.ico.getimage((s, s)).convert('RGBA') for s in SIZES]
@@ -97,12 +98,13 @@ class IconTests(unittest.TestCase):
                 self.assertTrue(any(0 < p[3] < 255 for p in pixels))
                 opaque = [p for p in pixels if p[3] == 255]
                 self.assertTrue(opaque)
-                self.assertGreater(sum(p[3] == 0 for p in pixels), image.width * image.height // 3)
+                # The compact symbol covers more of its square than the wordmark.
+                self.assertGreater(sum(p[3] == 0 for p in pixels), image.width * image.height // 4)
                 self.assertTrue(all(r > g > b for r, g, b, a in opaque))
                 # Flat brand fill stays consistent even at narrow counter edges.
                 self.assertTrue(all(abs(actual - expected) <= 3
                                     for pixel in opaque
-                                    for actual, expected in zip(pixel[:3], (240, 75, 45))))
+                                    for actual, expected in zip(pixel[:3], LOGO_RGB)))
 
     def test_qt_loads_all_menu_sizes_with_alpha(self):
         for name in ('xdf.png', 'xdf.ico'):
