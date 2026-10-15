@@ -31,10 +31,22 @@ def terminate_worker_tree(process_id):
         function.restype = wintypes.BOOL
     kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
     kernel.WaitForSingleObject.restype = wintypes.DWORD
+    kernel.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    kernel.TerminateProcess.restype = wintypes.BOOL
+    kernel.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+    kernel.GetProcessTimes.restype = wintypes.BOOL
 
-    # Keep the original worker alive as a kernel object, even if it exits
-    # during enumeration. Only taskkill /T terminates the specified tree.
-    root = kernel.OpenProcess(0x00100000, False, process_id)  # SYNCHRONIZE
+    def created_at(handle):
+        created, exited, system, user = (wintypes.FILETIME() for _ in range(4))
+        if not kernel.GetProcessTimes(handle, ctypes.byref(created), ctypes.byref(exited),
+                                      ctypes.byref(system), ctypes.byref(user)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return (created.dwHighDateTime << 32) | created.dwLowDateTime
+
+    # Retain handles to the exact worker processes, including when their
+    # launcher exits before taskkill can identify the tree by its root PID.
+    access = 0x00101001  # SYNCHRONIZE | QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE
+    root = kernel.OpenProcess(access, False, process_id)
     if not root:
         error = ctypes.get_last_error()
         if error == 87:  # ERROR_INVALID_PARAMETER: already gone
@@ -56,20 +68,44 @@ def terminate_worker_tree(process_id):
                 raise ctypes.WinError(ctypes.get_last_error())
         finally:
             kernel.CloseHandle(snapshot)
-        descendants = {process_id}
-        while children := {pid for pid, parent in parents.items()
-                           if parent in descendants and pid not in descendants}:
-            descendants.update(children)
-        for pid in descendants - {process_id}:
-            handle = kernel.OpenProcess(0x00100000, False, pid)
-            if handle:
+        descendants = [(process_id, created_at(root))]
+        seen = {process_id}
+        for parent_id, parent_created in descendants:
+            for pid, owner in parents.items():
+                if owner != parent_id or pid in seen:
+                    continue
+                seen.add(pid)
+                handle = kernel.OpenProcess(access, False, pid)
+                if not handle:
+                    if ctypes.get_last_error() == 87:
+                        continue
+                    raise ctypes.WinError(ctypes.get_last_error())
+                try:
+                    created = created_at(handle)
+                except BaseException:
+                    kernel.CloseHandle(handle)
+                    raise
+                # A stored parent PID can refer to an earlier process that
+                # used the same ID. Its older children are unrelated workers.
+                if created < parent_created:
+                    kernel.CloseHandle(handle)
+                    continue
                 handles.append(handle)
-            elif ctypes.get_last_error() != 87:
-                raise ctypes.WinError(ctypes.get_last_error())
+                descendants.append((pid, created))
         command = Path(os.environ.get('SystemRoot', r'C:\Windows'))/'System32'/'taskkill.exe'
         subprocess.run([str(command), '/PID', str(process_id), '/T', '/F'],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10,
             creationflags=subprocess.CREATE_NO_WINDOW, check=False)
+        # The root can disappear while taskkill starts. Finish terminating
+        # any captured descendants through their handles before waiting.
+        for handle in reversed(handles):
+            if kernel.WaitForSingleObject(handle, 0) == 258:  # WAIT_TIMEOUT
+                if not kernel.TerminateProcess(handle, 1):
+                    error = ctypes.get_last_error()
+                    # ERROR_ACCESS_DENIED also means it is already exiting;
+                    # retain the handle and wait for pending I/O below.
+                    if error != 5:
+                        raise ctypes.WinError(error)
         # Termination is asynchronous. The virtualenv launcher may exit before
         # its Python child finishes cancelling I/O on staged PDF files.
         deadline = time.monotonic() + 10

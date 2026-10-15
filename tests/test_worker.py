@@ -176,6 +176,92 @@ class WorkerTests(unittest.TestCase):
                 process.wait(timeout=10)
         self.assertEqual(list(self.output.iterdir()),[])
 
+    @unittest.skipUnless(os.name == 'nt', 'Windows process handles')
+    def test_cancellation_stops_child_when_root_exits_before_taskkill(self):
+        import ctypes
+        from ctypes import wintypes
+
+        ready = self.root/'child.pid'
+        python = getattr(sys, '_base_executable', sys.executable)
+        child_code = (
+            'import os,time; from pathlib import Path; '
+            f'Path({str(ready)!r}).write_text(str(os.getpid())); time.sleep(60)'
+        )
+        parent_code = (
+            'import subprocess,time; '
+            f'subprocess.Popen([{python!r}, "-c", {child_code!r}], '
+            'creationflags=subprocess.CREATE_NO_WINDOW); time.sleep(60)'
+        )
+        older = subprocess.Popen([python,'-c','import time; time.sleep(60)'],
+            creationflags=subprocess.CREATE_NO_WINDOW)
+        parent = subprocess.Popen([python,'-c',parent_code],
+            creationflags=subprocess.CREATE_NO_WINDOW)
+        sibling = subprocess.Popen([python,'-c','import time; time.sleep(60)'],
+            creationflags=subprocess.CREATE_NO_WINDOW)
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.OpenProcess.argtypes = [wintypes.DWORD,wintypes.BOOL,wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.TerminateProcess.argtypes = [wintypes.HANDLE,wintypes.UINT]
+        kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE,wintypes.DWORD]
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+
+        class Enumeration:
+            def __init__(self, function):
+                object.__setattr__(self, 'function', function)
+
+            def __getattr__(self, name):
+                return getattr(self.function, name)
+
+            def __setattr__(self, name, value):
+                setattr(self.function, name, value)
+
+            def __call__(self, snapshot, pointer):
+                result = self.function(snapshot, pointer)
+                if result:
+                    entry = ctypes.cast(pointer, self.function.argtypes[1]).contents
+                    if entry.th32ProcessID == older.pid:
+                        # Windows retains a parent PID after that parent exits;
+                        # simulate it being reused by the current worker.
+                        entry.th32ParentProcessID = parent.pid
+                return result
+
+        enumerations = {name: Enumeration(getattr(kernel, name))
+                        for name in ('Process32FirstW', 'Process32NextW')}
+
+        class Kernel:
+            def __getattr__(self, name):
+                return enumerations.get(name) or getattr(kernel, name)
+
+        child = None
+        try:
+            deadline = time.monotonic()+10
+            while (not ready.exists() or not ready.stat().st_size) and time.monotonic()<deadline:
+                time.sleep(.01)
+            self.assertTrue(ready.exists(), 'Child process did not start')
+            child = kernel.OpenProcess(0x00100001,False,int(ready.read_text()))
+            self.assertTrue(child)
+
+            def miss_exited_root(*args, **kwargs):
+                parent.terminate()
+                parent.wait(timeout=5)
+                return subprocess.CompletedProcess(args[0],128)
+
+            with patch('adf.windows_process.ctypes.WinDLL',return_value=Kernel()), \
+                    patch('adf.windows_process.subprocess.run',side_effect=miss_exited_root):
+                _kill_worker_process_tree(parent.pid)
+            self.assertEqual(kernel.WaitForSingleObject(child,0),0)
+            self.assertIsNone(sibling.poll(), 'Unrelated process was terminated')
+            self.assertIsNone(older.poll(), 'Older process with a reused parent PID was terminated')
+        finally:
+            for process in (older,parent,sibling):
+                if process.poll() is None:
+                    process.terminate()
+                process.wait(timeout=10)
+            if child:
+                kernel.TerminateProcess(child,1)
+                kernel.WaitForSingleObject(child,10000)
+                kernel.CloseHandle(child)
+
     def test_failed_publication_rolls_back_batch_without_overwriting_existing_files(self):
         code,payload,request = self.run_worker({'operation':'split','source':str(self.source),
             'groups':[[0],[1]],'output_dir':str(self.output),'stem':'batch','defer_publish':True})
