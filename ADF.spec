@@ -53,7 +53,8 @@ a = Analysis(
     hiddenimports=['pymupdf', 'PIL.Image', 'PIL.ImageQt', 'numpy', 'cv2', 'onnxruntime', 'sentencepiece',
                    'rapidocr.main', 'rapidocr.inference_engine.onnxruntime.main',
                    'rapid_layout.inference_engine.onnxruntime.main',
-                   'rapid_table.inference_engine.onnxruntime.main'] + collect_submodules('fontTools.ttLib.tables'),
+                   'rapid_table.inference_engine.onnxruntime.main'] + collect_submodules('fontTools.ttLib.tables')
+                   + collect_submodules('adf.pdf2hwpx'),
     hookspath=[], hooksconfig={}, runtime_hooks=[],
     excludes=['PyQt5', 'PyQt6', 'PySide2', 'tkinter', 'matplotlib', 'IPython', 'pytest',
               'PySide6.QtWebEngineCore', 'PySide6.QtWebEngineWidgets', 'PySide6.QtQml',
